@@ -4,24 +4,60 @@
  * Phase 4 implementation:
  * - Hotkey configuration (default: Alt+Space)
  * - Wake word setting (default: 助理)
- * - STT model path (Whisper .bin file)
+ * - STT engine selector (OpenAI Whisper API / Local Whisper)
+ * - Local model path (shown only when local engine selected and available)
  * - LLM output mode: DirectInject | PreviewStream
- * - OpenAI API key input
+ * - OpenAI API key input — sent to Rust backend, never stored in localStorage
  * - Incognito mode toggle
  *
- * State is persisted via the Zustand store (localStorage).
+ * State is persisted via the Zustand store (localStorage), except API key
+ * which is stored only in Rust process memory via the set_api_key command.
  */
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "../store/useAppStore";
 
 export default function Settings() {
   const {
-    apiKey, setApiKey,
     wakeWord, setWakeWord,
     sttModelPath, setSttModelPath,
     outputMode, setOutputMode,
     incognito, setIncognito,
     hotkey, setHotkey,
+    sttEngine, setSttEngine,
+    localSttAvailable, setLocalSttAvailable,
+    apiKeySet, setApiKeySet,
   } = useAppStore();
+
+  // Local input state — the actual key value never leaves this component
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKeySaveStatus, setApiKeySaveStatus] = useState<"" | "saving" | "saved" | "error">("");
+
+  // Query backend once on mount
+  useEffect(() => {
+    invoke<{ openAiAvailable: boolean; localAvailable: boolean }>("get_stt_capabilities")
+      .then((caps) => setLocalSttAvailable(caps.localAvailable))
+      .catch(() => setLocalSttAvailable(false));
+
+    invoke<boolean>("has_api_key")
+      .then((has) => setApiKeySet(has))
+      .catch(() => setApiKeySet(false));
+  }, []);
+
+  const handleSaveApiKey = () => {
+    setApiKeySaveStatus("saving");
+    invoke("set_api_key", { key: apiKeyInput })
+      .then(() => {
+        setApiKeySet(apiKeyInput.length > 0);
+        setApiKeyInput("");
+        setApiKeySaveStatus("saved");
+        setTimeout(() => setApiKeySaveStatus(""), 2000);
+      })
+      .catch(() => {
+        setApiKeySaveStatus("error");
+        setTimeout(() => setApiKeySaveStatus(""), 2000);
+      });
+  };
 
   return (
     <div className="p-6 space-y-5 text-sm text-gray-800">
@@ -50,16 +86,59 @@ export default function Settings() {
         <p className="text-xs text-gray-400">注意：變更喚醒詞可能導致誤觸發，請謹慎使用。</p>
       </div>
 
-      {/* STT model path */}
+      {/* STT Engine selector */}
       <div className="space-y-1">
-        <label className="font-medium">Whisper 模型路徑</label>
-        <input
-          className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
-          value={sttModelPath}
-          onChange={(e) => setSttModelPath(e.target.value)}
-          placeholder="C:\models\ggml-base.bin"
-        />
+        <label className="font-medium">STT 引擎</label>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="radio"
+              name="sttEngine"
+              value="openAi"
+              checked={sttEngine === "openAi"}
+              onChange={() => setSttEngine("openAi")}
+            />
+            OpenAI Whisper API
+          </label>
+          <label className={`flex items-center gap-1.5 ${localSttAvailable ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}>
+            <input
+              type="radio"
+              name="sttEngine"
+              value="local"
+              checked={sttEngine === "local"}
+              onChange={() => localSttAvailable && setSttEngine("local")}
+              disabled={!localSttAvailable}
+            />
+            本地 Whisper
+          </label>
+        </div>
+        {!localSttAvailable && (
+          <div className="mt-1.5 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <p className="font-medium">本地 Whisper 未啟用</p>
+            <p className="mt-0.5 text-amber-700">
+              需要安裝 CMake + MSVC，然後以
+              <code className="mx-1 font-mono bg-amber-100 px-1 rounded">cargo build --features local-stt</code>
+              重新建置。
+            </p>
+          </div>
+        )}
       </div>
+
+      {/* Local model path — only when local engine is selected and available */}
+      {sttEngine === "local" && localSttAvailable && (
+        <div className="space-y-1">
+          <label className="font-medium">本地模型路徑</label>
+          <input
+            className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
+            value={sttModelPath}
+            onChange={(e) => setSttModelPath(e.target.value)}
+            placeholder="C:\models\ggml-base.bin"
+          />
+          <p className="text-xs text-gray-400">
+            從 huggingface.co/ggerganov/whisper.cpp 下載 GGML 格式模型檔。
+          </p>
+        </div>
+      )}
 
       {/* Output mode */}
       <div className="space-y-1">
@@ -88,17 +167,40 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* API Key */}
-      <div className="space-y-1">
-        <label className="font-medium">OpenAI API Key</label>
-        <input
-          type="password"
-          className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-…"
-        />
-      </div>
+      {/* API Key — sent to Rust, never stored in localStorage */}
+      {(sttEngine === "openAi" || !localSttAvailable) && (
+        <div className="space-y-1">
+          <label className="font-medium">OpenAI API Key</label>
+          {apiKeySet && (
+            <p className="text-xs text-green-600">API Key 已設定。重新輸入可覆蓋。</p>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="password"
+              className="flex-1 border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              placeholder={apiKeySet ? "••••••••" : "sk-…"}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && apiKeyInput) handleSaveApiKey();
+              }}
+            />
+            <button
+              onClick={handleSaveApiKey}
+              disabled={!apiKeyInput || apiKeySaveStatus === "saving"}
+              className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {apiKeySaveStatus === "saving" ? "儲存中…" : "儲存"}
+            </button>
+          </div>
+          {apiKeySaveStatus === "saved" && (
+            <p className="text-xs text-green-600">已儲存至安全記憶體。</p>
+          )}
+          {apiKeySaveStatus === "error" && (
+            <p className="text-xs text-red-600">儲存失敗，請重試。</p>
+          )}
+        </div>
+      )}
 
       {/* Incognito */}
       <div className="flex items-center gap-3">

@@ -108,10 +108,32 @@ fn start_recording(app: tauri::AppHandle) -> Result<(), String> {
     stt::start_recording(app)
 }
 
-/// Stop microphone audio capture.
+/// Stop microphone audio capture and transcribe via the selected engine.
 #[tauri::command]
-fn stop_recording(app: tauri::AppHandle) -> Result<(), String> {
-    stt::stop_recording(app)
+fn stop_recording(
+    app: tauri::AppHandle,
+    engine: stt::SttEngine,
+    model_path: String,
+) -> Result<(), String> {
+    stt::stop_recording(app, engine, model_path)
+}
+
+/// Store the OpenAI API key in Rust process memory (never sent back to frontend).
+#[tauri::command]
+fn set_api_key(key: String) -> Result<(), String> {
+    stt::set_api_key(key)
+}
+
+/// Check whether an API key has been configured.
+#[tauri::command]
+fn has_api_key() -> bool {
+    stt::has_api_key()
+}
+
+/// Return which STT engines are compiled into this binary.
+#[tauri::command]
+fn get_stt_capabilities() -> stt::SttCapabilities {
+    stt::get_capabilities()
 }
 
 /// Check if currently recording.
@@ -124,6 +146,24 @@ fn is_recording() -> bool {
 #[tauri::command]
 fn list_audio_devices() -> Vec<String> {
     audio_capture::list_input_devices()
+}
+
+/// Route a completed STT transcript to determine the operating mode.
+/// Returns the mode, cleaned transcript, and context.
+#[tauri::command]
+fn route_transcript(
+    transcript: String,
+    selected_text: Option<String>,
+    wake_word: String,
+    incognito: bool,
+) -> mode_router::RouteResult {
+    mode_router::build_route_result(&transcript, selected_text, &wake_word, incognito)
+}
+
+/// Get the initial mode routing based on whether text is selected.
+#[tauri::command]
+fn route_on_trigger(has_selection: bool) -> mode_router::AppMode {
+    mode_router::route_on_trigger(has_selection)
 }
 
 // ── App setup ───────────────────────────────────────────────────────────
@@ -145,7 +185,12 @@ pub fn run() {
             start_recording,
             stop_recording,
             is_recording,
+            set_api_key,
+            has_api_key,
+            get_stt_capabilities,
             list_audio_devices,
+            route_transcript,
+            route_on_trigger,
         ])
         .setup(|app| {
             // Initialize COM for UI Automation on the main thread
@@ -167,10 +212,18 @@ pub fn run() {
 
                 // Check selection
                 let sel = selection::get_selected_text();
-                let has_selection = matches!(sel, selection::SelectionResult::Selected(_));
+                let (has_selection, selected_text) = match sel {
+                    selection::SelectionResult::Selected(text) => (true, Some(text)),
+                    _ => (false, None),
+                };
+
+                // Determine initial mode
+                let initial_mode = mode_router::route_on_trigger(has_selection);
 
                 let _ = handle2.emit("talkflow://mode-start", serde_json::json!({
                     "has_selection": has_selection,
+                    "selected_text": selected_text,
+                    "initial_mode": initial_mode,
                     "hwnd": window_focus::get_locked_hwnd(),
                 }));
             });
