@@ -51,6 +51,7 @@ export default function Settings() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKeySaveStatus, setApiKeySaveStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [hotkeyStatus, setHotkeyStatus] = useState<"" | "error">("");
+  const [hotkeyErrorMessage, setHotkeyErrorMessage] = useState("");
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<"" | "saved" | "error">("");
   const [draftWakeWord, setDraftWakeWord] = useState(wakeWord);
   const [draftHotkey, setDraftHotkey] = useState(hotkey);
@@ -156,6 +157,7 @@ export default function Settings() {
     }
 
     try {
+      setHotkeyErrorMessage("");
       if (draftHotkey !== hotkey) {
         await invoke("change_hotkey", { hotkeyStr: draftHotkey });
       }
@@ -177,11 +179,14 @@ export default function Settings() {
       });
 
       setHotkeyStatus("");
+      setHotkeyErrorMessage("");
       setSettingsSaveStatus("saved");
       setTimeout(() => setSettingsSaveStatus(""), 2000);
     } catch (err) {
       console.error("[Settings] save settings failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
       setHotkeyStatus("error");
+      setHotkeyErrorMessage(message);
       setSettingsSaveStatus("error");
       setTimeout(() => setSettingsSaveStatus(""), 2000);
     }
@@ -195,6 +200,7 @@ export default function Settings() {
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
     setHotkeyStatus("");
+    setHotkeyErrorMessage("");
     setSettingsSaveStatus("");
   };
 
@@ -352,6 +358,7 @@ export default function Settings() {
 
                     setDraftHotkey(parts.join("+"));
                     setHotkeyStatus("");
+                    setHotkeyErrorMessage("");
                   }}
                 />
                 <p className="text-xs text-gray-400">點擊欄位後按下想要的快捷鍵組合，按「儲存」後生效。</p>
@@ -361,6 +368,7 @@ export default function Settings() {
                     onClick={() => {
                       setDraftHotkey("Alt+Backquote");
                       setHotkeyStatus("");
+                      setHotkeyErrorMessage("");
                     }}
                     className="px-2 py-1 rounded text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
                   >
@@ -369,7 +377,11 @@ export default function Settings() {
                   <span className="text-xs text-gray-400">若按鍵擷取失敗可直接使用此按鈕。</span>
                 </div>
                 {hotkeyStatus === "error" && (
-                  <p className="text-xs text-red-600">快捷鍵註冊失敗，請嘗試其他組合。</p>
+                  <p className="text-xs text-red-600">
+                    {hotkeyErrorMessage
+                      ? `快捷鍵註冊失敗：${hotkeyErrorMessage}`
+                      : "快捷鍵註冊失敗，請嘗試其他組合。"}
+                  </p>
                 )}
               </div>
 

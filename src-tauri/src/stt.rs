@@ -13,6 +13,8 @@
 use crate::audio_capture::{self, CaptureHandle, TARGET_SAMPLE_RATE};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+#[cfg(feature = "local-stt")]
+use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::Emitter;
 
@@ -112,6 +114,16 @@ static CAPTURE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
 
 /// In-process cache so we don't read from file on every call.
 static API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
+
+#[cfg(feature = "local-stt")]
+struct LocalWhisperContextCache {
+    model_path: String,
+    context: Arc<whisper_rs::WhisperContext>,
+}
+
+/// Cache loaded whisper context so local STT doesn't reload model every request.
+#[cfg(feature = "local-stt")]
+static LOCAL_WHISPER_CONTEXT: Mutex<Option<LocalWhisperContextCache>> = Mutex::new(None);
 
 fn talkflow_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Cannot find home directory")?;
@@ -478,14 +490,53 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
         let samples: Vec<f32> = samples.to_vec();
 
         tokio::task::spawn_blocking(move || {
-            let ctx =
-                WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
-                    .map_err(|e| format!("Failed to load model: {e}"))?;
+            let ctx = {
+                let mut cache = LOCAL_WHISPER_CONTEXT
+                    .lock()
+                    .map_err(|e| format!("Local model cache lock poisoned: {e}"))?;
+                if let Some(ref cached) = *cache {
+                    if cached.model_path == model_path {
+                        cached.context.clone()
+                    } else {
+                        let loaded = Arc::new(
+                            WhisperContext::new_with_params(
+                                &model_path,
+                                WhisperContextParameters::default(),
+                            )
+                            .map_err(|e| format!("Failed to load model: {e}"))?,
+                        );
+                        *cache = Some(LocalWhisperContextCache {
+                            model_path: model_path.clone(),
+                            context: loaded.clone(),
+                        });
+                        loaded
+                    }
+                } else {
+                    let loaded = Arc::new(
+                        WhisperContext::new_with_params(
+                            &model_path,
+                            WhisperContextParameters::default(),
+                        )
+                        .map_err(|e| format!("Failed to load model: {e}"))?,
+                    );
+                    *cache = Some(LocalWhisperContextCache {
+                        model_path: model_path.clone(),
+                        context: loaded.clone(),
+                    });
+                    loaded
+                }
+            };
+
             let mut state = ctx.create_state().map_err(|e| format!("State error: {e}"))?;
             let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
             params.set_language(Some("zh"));
+            params.set_no_context(true);
             params.set_print_realtime(false);
             params.set_print_progress(false);
+            let n_threads = std::thread::available_parallelism()
+                .map(|n| n.get().clamp(1, 4) as i32)
+                .unwrap_or(2);
+            params.set_n_threads(n_threads);
             state
                 .full(params, &samples)
                 .map_err(|e| format!("Transcription failed: {e}"))?;

@@ -78,17 +78,28 @@ fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error
 /// Re-register the trigger hotkey with a new key combination.
 /// Called from the frontend when the user changes the hotkey setting.
 pub fn change_trigger(app: &tauri::AppHandle, modifiers: Option<Modifiers>, code: Code) -> Result<(), String> {
-    // Unregister old shortcut
-    if let Ok(guard) = CURRENT_SHORTCUT.lock() {
-        if let Some((old_mods, old_code)) = *guard {
-            let old = Shortcut::new(old_mods, old_code);
-            let _ = app.global_shortcut().unregister(old);
+    let previous = CURRENT_SHORTCUT.lock().ok().and_then(|guard| *guard);
+
+    // Unregister known trigger candidates (do not touch undo Alt+Z).
+    if let Some((old_mods, old_code)) = previous {
+        let _ = app.global_shortcut().unregister(Shortcut::new(old_mods, old_code));
+    }
+    let _ = app
+        .global_shortcut()
+        .unregister(Shortcut::new(Some(Modifiers::ALT), Code::Space));
+    let _ = app
+        .global_shortcut()
+        .unregister(Shortcut::new(Some(Modifiers::ALT), Code::Backquote));
+
+    if let Err(e) = register_trigger(app, modifiers, code) {
+        // Best-effort rollback so the app keeps a usable trigger.
+        if let Some((old_mods, old_code)) = previous {
+            let _ = register_trigger(app, old_mods, old_code);
         }
+        return Err(format!("Failed to register new hotkey: {e}"));
     }
 
-    // Register new shortcut
-    register_trigger(app, modifiers, code)
-        .map_err(|e| format!("Failed to register new hotkey: {e}"))
+    Ok(())
 }
 
 /// Parse a hotkey string like "Alt+Space" into (Modifiers, Code).

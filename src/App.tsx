@@ -88,6 +88,7 @@ function MainWindow() {
     const unlisten: Array<() => void> = [];
     let qaInteracting = false;
     let lastSelectionFingerprint = "";
+    let pendingHotkeyRelease = false;
 
     (async () => {
       // ── 0. Prevent sub-windows from being destroyed on close ──
@@ -116,6 +117,26 @@ function MainWindow() {
           }
         }
         return false;
+      };
+
+      const stopRecordingNow = async () => {
+        const store = useAppStore.getState();
+        if (!store.isRecording) return;
+        try {
+          await invoke("stop_recording", {
+            engine: store.sttEngine,
+            modelPath: store.sttModelPath,
+          });
+          store.setIsRecording(false);
+          pendingHotkeyRelease = false;
+          setStatusMsg("辨識中…");
+        } catch (err) {
+          console.error("[App] stop_recording failed:", err);
+          store.setSttError(String(err));
+          store.setIsRecording(false);
+          pendingHotkeyRelease = false;
+          setStatusMsg("停止錄音失敗");
+        }
       };
 
       await safeRegister<{ active: boolean }>(
@@ -276,6 +297,7 @@ function MainWindow() {
           if (sttEngine === "openAi") {
             const hasKey = await invoke<boolean>("has_api_key");
             if (!hasKey) {
+              pendingHotkeyRelease = false;
               setSttError("請先在設定中輸入 OpenAI API Key");
               setStatusMsg("請先設定 API Key");
               return;
@@ -285,10 +307,14 @@ function MainWindow() {
           try {
             await invoke("start_recording");
             setIsRecording(true);
+            if (pendingHotkeyRelease) {
+              await stopRecordingNow();
+            }
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
             setStatusMsg("錄音啟動失敗");
+            pendingHotkeyRelease = false;
           }
         } else {
           // ── Mode A or C ── start recording
@@ -297,6 +323,7 @@ function MainWindow() {
           if (sttEngine === "openAi") {
             const hasKey = await invoke<boolean>("has_api_key");
             if (!hasKey) {
+              pendingHotkeyRelease = false;
               setSttError("請先在設定中輸入 OpenAI API Key");
               setStatusMsg("請先設定 API Key");
               return;
@@ -308,33 +335,23 @@ function MainWindow() {
           try {
             await invoke("start_recording");
             setIsRecording(true);
+            if (pendingHotkeyRelease) {
+              await stopRecordingNow();
+            }
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
             setStatusMsg("錄音啟動失敗");
+            pendingHotkeyRelease = false;
           }
         }
       });
 
       // ── 2. hotkey RELEASE → stop recording ──
       await safeRegister("talkflow://hotkey-release", async () => {
-        const store = useAppStore.getState();
-        if (!store.isRecording) return;
-
+        pendingHotkeyRelease = true;
         console.log("[App] hotkey released → stopping recording");
-        try {
-          await invoke("stop_recording", {
-            engine: store.sttEngine,
-            modelPath: store.sttModelPath,
-          });
-          store.setIsRecording(false);
-          setStatusMsg("辨識中…");
-        } catch (err) {
-          console.error("[App] stop_recording failed:", err);
-          store.setSttError(String(err));
-          store.setIsRecording(false);
-          setStatusMsg("停止錄音失敗");
-        }
+        await stopRecordingNow();
       });
 
       // ── 3. STT final result → route transcript ──

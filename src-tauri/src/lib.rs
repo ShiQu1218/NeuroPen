@@ -298,12 +298,6 @@ pub fn run() {
             let handle_release = app.handle().clone();
             app.listen("hotkey://release", move |_event| {
                 println!("[event] hotkey://release received");
-
-                // Only stop if currently recording
-                if !stt::is_recording() {
-                    return;
-                }
-
                 let _ = handle_release.emit("talkflow://hotkey-release", ());
             });
 
