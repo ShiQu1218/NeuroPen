@@ -24,6 +24,11 @@ interface AppState {
   sttError: string;
   localSttAvailable: boolean;
   apiKeySet: boolean;
+  llmOutput: string;
+  isLlmLoading: boolean;
+  llmError: string;
+  lastSelectedText: string;
+  lastInstruction: string;
 
   // --- Actions ---
   setWakeWord: (word: string) => void;
@@ -39,6 +44,11 @@ interface AppState {
   setSttError: (error: string) => void;
   setLocalSttAvailable: (v: boolean) => void;
   setApiKeySet: (v: boolean) => void;
+  setLlmOutput: (text: string) => void;
+  setIsLlmLoading: (loading: boolean) => void;
+  setLlmError: (error: string) => void;
+  setLastSelectedText: (text: string) => void;
+  setLastInstruction: (text: string) => void;
   resetSession: () => void;
 }
 
@@ -60,6 +70,11 @@ export const useAppStore = create<AppState>()(
       sttError: "",
       localSttAvailable: false,
       apiKeySet: false,
+      llmOutput: "",
+      isLlmLoading: false,
+      llmError: "",
+      lastSelectedText: "",
+      lastInstruction: "",
 
       setWakeWord: (word) => set({ wakeWord: word }),
       setSttModelPath: (path) => set({ sttModelPath: path }),
@@ -74,6 +89,11 @@ export const useAppStore = create<AppState>()(
       setSttError: (error) => set({ sttError: error }),
       setLocalSttAvailable: (v) => set({ localSttAvailable: v }),
       setApiKeySet: (v) => set({ apiKeySet: v }),
+      setLlmOutput: (text) => set({ llmOutput: text }),
+      setIsLlmLoading: (loading) => set({ isLlmLoading: loading }),
+      setLlmError: (error) => set({ llmError: error }),
+      setLastSelectedText: (text) => set({ lastSelectedText: text }),
+      setLastInstruction: (text) => set({ lastInstruction: text }),
       resetSession: () =>
         set({
           isRecording: false,
@@ -81,6 +101,11 @@ export const useAppStore = create<AppState>()(
           currentMode: null,
           transcript: "",
           sttError: "",
+          llmOutput: "",
+          isLlmLoading: false,
+          llmError: "",
+          lastSelectedText: "",
+          lastInstruction: "",
         }),
     }),
     {

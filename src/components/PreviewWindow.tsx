@@ -1,21 +1,106 @@
-/**
- * Output Preview Window
- *
- * Phase 4 implementation:
- * - Listen to `llm://token` events and stream tokens into the output area
- * - Copy button: write output to clipboard
- * - Replace button: call `inject_text` Tauri command
- * - Close button: hide this window
- * - Refinement input: re-send with additional instruction
- * - Alt+Space while focused: voice input to refinement field
- */
+import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useAppStore } from "../store/useAppStore";
+
 export default function PreviewWindow() {
+  const [refinementInput, setRefinementInput] = useState("");
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  const llmOutput = useAppStore((s) => s.llmOutput);
+  const isLlmLoading = useAppStore((s) => s.isLlmLoading);
+  const llmError = useAppStore((s) => s.llmError);
+  const lastSelectedText = useAppStore((s) => s.lastSelectedText);
+  const setLlmOutput = useAppStore((s) => s.setLlmOutput);
+  const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
+  const setLlmError = useAppStore((s) => s.setLlmError);
+
+  // Listen to LLM streaming events
+  useEffect(() => {
+    const unlisten: Array<() => void> = [];
+
+    (async () => {
+      unlisten.push(
+        await listen<{ text: string }>("llm://token", (event) => {
+          useAppStore.getState().setLlmOutput(
+            useAppStore.getState().llmOutput + event.payload.text
+          );
+        })
+      );
+      unlisten.push(
+        await listen("llm://done", () => {
+          useAppStore.getState().setIsLlmLoading(false);
+        })
+      );
+      unlisten.push(
+        await listen<{ message: string }>("llm://error", (event) => {
+          useAppStore.getState().setLlmError(event.payload.message);
+          useAppStore.getState().setIsLlmLoading(false);
+        })
+      );
+    })();
+
+    return () => {
+      unlisten.forEach((fn) => fn());
+    };
+  }, []);
+
+  // Auto-scroll to bottom when output changes
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [llmOutput]);
+
+  const handleCopy = async () => {
+    await invoke("copy_to_clipboard", { text: llmOutput });
+  };
+
+  const handleReplace = async () => {
+    await invoke("inject_text", { text: llmOutput, recordForUndo: true });
+    await getCurrentWindow().hide();
+  };
+
+  const handleClose = async () => {
+    await getCurrentWindow().hide();
+    setLlmOutput("");
+    setIsLlmLoading(false);
+    setLlmError("");
+  };
+
+  const handleRefinement = async () => {
+    const input = refinementInput.trim();
+    if (!input) return;
+    setLlmOutput("");
+    setIsLlmLoading(true);
+    setLlmError("");
+    setRefinementInput("");
+    await invoke("call_llm", {
+      selectedText: lastSelectedText,
+      instruction: input,
+      outputMode: "PreviewStream",
+    });
+  };
+
+  const hasOutput = llmOutput.length > 0;
+
   return (
     <div className="flex flex-col h-screen bg-white text-gray-900 select-text">
       {/* Output area */}
-      <div className="flex-1 overflow-auto p-4 font-mono text-sm whitespace-pre-wrap border-b border-gray-200">
-        {/* TODO Phase 4: render streaming llm://token output */}
-        <span className="text-gray-400">輸出將在此顯示…</span>
+      <div
+        ref={outputRef}
+        className="flex-1 overflow-auto p-4 font-mono text-sm whitespace-pre-wrap border-b border-gray-200"
+      >
+        {llmError ? (
+          <span className="text-red-500">{llmError}</span>
+        ) : isLlmLoading && !hasOutput ? (
+          <span className="text-gray-400">處理中…</span>
+        ) : hasOutput ? (
+          llmOutput
+        ) : (
+          <span className="text-gray-400">輸出將在此顯示…</span>
+        )}
       </div>
 
       {/* Refinement input */}
@@ -23,10 +108,18 @@ export default function PreviewWindow() {
         <input
           className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-400"
           placeholder="輸入補充指令…"
-          disabled
-          // TODO Phase 4: wire to LLM re-call
+          value={refinementInput}
+          onChange={(e) => setRefinementInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleRefinement();
+          }}
+          disabled={isLlmLoading}
         />
-        <button className="text-blue-500 hover:text-blue-700 disabled:opacity-40" disabled>
+        <button
+          className="text-blue-500 hover:text-blue-700 disabled:opacity-40"
+          disabled={isLlmLoading || !refinementInput.trim()}
+          onClick={handleRefinement}
+        >
           →
         </button>
       </div>
@@ -35,19 +128,21 @@ export default function PreviewWindow() {
       <div className="flex justify-center gap-4 p-3">
         <button
           className="px-4 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-sm disabled:opacity-40"
-          disabled
+          disabled={!hasOutput}
+          onClick={handleCopy}
         >
           複製
         </button>
         <button
           className="px-4 py-1.5 rounded bg-blue-500 hover:bg-blue-600 text-white text-sm disabled:opacity-40"
-          disabled
+          disabled={!hasOutput || isLlmLoading}
+          onClick={handleReplace}
         >
           取代
         </button>
         <button
           className="px-4 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-sm"
-          // TODO Phase 4: getCurrentWindow().hide()
+          onClick={handleClose}
         >
           關閉
         </button>

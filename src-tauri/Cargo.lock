@@ -4143,6 +4143,7 @@ name = "talkflow"
 version = "0.1.0"
 dependencies = [
  "cpal",
+ "futures-util",
  "keyring",
  "reqwest 0.12.28",
  "ringbuf",

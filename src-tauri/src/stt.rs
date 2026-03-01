@@ -85,7 +85,7 @@ pub fn has_api_key() -> bool {
 
 /// Read the API key — checks in-process cache first, then OS credential store.
 /// Never exposed to frontend.
-fn get_api_key() -> Result<String, String> {
+pub(crate) fn get_api_key() -> Result<String, String> {
     // Check cache
     if let Ok(guard) = API_KEY_CACHE.lock() {
         if let Some(ref key) = *guard {

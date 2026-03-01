@@ -32,6 +32,7 @@ reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
 cpal = "0.15"
 ringbuf = "0.4"
 keyring = "3"
+futures-util = "0.3"
 
 whisper-rs = { version = "0.11", optional = true }
 

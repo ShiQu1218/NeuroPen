@@ -148,6 +148,18 @@ fn list_audio_devices() -> Vec<String> {
     audio_capture::list_input_devices()
 }
 
+/// Call the LLM with streaming and emit token events.
+#[tauri::command]
+async fn call_llm(
+    app: tauri::AppHandle,
+    selected_text: String,
+    instruction: String,
+    output_mode: llm::OutputMode,
+) -> Result<(), String> {
+    let api_key = stt::get_api_key()?;
+    llm::call_llm(&api_key, &selected_text, &instruction, output_mode, app).await
+}
+
 /// Route a completed STT transcript to determine the operating mode.
 /// Returns the mode, cleaned transcript, and context.
 #[tauri::command]
@@ -189,6 +201,7 @@ pub fn run() {
             has_api_key,
             get_stt_capabilities,
             list_audio_devices,
+            call_llm,
             route_transcript,
             route_on_trigger,
         ])
