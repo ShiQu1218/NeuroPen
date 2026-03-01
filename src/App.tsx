@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import "./App.css";
@@ -79,6 +79,8 @@ function MainWindow() {
     // up because `unlisten` is still empty when cleanup runs synchronously.
     let cancelled = false;
     const unlisten: Array<() => void> = [];
+    let qaInteracting = false;
+    let lastSelectionFingerprint = "";
 
     (async () => {
       // ── 0. Prevent sub-windows from being destroyed on close ──
@@ -99,26 +101,60 @@ function MainWindow() {
         }
       }
 
+      const isTalkFlowWindowFocused = async () => {
+        for (const label of ["main", "quick-action", "preview", "settings", "recording-indicator"]) {
+          const win = await WebviewWindow.getByLabel(label);
+          if (win && (await win.isFocused())) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      await safeRegister<{ active: boolean }>(
+        "talkflow://qa-interacting",
+        async (event) => {
+          qaInteracting = !!event.payload.active;
+          if (!qaInteracting) {
+            lastSelectionFingerprint = "";
+            const sel = await invoke<{ has_selection: boolean }>("get_selection");
+            if (!sel.has_selection) {
+              const qaWin = await WebviewWindow.getByLabel("quick-action");
+              if (qaWin) {
+                await qaWin.hide();
+              }
+            }
+          }
+        }
+      );
+
       // ── 0.5. Selection watcher → auto-show/hide Quick Action Icon ──
       await safeRegister<{
         has_selection: boolean;
         text: string | null;
         cursor_x: number;
         cursor_y: number;
+        anchor_x?: number | null;
+        anchor_y?: number | null;
       }>(
         "talkflow://selection-changed",
         async (event) => {
-          const { has_selection, text, cursor_x, cursor_y } = event.payload;
+          const { has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y } = event.payload;
           const store = useAppStore.getState();
 
           // Don't show Quick Action Icon while recording
           if (store.isRecording) return;
+          // Freeze watcher-driven UI updates while quick-action is interacting.
+          if (qaInteracting) return;
+          // Ignore internal selections from TalkFlow windows (preview/quick-action/etc).
+          if (await isTalkFlowWindowFocused()) return;
 
           const qaWin = await WebviewWindow.getByLabel("quick-action");
           if (!qaWin) return;
 
           if (has_selection && text) {
             setSelectedText(text);
+            await emit("talkflow://stable-selection", { text });
 
             // Auto-close old Preview Window when new selection appears
             const previewWin = await WebviewWindow.getByLabel("preview");
@@ -134,10 +170,24 @@ function MainWindow() {
               }
             }
 
-            // Position QA icon near the cursor
-            await qaWin.setPosition(new PhysicalPosition(cursor_x + 8, cursor_y + 8));
+            // Position QA icon below selection end (fallback to cursor).
+            const x = typeof anchor_x === "number" ? anchor_x : cursor_x;
+            const y = typeof anchor_y === "number" ? anchor_y : cursor_y;
+            const currentFingerprint = `${text}::${x}::${y}`;
+            // Lock target window + cache clipboard once per unique selection.
+            if (currentFingerprint !== lastSelectionFingerprint) {
+              try {
+                await invoke("trigger_hotkey");
+                lastSelectionFingerprint = currentFingerprint;
+              } catch (err) {
+                console.warn("[App] trigger_hotkey failed:", err);
+              }
+            }
+            await qaWin.setPosition(new PhysicalPosition(x + 8, y + 8));
             await qaWin.show();
           } else {
+            lastSelectionFingerprint = "";
+            if (qaInteracting) return;
             await qaWin.hide();
           }
         }
@@ -172,6 +222,7 @@ function MainWindow() {
           // Hide Quick Action Icon if it was shown by selection watcher
           const qaWin = await WebviewWindow.getByLabel("quick-action");
           if (qaWin) {
+            qaInteracting = false;
             await qaWin.hide();
           }
 
@@ -295,6 +346,10 @@ function MainWindow() {
             store.setLlmError("");
             store.setLastSelectedText(store.selectedText);
             store.setLastInstruction(result.transcript);
+            await emit("talkflow://preview-session", {
+              selectedText: store.selectedText,
+              instruction: result.transcript,
+            });
 
             const previewWin = await WebviewWindow.getByLabel("preview");
             if (previewWin) {
@@ -318,6 +373,10 @@ function MainWindow() {
             store.setIsLlmLoading(true);
             store.setLlmError("");
             store.setLastInstruction(result.transcript);
+            await emit("talkflow://preview-session", {
+              selectedText: "",
+              instruction: result.transcript,
+            });
 
             const previewWin = await WebviewWindow.getByLabel("preview");
             if (previewWin) {

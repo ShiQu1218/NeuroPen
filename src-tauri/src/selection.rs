@@ -121,9 +121,17 @@ fn get_cursor_pos() -> (i32, i32) {
     }
 }
 
+/// Returns true while left mouse button is pressed.
+#[cfg(target_os = "windows")]
+fn is_left_button_down() -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+    unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
+}
+
 /// Start a background thread that polls for text selection changes every 500ms.
 /// Uses debounce: waits for 2 consecutive stable polls before emitting.
-/// Emits `talkflow://selection-changed` with `{ has_selection, text, cursor_x, cursor_y }`.
+/// Emits `talkflow://selection-changed` with
+/// `{ has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y }`.
 #[cfg(target_os = "windows")]
 pub fn start_selection_watcher(app: tauri::AppHandle) {
     use tauri::Emitter;
@@ -133,21 +141,30 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         let mut last_emitted_text = String::new();
 
         // Debounce state: track the pending (candidate) selection
-        let mut pending_selection: Option<(bool, String)> = None;
+        let mut pending_selection: Option<(bool, String, i32, i32)> = None;
         let mut stable_count: u32 = 0;
         const STABLE_THRESHOLD: u32 = 2; // Need 2 consecutive identical polls
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(500));
 
-            let (has_selection, text) = match get_selected_text() {
+            let (raw_has_selection, raw_text) = match get_selected_text() {
                 SelectionResult::Selected(t) => (true, t),
                 SelectionResult::None | SelectionResult::Unavailable => (false, String::new()),
             };
+            let left_down = is_left_button_down();
+            // Only surface selection after mouse release so icon appears post-selection.
+            let (has_selection, text) = if raw_has_selection && !left_down {
+                (true, raw_text)
+            } else {
+                (false, String::new())
+            };
+
+            let (cx, cy) = get_cursor_pos();
 
             // Debounce: check if this poll matches the pending candidate
             let matches_pending = match &pending_selection {
-                Some((ps, pt)) => *ps == has_selection && *pt == text,
+                Some((ps, pt, _, _)) => *ps == has_selection && *pt == text,
                 None => false,
             };
 
@@ -155,7 +172,7 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 stable_count += 1;
             } else {
                 // New candidate
-                pending_selection = Some((has_selection, text.clone()));
+                pending_selection = Some((has_selection, text.clone(), cx, cy));
                 stable_count = 1;
             }
 
@@ -166,21 +183,28 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                     last_emitted_selection = has_selection;
                     last_emitted_text = text.clone();
 
-                    let (cx, cy) = get_cursor_pos();
+                    let (anchor_cx, anchor_cy) = pending_selection
+                        .as_ref()
+                        .map(|(_, _, px, py)| (*px, *py))
+                        .unwrap_or((cx, cy));
 
                     let payload = if has_selection {
                         serde_json::json!({
                             "has_selection": true,
                             "text": text,
                             "cursor_x": cx,
-                            "cursor_y": cy
+                            "cursor_y": cy,
+                            "anchor_x": anchor_cx,
+                            "anchor_y": anchor_cy
                         })
                     } else {
                         serde_json::json!({
                             "has_selection": false,
                             "text": null,
                             "cursor_x": cx,
-                            "cursor_y": cy
+                            "cursor_y": cy,
+                            "anchor_x": null,
+                            "anchor_y": null
                         })
                     };
 

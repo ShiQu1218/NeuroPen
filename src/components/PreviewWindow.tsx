@@ -39,6 +39,16 @@ export default function PreviewWindow() {
         useAppStore.getState().setLlmError(event.payload.message);
         useAppStore.getState().setIsLlmLoading(false);
       });
+      await register<{ selectedText?: string; instruction?: string }>(
+        "talkflow://preview-session",
+        (event) => {
+          useAppStore.getState().setLlmOutput("");
+          useAppStore.getState().setIsLlmLoading(true);
+          useAppStore.getState().setLlmError("");
+          useAppStore.getState().setLastSelectedText(event.payload.selectedText ?? "");
+          useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
+        }
+      );
     })();
 
     return () => {
@@ -60,29 +70,55 @@ export default function PreviewWindow() {
 
   const handleReplace = async () => {
     // Restore focus to the original target window before injecting
-    await invoke("restore_focus");
+    const restored = await invoke<boolean>("restore_focus");
+    if (!restored) {
+      setLlmError("找不到原始目標視窗，無法取代");
+      return;
+    }
     // Small delay to let the OS switch focus
     await new Promise((r) => setTimeout(r, 100));
+    const focusOk = await invoke<boolean>("verify_focus");
+    if (!focusOk) {
+      setLlmError("焦點已變更，取消取代");
+      await invoke("restore_clipboard");
+      return;
+    }
     await invoke("inject_text", { text: llmOutput, recordForUndo: true });
+    await new Promise((r) => setTimeout(r, 150));
+    await invoke("restore_clipboard");
     await getCurrentWindow().hide();
   };
 
   const handleClose = async () => {
+    await invoke("restore_clipboard");
     await getCurrentWindow().hide();
     setLlmOutput("");
     setIsLlmLoading(false);
     setLlmError("");
   };
 
+  const handleStartDrag = async () => {
+    await getCurrentWindow().startDragging();
+  };
+
   const handleRefinement = async () => {
     const input = refinementInput.trim();
     if (!input) return;
+    const previousOutput = llmOutput;
+    const contextBlocks: string[] = [];
+    if (lastSelectedText.trim()) {
+      contextBlocks.push(`Original selected text:\n${lastSelectedText}`);
+    }
+    if (previousOutput.trim()) {
+      contextBlocks.push(`Previous output:\n${previousOutput}`);
+    }
+    const selectedContext = contextBlocks.join("\n\n");
     setLlmOutput("");
     setIsLlmLoading(true);
     setLlmError("");
     setRefinementInput("");
     await invoke("call_llm", {
-      selectedText: lastSelectedText,
+      selectedText: selectedContext,
       instruction: input,
       outputMode: "PreviewStream",
     });
@@ -94,8 +130,11 @@ export default function PreviewWindow() {
     <div className="flex flex-col h-screen bg-white text-gray-900 select-text rounded-lg border border-gray-200 shadow-xl overflow-hidden">
       {/* Custom title bar (draggable) */}
       <div
-        data-tauri-drag-region
         className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200 cursor-move shrink-0"
+        onMouseDown={(e) => {
+          if ((e.target as HTMLElement).closest("button")) return;
+          void handleStartDrag();
+        }}
       >
         <span className="text-xs text-gray-400 select-none pointer-events-none">TalkFlow Preview</span>
         <button

@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
@@ -24,7 +25,32 @@ const EXPANDED_SIZE = { width: 220, height: 240 };
 export default function QuickActionIcon() {
   const [expanded, setExpanded] = useState(false);
   const [customInput, setCustomInput] = useState("");
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stableSelectionRef = useRef("");
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const setQaInteracting = useCallback(async (active: boolean) => {
+    await emit("talkflow://qa-interacting", { active });
+  }, []);
+
+  useEffect(() => {
+    let unlistenSelection: (() => void) | null = null;
+    void (async () => {
+      unlistenSelection = await listen<{ text: string }>(
+        "talkflow://stable-selection",
+        (event) => {
+          stableSelectionRef.current = event.payload.text ?? "";
+        }
+      );
+    })();
+    return () => {
+      if (collapseTimer.current) {
+        clearTimeout(collapseTimer.current);
+      }
+      unlistenSelection?.();
+      void setQaInteracting(false);
+    };
+  }, [setQaInteracting]);
 
   const expand = useCallback(() => {
     if (collapseTimer.current) {
@@ -38,39 +64,54 @@ export default function QuickActionIcon() {
         .setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height))
         .catch(() => {});
     }
-  }, [expanded]);
+    void setQaInteracting(true);
+  }, [expanded, setQaInteracting]);
 
-  const collapse = useCallback(() => {
+  const collapse = useCallback((force = false) => {
+    if (isInputFocused && !force) return;
+    if (collapseTimer.current) {
+      clearTimeout(collapseTimer.current);
+      collapseTimer.current = null;
+    }
     // Delay collapse to avoid flicker when moving between icon and panel
     collapseTimer.current = setTimeout(() => {
       setExpanded(false);
       setCustomInput("");
+      void setQaInteracting(false);
       getCurrentWindow()
         .setSize(new LogicalSize(ICON_SIZE.width, ICON_SIZE.height))
         .catch(() => {});
     }, 200);
-  }, []);
+  }, [isInputFocused, setQaInteracting]);
 
   const showPreviewAndCallLlm = async (instruction: string) => {
     // Fetch selectedText directly from Rust (cross-window store won't work)
-    let selectedText = "";
+    let selectedText = stableSelectionRef.current.trim();
     try {
-      const sel = await invoke<{ has_selection: boolean; text: string | null }>("get_selection");
-      if (sel.has_selection && sel.text) {
-        selectedText = sel.text;
-      } else {
-        // Fallback: read via clipboard (Ctrl+C)
-        const clipText = await invoke<string>("read_selection_clipboard");
-        selectedText = clipText;
+      if (!selectedText) {
+        const sel = await invoke<{ has_selection: boolean; text: string | null }>("get_selection");
+        if (sel.has_selection && sel.text) {
+          selectedText = sel.text;
+        } else {
+          // Fallback: read via clipboard (Ctrl+C)
+          const clipText = await invoke<string>("read_selection_clipboard");
+          selectedText = clipText;
+        }
       }
     } catch (err) {
       console.error("[QuickAction] Failed to get selection:", err);
     }
 
     if (!selectedText) {
+      await invoke("restore_clipboard");
+      await setQaInteracting(false);
       console.warn("[QuickAction] No selected text found, aborting");
       return;
     }
+
+    // Fallback Ctrl+C may have changed clipboard; restore immediately.
+    await invoke("restore_clipboard");
+    await setQaInteracting(false);
 
     // Hide quick-action icon
     await getCurrentWindow().hide();
@@ -84,6 +125,10 @@ export default function QuickActionIcon() {
     const qaSize = await getCurrentWindow().outerSize();
 
     // Show preview window positioned below the quick action icon
+    await emit("talkflow://preview-session", {
+      selectedText,
+      instruction,
+    });
     const previewWin = await WebviewWindow.getByLabel("preview");
     if (previewWin) {
       const previewX = qaPos.x;
@@ -118,7 +163,7 @@ export default function QuickActionIcon() {
     // Phase 1: Small icon button
     return (
       <div
-        className="flex items-center justify-center w-[36px] h-[36px] bg-white border border-gray-200 rounded-full shadow-lg cursor-pointer hover:bg-blue-50 transition-colors"
+        className="flex items-center justify-center w-[36px] h-[36px] bg-white rounded-full shadow-lg cursor-pointer hover:bg-blue-50 transition-colors"
         onMouseEnter={expand}
         onClick={expand}
       >
@@ -130,8 +175,10 @@ export default function QuickActionIcon() {
   // Phase 2: Expanded options panel
   return (
     <div
-      className="flex flex-col gap-1 p-2 bg-white border border-gray-200 rounded-lg shadow-lg text-sm"
-      onMouseLeave={collapse}
+      ref={panelRef}
+      className="flex flex-col gap-1 p-2 bg-white rounded-lg shadow-lg text-sm"
+      onMouseEnter={expand}
+      onMouseLeave={() => collapse()}
     >
       {PRESETS.map((preset) => (
         <button
@@ -149,6 +196,16 @@ export default function QuickActionIcon() {
           placeholder="自訂指令…"
           value={customInput}
           onChange={(e) => setCustomInput(e.target.value)}
+          onFocus={() => {
+            setIsInputFocused(true);
+            void setQaInteracting(true);
+          }}
+          onBlur={() => {
+            setIsInputFocused(false);
+            if (!panelRef.current?.matches(":hover")) {
+              collapse(true);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") invokeCustom();
           }}
