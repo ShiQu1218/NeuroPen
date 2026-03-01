@@ -45,26 +45,31 @@ pub fn get_capabilities() -> SttCapabilities {
 /// Global recording handle — only one recording at a time.
 static CAPTURE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
 
-const KEYRING_SERVICE: &str = "com.talkflow.app";
-const KEYRING_USER: &str = "openai-api-key";
-
-/// In-process cache so we don't hit the OS credential store on every transcription.
+/// In-process cache so we don't read from file on every call.
 static API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
-/// Store the OpenAI API key in the OS credential store (Windows Credential Manager)
-/// and update the in-process cache.
+/// Get the path to the API key file (~/.talkflow/api_key).
+fn api_key_file_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("Cannot find home directory")?;
+    let dir = home.join(".talkflow");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create .talkflow dir: {e}"))?;
+    }
+    Ok(dir.join("api_key"))
+}
+
+/// Store the OpenAI API key to a file and update the in-process cache.
 pub fn set_api_key(key: String) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Keyring init error: {e}"))?;
+    let path = api_key_file_path()?;
 
     if key.is_empty() {
-        let _ = entry.delete_credential(); // ignore "not found"
+        let _ = std::fs::remove_file(&path);
         let mut cache = API_KEY_CACHE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
         *cache = None;
     } else {
-        entry
-            .set_password(&key)
-            .map_err(|e| format!("Keyring save error: {e}"))?;
+        std::fs::write(&path, &key)
+            .map_err(|e| format!("Failed to save API key: {e}"))?;
         let mut cache = API_KEY_CACHE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
         *cache = Some(key);
     }
@@ -73,17 +78,15 @@ pub fn set_api_key(key: String) -> Result<(), String> {
 
 /// Check whether an API key exists (without revealing the value).
 pub fn has_api_key() -> bool {
-    // Check cache first
     if let Ok(guard) = API_KEY_CACHE.lock() {
         if guard.is_some() {
             return true;
         }
     }
-    // Fall back to credential store
     get_api_key().is_ok()
 }
 
-/// Read the API key — checks in-process cache first, then OS credential store.
+/// Read the API key — checks in-process cache first, then file.
 /// Never exposed to frontend.
 pub(crate) fn get_api_key() -> Result<String, String> {
     // Check cache
@@ -92,12 +95,14 @@ pub(crate) fn get_api_key() -> Result<String, String> {
             return Ok(key.clone());
         }
     }
-    // Read from OS credential store and populate cache
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
-        .map_err(|e| format!("Keyring init error: {e}"))?;
-    let key = entry
-        .get_password()
+    // Read from file and populate cache
+    let path = api_key_file_path()?;
+    let key = std::fs::read_to_string(&path)
         .map_err(|_| "未設定 OpenAI API Key。請在設定中填入 API Key。".to_string())?;
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err("未設定 OpenAI API Key。請在設定中填入 API Key。".to_string());
+    }
     if let Ok(mut cache) = API_KEY_CACHE.lock() {
         *cache = Some(key.clone());
     }
@@ -143,59 +148,73 @@ pub fn stop_recording(
     engine: SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    // Read the API key early (before spawning) so we fail fast if missing
-    let api_key = if engine == SttEngine::OpenAi {
-        Some(get_api_key()?)
-    } else {
-        None
-    };
-
+    // Always take and stop the capture handle first, so recording is guaranteed to stop
+    // even if the API key is missing or other errors occur.
     let handle = {
         let mut guard = CAPTURE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
         guard.take()
     };
 
-    match handle {
-        Some(h) => {
-            // Drain all buffered audio before stopping the stream
-            let mut samples = Vec::new();
-            h.drain_samples(&mut samples);
-            h.stop();
+    let h = match handle {
+        Some(h) => h,
+        None => return Err("Not recording".into()),
+    };
 
-            let _ = app.emit("stt://stop", ());
-            println!("[stt] Recording stopped, {} samples captured", samples.len());
+    // Drain all buffered audio before stopping the stream
+    let mut samples = Vec::new();
+    h.drain_samples(&mut samples);
+    h.stop();
 
-            if samples.is_empty() {
-                let _ = app.emit("stt://error", SttError {
-                    message: "No audio captured".into(),
-                });
+    let _ = app.emit("stt://stop", ());
+    println!("[stt] Recording stopped, {} samples captured", samples.len());
+
+    if samples.is_empty() {
+        let _ = app.emit("stt://error", SttError {
+            message: "No audio captured".into(),
+        });
+        return Ok(());
+    }
+
+    // Check API key after stopping — recording is already stopped at this point
+    let api_key = if engine == SttEngine::OpenAi {
+        match get_api_key() {
+            Ok(k) => Some(k),
+            Err(e) => {
+                let _ = app.emit("stt://error", SttError { message: e });
                 return Ok(());
             }
-
-            // Spawn async task to transcribe
-            let app_clone = app.clone();
-            tokio::spawn(async move {
-                let result = match engine {
-                    SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples).await,
-                    SttEngine::Local  => transcribe_local(&model_path, &samples).await,
-                };
-                match result {
-                    Ok(text) => {
-                        #[cfg(debug_assertions)]
-                        println!("[stt] Transcript: {text}");
-                        let _ = app_clone.emit("stt://final", SttResult { text });
-                    }
-                    Err(e) => {
-                        eprintln!("[stt] Transcription error: {e}");
-                        let _ = app_clone.emit("stt://error", SttError { message: e });
-                    }
-                }
-            });
-
-            Ok(())
         }
-        None => Err("Not recording".into()),
-    }
+    } else {
+        None
+    };
+
+    let duration_secs = samples.len() as f32 / TARGET_SAMPLE_RATE as f32;
+    println!("[stt] Audio duration: {:.2}s", duration_secs);
+
+    // Spawn async task to transcribe
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let result = match engine {
+            SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples).await,
+            SttEngine::Local  => transcribe_local(&model_path, &samples).await,
+        };
+        match result {
+            Ok(raw_text) => {
+                println!("[stt] Raw transcript: {:?}", raw_text);
+                let text = deduplicate_transcript(&raw_text);
+                if text != raw_text {
+                    println!("[stt] Deduped transcript: {:?}", text);
+                }
+                let _ = app_clone.emit("stt://final", SttResult { text });
+            }
+            Err(e) => {
+                eprintln!("[stt] Transcription error: {e}");
+                let _ = app_clone.emit("stt://error", SttError { message: e });
+            }
+        }
+    });
+
+    Ok(())
 }
 
 /// Returns true if currently recording.
@@ -294,6 +313,88 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
     }
 }
 
+/// Detect and remove Whisper hallucination where short text is repeated.
+///
+/// Handles patterns like:
+///   "12341234"     → "1234"       (exact repeat)
+///   "1234 1234"    → "1234"       (space-separated repeat)
+///   "1234，1234"   → "1234"       (punctuation-separated repeat)
+///   "1234。1234。" → "1234"       (trailing punctuation)
+fn deduplicate_transcript(text: &str) -> String {
+    // Strip trailing punctuation/whitespace for comparison
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // Normalize: remove common Chinese/English punctuation and whitespace for comparison
+    let strip_punct = |s: &str| -> String {
+        s.chars()
+            .filter(|c| !c.is_whitespace() && !"，。、！？,.!?;；：:".contains(*c))
+            .collect()
+    };
+
+    let clean = strip_punct(trimmed);
+    let clean_chars: Vec<char> = clean.chars().collect();
+    let len = clean_chars.len();
+
+    if len < 2 {
+        return trimmed.to_string();
+    }
+
+    // Check if the cleaned string is the same substring repeated 2+ times
+    // Try divisors from len/2 down to 1
+    for sub_len in (1..=len / 2).rev() {
+        if len % sub_len != 0 {
+            continue;
+        }
+        let repeat_count = len / sub_len;
+        if repeat_count < 2 {
+            continue;
+        }
+        let pattern: String = clean_chars[..sub_len].iter().collect();
+        let mut all_match = true;
+        for i in 1..repeat_count {
+            let chunk: String = clean_chars[i * sub_len..(i + 1) * sub_len].iter().collect();
+            if chunk != pattern {
+                all_match = false;
+                break;
+            }
+        }
+        if all_match && repeat_count >= 2 {
+            // Found a repeated pattern — return just the first occurrence
+            // Use the original text to preserve formatting up to the first occurrence
+            // Find where the first occurrence ends in the original text
+            let pattern_chars: Vec<char> = pattern.chars().collect();
+            let orig_chars: Vec<char> = trimmed.chars().collect();
+            let mut matched = 0;
+            let mut end_idx = 0;
+            for (i, &c) in orig_chars.iter().enumerate() {
+                if c.is_whitespace() || "，。、！？,.!?;；：:".contains(c) {
+                    continue;
+                }
+                if c == pattern_chars[matched] {
+                    matched += 1;
+                    if matched == pattern_chars.len() {
+                        end_idx = i + 1;
+                        break;
+                    }
+                }
+            }
+            if end_idx > 0 {
+                let result: String = orig_chars[..end_idx].iter().collect();
+                // Trim trailing punctuation from the extracted portion
+                return result.trim_end_matches(|c: char| {
+                    c.is_whitespace() || "，。、！？,.!?;；：:".contains(c)
+                }).to_string();
+            }
+            return pattern;
+        }
+    }
+
+    trimmed.to_string()
+}
+
 /// Encode f32 PCM samples as a WAV file in memory (16kHz mono 16-bit).
 fn encode_wav(samples: &[f32]) -> Vec<u8> {
     let num_samples = samples.len();
@@ -349,7 +450,8 @@ async fn transcribe_openai(api_key: &str, samples: &[f32]) -> Result<String, Str
     let form = reqwest::multipart::Form::new()
         .text("model", "whisper-1")
         .text("language", "zh")
-        .text("response_format", "json")
+        .text("response_format", "verbose_json")
+        .text("temperature", "0")
         .part("file", part);
 
     let client = reqwest::Client::new();
@@ -371,12 +473,100 @@ async fn transcribe_openai(api_key: &str, samples: &[f32]) -> Result<String, Str
         return Err(format!("Whisper API error ({}): {}", status, body));
     }
 
-    // Parse {"text": "..."}
+    println!("[stt] Whisper API raw response: {}", &body[..body.len().min(500)]);
+
+    // Parse verbose_json format: { "text": "...", "segments": [...] }
     let parsed: serde_json::Value =
         serde_json::from_str(&body).map_err(|e| format!("Failed to parse response: {e}"))?;
 
+    // Try to use segments to filter out hallucinated repeats.
+    // Whisper marks hallucinated segments with high compression_ratio (>2.4)
+    // or very high no_speech_prob (>0.6).
+    if let Some(segments) = parsed["segments"].as_array() {
+        let mut result = String::new();
+        for seg in segments {
+            let compression = seg["compression_ratio"].as_f64().unwrap_or(0.0);
+            let no_speech = seg["no_speech_prob"].as_f64().unwrap_or(0.0);
+            let seg_text = seg["text"].as_str().unwrap_or("");
+
+            println!(
+                "[stt] Segment: {:?} (compression={:.2}, no_speech={:.2})",
+                seg_text, compression, no_speech
+            );
+
+            // Skip segments that look hallucinated
+            if compression > 2.4 || no_speech > 0.6 {
+                println!("[stt] Skipping hallucinated segment");
+                continue;
+            }
+            result.push_str(seg_text);
+        }
+        if !result.is_empty() {
+            return Ok(result.trim().to_string());
+        }
+    }
+
+    // Fallback: use the top-level text field
     parsed["text"]
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| format!("Unexpected response format: {body}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dedup_exact_repeat() {
+        assert_eq!(deduplicate_transcript("12341234"), "1234");
+    }
+
+    #[test]
+    fn test_dedup_with_space() {
+        assert_eq!(deduplicate_transcript("1234 1234"), "1234");
+    }
+
+    #[test]
+    fn test_dedup_chinese() {
+        assert_eq!(deduplicate_transcript("你好你好"), "你好");
+    }
+
+    #[test]
+    fn test_dedup_with_punctuation() {
+        assert_eq!(deduplicate_transcript("1234，1234"), "1234");
+    }
+
+    #[test]
+    fn test_dedup_trailing_period() {
+        assert_eq!(deduplicate_transcript("1234。1234。"), "1234");
+    }
+
+    #[test]
+    fn test_dedup_triple_repeat() {
+        assert_eq!(deduplicate_transcript("abcabcabc"), "abc");
+    }
+
+    #[test]
+    fn test_dedup_no_repeat() {
+        assert_eq!(deduplicate_transcript("hello world"), "hello world");
+    }
+
+    #[test]
+    fn test_dedup_single_char() {
+        assert_eq!(deduplicate_transcript("a"), "a");
+    }
+
+    #[test]
+    fn test_dedup_empty() {
+        assert_eq!(deduplicate_transcript(""), "");
+    }
+
+    #[test]
+    fn test_dedup_chinese_sentence() {
+        assert_eq!(
+            deduplicate_transcript("今天天氣很好今天天氣很好"),
+            "今天天氣很好"
+        );
+    }
 }

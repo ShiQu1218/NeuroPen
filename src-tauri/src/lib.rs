@@ -28,21 +28,15 @@ pub struct FocusInfo {
 // ── Tauri commands exposed to the frontend ──────────────────────────────
 
 /// Lock the current foreground window and cache clipboard.
-/// Called by the frontend when Alt+Space is received.
 #[tauri::command]
 fn trigger_hotkey() -> Result<FocusInfo, String> {
-    // 1. Lock the foreground window
     window_focus::lock_foreground_window();
     let hwnd = window_focus::get_locked_hwnd();
-
-    // 2. Cache clipboard
     clipboard::cache_clipboard()?;
-
     Ok(FocusInfo { hwnd })
 }
 
 /// Read current text selection via UI Automation.
-/// Silently returns `has_selection: false` if UA is unavailable.
 #[tauri::command]
 fn get_selection() -> SelectionInfo {
     match selection::get_selected_text() {
@@ -66,12 +60,10 @@ fn read_selection_clipboard() -> Result<String, String> {
 }
 
 /// Inject text into the locked foreground window.
-/// Also records the injection for undo if `record_for_undo` is true.
 #[tauri::command]
 fn inject_text(text: String, record_for_undo: bool) -> Result<(), String> {
     let hwnd = window_focus::get_locked_hwnd();
     injection::inject_text(&text).map_err(|e| e.to_string())?;
-
     if record_for_undo {
         undo::record_injection(hwnd, text);
     }
@@ -88,6 +80,12 @@ fn undo_injection() -> Result<bool, String> {
 #[tauri::command]
 fn verify_focus() -> bool {
     window_focus::verify_focus_unchanged()
+}
+
+/// Restore focus to the locked foreground window (for Replace from Preview Window).
+#[tauri::command]
+fn restore_focus() -> bool {
+    window_focus::restore_focus()
 }
 
 /// Write text to clipboard (for "Copy" button in Preview Window).
@@ -118,7 +116,7 @@ fn stop_recording(
     stt::stop_recording(app, engine, model_path)
 }
 
-/// Store the OpenAI API key in Rust process memory (never sent back to frontend).
+/// Store the OpenAI API key (in OS credential store + in-process cache).
 #[tauri::command]
 fn set_api_key(key: String) -> Result<(), String> {
     stt::set_api_key(key)
@@ -161,7 +159,6 @@ async fn call_llm(
 }
 
 /// Route a completed STT transcript to determine the operating mode.
-/// Returns the mode, cleaned transcript, and context.
 #[tauri::command]
 fn route_transcript(
     transcript: String,
@@ -178,6 +175,13 @@ fn route_on_trigger(has_selection: bool) -> mode_router::AppMode {
     mode_router::route_on_trigger(has_selection)
 }
 
+/// Change the global trigger hotkey at runtime.
+#[tauri::command]
+fn change_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
+    let (modifiers, code) = hotkey::parse_hotkey(&hotkey_str)?;
+    hotkey::change_trigger(&app, modifiers, code)
+}
+
 // ── App setup ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -192,6 +196,7 @@ pub fn run() {
             inject_text,
             undo_injection,
             verify_focus,
+            restore_focus,
             copy_to_clipboard,
             restore_clipboard,
             start_recording,
@@ -204,10 +209,14 @@ pub fn run() {
             call_llm,
             route_transcript,
             route_on_trigger,
+            change_hotkey,
         ])
         .setup(|app| {
             // Initialize COM for UI Automation on the main thread
             selection::init_com();
+
+            // Start selection watcher (background polling)
+            selection::start_selection_watcher(app.handle().clone());
 
             // Register global hotkeys
             let handle = app.handle().clone();
@@ -215,10 +224,16 @@ pub fn run() {
                 eprintln!("[setup] Failed to register hotkeys: {e}");
             }
 
-            // Listen for hotkey://trigger → run trigger_hotkey logic & emit mode info
-            let handle2 = app.handle().clone();
-            app.listen("hotkey://trigger", move |_event| {
-                println!("[event] hotkey://trigger received");
+            // ── hotkey://press → start recording (press-and-hold) ──
+            let handle_press = app.handle().clone();
+            app.listen("hotkey://press", move |_event| {
+                println!("[event] hotkey://press received");
+
+                // If already recording, ignore (don't double-start from key repeat)
+                if stt::is_recording() {
+                    return;
+                }
+
                 // Lock window & cache clipboard
                 window_focus::lock_foreground_window();
                 let _ = clipboard::cache_clipboard();
@@ -230,10 +245,9 @@ pub fn run() {
                     _ => (false, None),
                 };
 
-                // Determine initial mode
                 let initial_mode = mode_router::route_on_trigger(has_selection);
 
-                let _ = handle2.emit("talkflow://mode-start", serde_json::json!({
+                let _ = handle_press.emit("talkflow://mode-start", serde_json::json!({
                     "has_selection": has_selection,
                     "selected_text": selected_text,
                     "initial_mode": initial_mode,
@@ -241,19 +255,32 @@ pub fn run() {
                 }));
             });
 
+            // ── hotkey://release → stop recording ──
+            let handle_release = app.handle().clone();
+            app.listen("hotkey://release", move |_event| {
+                println!("[event] hotkey://release received");
+
+                // Only stop if currently recording
+                if !stt::is_recording() {
+                    return;
+                }
+
+                let _ = handle_release.emit("talkflow://hotkey-release", ());
+            });
+
             // Listen for hotkey://undo → undo last injection
-            let handle3 = app.handle().clone();
+            let handle_undo = app.handle().clone();
             app.listen("hotkey://undo", move |_event| {
                 println!("[event] hotkey://undo received");
                 match undo::undo_last_injection() {
                     Ok(true) => {
-                        let _ = handle3.emit("talkflow://undo-result", serde_json::json!({ "success": true }));
+                        let _ = handle_undo.emit("talkflow://undo-result", serde_json::json!({ "success": true }));
                     }
                     Ok(false) => {
-                        let _ = handle3.emit("talkflow://undo-result", serde_json::json!({ "success": false, "reason": "nothing_to_undo" }));
+                        let _ = handle_undo.emit("talkflow://undo-result", serde_json::json!({ "success": false, "reason": "nothing_to_undo" }));
                     }
                     Err(e) => {
-                        let _ = handle3.emit("talkflow://undo-result", serde_json::json!({ "success": false, "reason": e }));
+                        let _ = handle_undo.emit("talkflow://undo-result", serde_json::json!({ "success": false, "reason": e }));
                     }
                 }
             });

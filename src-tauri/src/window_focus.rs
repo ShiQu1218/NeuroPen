@@ -35,6 +35,28 @@ pub fn get_locked_hwnd() -> isize {
     LOCKED_HWND.lock().map(|h| *h).unwrap_or(0)
 }
 
+/// Restore focus to the locked foreground window.
+/// Returns true if focus was successfully restored.
+pub fn restore_focus() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+        let locked = get_locked_hwnd();
+        if locked == 0 {
+            return false;
+        }
+        let hwnd = HWND(locked as *mut _);
+        let ok = unsafe { SetForegroundWindow(hwnd) };
+        println!("[window_focus] restore_focus to HWND={locked}, result={ok:?}");
+        ok.into()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        true
+    }
+}
+
 /// Returns true if the foreground window hasn't changed since locking.
 /// Returns false (→ cancel injection and warn user) if focus has moved.
 pub fn verify_focus_unchanged() -> bool {

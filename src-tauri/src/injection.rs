@@ -197,7 +197,10 @@ pub fn simulate_ctrl_c() -> Result<(), InjectionError> {
 ///   1. Verify focus window is unchanged → `FocusChanged` if moved
 ///   2. Write text to clipboard
 ///   3. Simulate Ctrl+V
-///   4. Restore original clipboard
+///
+/// NOTE: Clipboard restore is the caller's responsibility.
+/// This avoids double-restore issues and gives the target app enough
+/// time to process the paste before the clipboard content changes.
 pub fn inject_text(text: &str) -> Result<(), InjectionError> {
     // 1. Verify focus
     if !window_focus::verify_focus_unchanged() {
@@ -209,11 +212,6 @@ pub fn inject_text(text: &str) -> Result<(), InjectionError> {
 
     // 3. Simulate Ctrl+V
     simulate_ctrl_v()?;
-
-    // 4. Restore original clipboard (best-effort — don't fail the injection)
-    if let Err(e) = clipboard::restore_clipboard() {
-        println!("[injection] Warning: clipboard restore failed: {e}");
-    }
 
     println!("[injection] Injected {} chars", text.len());
     Ok(())

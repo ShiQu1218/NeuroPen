@@ -29,9 +29,10 @@ export default function Settings() {
     apiKeySet, setApiKeySet,
   } = useAppStore();
 
-  // Local input state — the actual key value never leaves this component
+  // Local input state
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKeySaveStatus, setApiKeySaveStatus] = useState<"" | "saving" | "saved" | "error">("");
+  const [hotkeyStatus, setHotkeyStatus] = useState<"" | "error">("");
 
   // Query backend once on mount
   useEffect(() => {
@@ -69,9 +70,43 @@ export default function Settings() {
         <input
           className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
           value={hotkey}
-          onChange={(e) => setHotkey(e.target.value)}
-          placeholder="Alt+Space"
+          readOnly
+          placeholder="按下快捷鍵組合…"
+          onKeyDown={(e) => {
+            e.preventDefault();
+            // Ignore modifier-only presses
+            if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+
+            const parts: string[] = [];
+            if (e.ctrlKey) parts.push("Ctrl");
+            if (e.altKey) parts.push("Alt");
+            if (e.shiftKey) parts.push("Shift");
+            if (e.metaKey) parts.push("Super");
+
+            // Normalize key name
+            let key = e.key;
+            if (key === " ") key = "Space";
+            else if (key.length === 1) key = key.toUpperCase();
+            parts.push(key);
+
+            const newHotkey = parts.join("+");
+            // Register with backend first, only update UI on success
+            invoke("change_hotkey", { hotkeyStr: newHotkey })
+              .then(() => {
+                setHotkey(newHotkey);
+                setHotkeyStatus("");
+              })
+              .catch((err) => {
+                console.error("[Settings] change_hotkey failed:", err);
+                setHotkeyStatus("error");
+                setTimeout(() => setHotkeyStatus(""), 2000);
+              });
+          }}
         />
+        <p className="text-xs text-gray-400">點擊欄位後按下想要的快捷鍵組合（按住錄音，放開停止）。</p>
+        {hotkeyStatus === "error" && (
+          <p className="text-xs text-red-600">快捷鍵註冊失敗，請嘗試其他組合。</p>
+        )}
       </div>
 
       {/* Wake word */}

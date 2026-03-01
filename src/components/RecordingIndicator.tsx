@@ -16,24 +16,28 @@ export default function RecordingIndicator() {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    const unlistenStart = listen("stt://start", () => {
-      setIsRecording(true);
-      setElapsed(0);
-      getCurrentWindow().show();
-    });
+    let cancelled = false;
+    const unlisten: Array<() => void> = [];
 
-    const unlistenStop = listen("stt://stop", () => {
-      setIsRecording(false);
-      setElapsed(0);
-      // Small delay before hiding so user sees the transition
-      setTimeout(() => {
-        getCurrentWindow().hide();
-      }, 300);
-    });
+    (async () => {
+      const u1 = await listen("stt://start", () => {
+        setIsRecording(true);
+        setElapsed(0);
+        getCurrentWindow().show();
+      });
+      if (cancelled) { u1(); } else { unlisten.push(u1); }
+
+      const u2 = await listen("stt://stop", () => {
+        setIsRecording(false);
+        setElapsed(0);
+        setTimeout(() => { getCurrentWindow().hide(); }, 300);
+      });
+      if (cancelled) { u2(); } else { unlisten.push(u2); }
+    })();
 
     return () => {
-      unlistenStart.then((fn_) => fn_());
-      unlistenStop.then((fn_) => fn_());
+      cancelled = true;
+      unlisten.forEach((fn) => fn());
     };
   }, []);
 
