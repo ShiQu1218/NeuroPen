@@ -32,6 +32,15 @@ npm install
 npm run tauri dev
 ```
 
+### 本地 Whisper（`local-stt`）建置注意
+
+```bash
+# 從專案根目錄執行（不是只在 src-tauri 目錄單獨 cargo build）
+npm run tauri build -- --features local-stt
+```
+
+> 若只執行 `cargo build`，前端 `dist` 不會同步重建；若執行的是舊的 `talkflow.exe`，仍會看到「本地 Whisper 未編譯」訊息。
+
 ### 專案架構概覽
 
 *   `src/`：前端 React 與 TypeScript 原始碼 (UI/UX 實作、選單設計)

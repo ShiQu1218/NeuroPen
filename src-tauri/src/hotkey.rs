@@ -144,7 +144,7 @@ pub fn parse_hotkey(hotkey: &str) -> Result<(Option<Modifiers>, Code), String> {
         "4" | "digit4" => Code::Digit4, "5" | "digit5" => Code::Digit5,
         "6" | "digit6" => Code::Digit6, "7" | "digit7" => Code::Digit7,
         "8" | "digit8" => Code::Digit8, "9" | "digit9" => Code::Digit9,
-        "`" | "backquote" => Code::Backquote,
+        "`" | "backquote" | "dead" => Code::Backquote,
         "-" | "minus" => Code::Minus,
         "=" | "equal" => Code::Equal,
         "[" | "bracketleft" => Code::BracketLeft,

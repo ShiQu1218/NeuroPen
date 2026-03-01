@@ -23,6 +23,7 @@
     "core:window:allow-outer-position",
     "core:window:allow-outer-size",
     "core:window:allow-inner-size",
+    "core:window:allow-current-monitor",
     "core:window:allow-is-visible",
     "core:window:allow-is-focused",
     "core:webview:allow-webview-show",

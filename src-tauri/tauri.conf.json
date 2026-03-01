@@ -21,8 +21,8 @@
       {
         "label": "settings",
         "title": "TalkFlow 設定",
-        "width": 520,
-        "height": 620,
+        "width": 760,
+        "height": 860,
         "visible": false,
         "center": true
       },
@@ -58,6 +58,7 @@
         "decorations": false,
         "alwaysOnTop": true,
         "transparent": true,
+        "shadow": false,
         "skipTaskbar": true,
         "resizable": false
       }

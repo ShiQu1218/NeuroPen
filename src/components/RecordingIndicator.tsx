@@ -9,7 +9,8 @@
  */
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
+import { PhysicalPosition } from "@tauri-apps/api/dpi";
 
 export default function RecordingIndicator() {
   const [isRecording, setIsRecording] = useState(false);
@@ -20,10 +21,23 @@ export default function RecordingIndicator() {
     const unlisten: Array<() => void> = [];
 
     (async () => {
-      const u1 = await listen("stt://start", () => {
+      const u1 = await listen("stt://start", async () => {
         setIsRecording(true);
         setElapsed(0);
-        getCurrentWindow().show();
+        const win = getCurrentWindow();
+        await win.center();
+        await win.show();
+        try {
+          const monitor = await currentMonitor();
+          const size = await win.outerSize();
+          if (monitor) {
+            const x = monitor.position.x + Math.floor((monitor.size.width - size.width) / 2);
+            const y = monitor.position.y + monitor.size.height - size.height - 36;
+            await win.setPosition(new PhysicalPosition(x, y));
+          }
+        } catch (err) {
+          console.warn("[RecordingIndicator] positioning failed:", err);
+        }
       });
       if (cancelled) { u1(); } else { unlisten.push(u1); }
 

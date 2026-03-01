@@ -70,6 +70,7 @@ function MainWindow() {
     setCurrentMode,
     setSttError,
     setSttEngine,
+    setSttModelPath,
     setWakeWord,
     setHotkey,
     setOutputMode,
@@ -138,6 +139,7 @@ function MainWindow() {
         wakeWord: string;
         hotkey: string;
         sttEngine: "openAi" | "local";
+        sttModelPath?: string;
         outputMode: "DirectInject" | "PreviewStream";
         llmProvider: "openAi" | "gemini" | "claude" | "grok";
         llmModel: string;
@@ -153,6 +155,9 @@ function MainWindow() {
           }
           if (payload.sttEngine) {
             setSttEngine(payload.sttEngine);
+          }
+          if (typeof payload.sttModelPath === "string") {
+            setSttModelPath(payload.sttModelPath);
           }
           if (payload.outputMode) {
             setOutputMode(payload.outputMode);

@@ -134,6 +134,30 @@ fn get_stt_capabilities() -> stt::SttCapabilities {
     stt::get_capabilities()
 }
 
+/// List local STT catalog with installed/active status.
+#[tauri::command]
+fn list_local_stt_models() -> Result<Vec<stt::LocalSttModel>, String> {
+    stt::list_local_stt_models()
+}
+
+/// Install a local STT model file.
+#[tauri::command]
+async fn install_local_stt_model(model_id: String) -> Result<stt::LocalSttModel, String> {
+    stt::install_local_stt_model(model_id).await
+}
+
+/// Delete an installed local STT model file.
+#[tauri::command]
+fn delete_local_stt_model(model_id: String) -> Result<(), String> {
+    stt::delete_local_stt_model(model_id)
+}
+
+/// Select one installed local STT model as active and return its path.
+#[tauri::command]
+fn select_local_stt_model(model_id: String) -> Result<String, String> {
+    stt::select_local_stt_model(model_id)
+}
+
 /// Check if currently recording.
 #[tauri::command]
 fn is_recording() -> bool {
@@ -216,6 +240,10 @@ pub fn run() {
             set_api_key,
             has_api_key,
             get_stt_capabilities,
+            list_local_stt_models,
+            install_local_stt_model,
+            delete_local_stt_model,
+            select_local_stt_model,
             list_audio_devices,
             call_llm,
             route_transcript,
