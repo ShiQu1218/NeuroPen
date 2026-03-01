@@ -4,6 +4,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { useAppStore } from "../store/useAppStore";
 
 const PRESETS = [
   { id: "translate", label: "翻譯成英文" },
@@ -23,6 +24,8 @@ const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 240 };
 
 export default function QuickActionIcon() {
+  const outputMode = useAppStore((s) => s.outputMode);
+  const [runtimeOutputMode, setRuntimeOutputMode] = useState(outputMode);
   const [expanded, setExpanded] = useState(false);
   const [customInput, setCustomInput] = useState("");
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -34,12 +37,25 @@ export default function QuickActionIcon() {
   }, []);
 
   useEffect(() => {
+    setRuntimeOutputMode(outputMode);
+  }, [outputMode]);
+
+  useEffect(() => {
     let unlistenSelection: (() => void) | null = null;
+    let unlistenSettings: (() => void) | null = null;
     void (async () => {
       unlistenSelection = await listen<{ text: string }>(
         "talkflow://stable-selection",
         (event) => {
           stableSelectionRef.current = event.payload.text ?? "";
+        }
+      );
+      unlistenSettings = await listen<{ outputMode?: "DirectInject" | "PreviewStream" }>(
+        "talkflow://settings-saved",
+        (event) => {
+          if (event.payload.outputMode) {
+            setRuntimeOutputMode(event.payload.outputMode);
+          }
         }
       );
     })();
@@ -48,6 +64,7 @@ export default function QuickActionIcon() {
         clearTimeout(collapseTimer.current);
       }
       unlistenSelection?.();
+      unlistenSettings?.();
       void setQaInteracting(false);
     };
   }, [setQaInteracting]);
@@ -124,28 +141,33 @@ export default function QuickActionIcon() {
     const qaPos = await getCurrentWindow().outerPosition();
     const qaSize = await getCurrentWindow().outerSize();
 
-    // Show preview window positioned below the quick action icon
-    await emit("talkflow://preview-session", {
-      selectedText,
-      instruction,
-    });
-    const previewWin = await WebviewWindow.getByLabel("preview");
-    if (previewWin) {
-      const previewX = qaPos.x;
-      const previewY = qaPos.y + qaSize.height + 4;
-      await previewWin.setPosition(
-        new PhysicalPosition(previewX, previewY)
-      );
-      await previewWin.show();
-      await previewWin.setFocus();
+    if (runtimeOutputMode === "PreviewStream") {
+      // Show preview window positioned below the quick action icon
+      await emit("talkflow://preview-session", {
+        selectedText,
+        instruction,
+      });
+      const previewWin = await WebviewWindow.getByLabel("preview");
+      if (previewWin) {
+        const previewX = qaPos.x;
+        const previewY = qaPos.y + qaSize.height + 4;
+        await previewWin.setPosition(
+          new PhysicalPosition(previewX, previewY)
+        );
+        await previewWin.show();
+        await previewWin.setFocus();
+      }
     }
 
     // Call LLM
     await invoke("call_llm", {
       selectedText,
       instruction,
-      outputMode: "PreviewStream",
+      outputMode: runtimeOutputMode,
     });
+    if (runtimeOutputMode === "DirectInject") {
+      await invoke("restore_clipboard");
+    }
   };
 
   const invokePreset = async (presetId: string) => {

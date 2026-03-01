@@ -62,13 +62,16 @@ function App() {
 
 /** Main window handles hotkey events and orchestrates the full flow. */
 function MainWindow() {
-  const [statusMsg, setStatusMsg] = useState("按住 Alt+Space 開始錄音");
+  const [statusMsg, setStatusMsg] = useState("按住熱鍵開始錄音");
 
   const {
     setIsRecording,
     setSelectedText,
     setCurrentMode,
     setSttError,
+    setWakeWord,
+    setHotkey,
+    setOutputMode,
     resetSession,
   } = useAppStore();
 
@@ -125,6 +128,24 @@ function MainWindow() {
               }
             }
           }
+        }
+      );
+
+      await safeRegister<{ wakeWord: string; hotkey: string; outputMode: "DirectInject" | "PreviewStream" }>(
+        "talkflow://settings-saved",
+        (event) => {
+          const payload = event.payload;
+          if (payload.wakeWord) {
+            setWakeWord(payload.wakeWord);
+          }
+          if (payload.hotkey) {
+            setHotkey(payload.hotkey);
+          }
+          if (payload.outputMode) {
+            setOutputMode(payload.outputMode);
+          }
+          setStatusMsg("設定已更新");
+          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
         }
       );
 
@@ -334,7 +355,7 @@ function MainWindow() {
             await new Promise((r) => setTimeout(r, 150));
             await invoke("restore_clipboard");
             setStatusMsg("已注入文字");
-            setTimeout(() => setStatusMsg("按住 Alt+Space 開始錄音"), 2000);
+            setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
           } else if (mode === "B2") {
             // ── Mode B2 — voice command on selected text ──
             if (store.incognito) {
@@ -346,23 +367,30 @@ function MainWindow() {
             store.setLlmError("");
             store.setLastSelectedText(store.selectedText);
             store.setLastInstruction(result.transcript);
-            await emit("talkflow://preview-session", {
-              selectedText: store.selectedText,
-              instruction: result.transcript,
-            });
+            if (store.outputMode === "PreviewStream") {
+              await emit("talkflow://preview-session", {
+                selectedText: store.selectedText,
+                instruction: result.transcript,
+              });
 
-            const previewWin = await WebviewWindow.getByLabel("preview");
-            if (previewWin) {
-              await previewWin.show();
-              await previewWin.setFocus();
+              const previewWin = await WebviewWindow.getByLabel("preview");
+              if (previewWin) {
+                await previewWin.show();
+                await previewWin.setFocus();
+              }
             }
 
             setStatusMsg("LLM 處理中…");
             await invoke("call_llm", {
               selectedText: store.selectedText,
               instruction: result.transcript,
-              outputMode: "PreviewStream",
+              outputMode: store.outputMode,
             });
+            if (store.outputMode === "DirectInject") {
+              await invoke("restore_clipboard");
+              setStatusMsg("已注入文字");
+              setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+            }
           } else if (mode === "C") {
             // ── Mode C — LLM query ──
             if (store.incognito) {
@@ -373,23 +401,30 @@ function MainWindow() {
             store.setIsLlmLoading(true);
             store.setLlmError("");
             store.setLastInstruction(result.transcript);
-            await emit("talkflow://preview-session", {
-              selectedText: "",
-              instruction: result.transcript,
-            });
+            if (store.outputMode === "PreviewStream") {
+              await emit("talkflow://preview-session", {
+                selectedText: "",
+                instruction: result.transcript,
+              });
 
-            const previewWin = await WebviewWindow.getByLabel("preview");
-            if (previewWin) {
-              await previewWin.show();
-              await previewWin.setFocus();
+              const previewWin = await WebviewWindow.getByLabel("preview");
+              if (previewWin) {
+                await previewWin.show();
+                await previewWin.setFocus();
+              }
             }
 
             setStatusMsg("LLM 處理中…");
             await invoke("call_llm", {
               selectedText: "",
               instruction: result.transcript,
-              outputMode: "PreviewStream",
+              outputMode: store.outputMode,
             });
+            if (store.outputMode === "DirectInject") {
+              await invoke("restore_clipboard");
+              setStatusMsg("已注入文字");
+              setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+            }
           }
         } catch (err) {
           console.error("[App] route_transcript error:", err);
@@ -415,7 +450,7 @@ function MainWindow() {
           } else {
             setStatusMsg("無法復原: " + (event.payload.reason ?? ""));
           }
-          setTimeout(() => setStatusMsg("按住 Alt+Space 開始錄音"), 2000);
+          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
         }
       );
     })();

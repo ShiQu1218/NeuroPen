@@ -60,7 +60,7 @@ export const useAppStore = create<AppState>()(
       sttModelPath: "",
       outputMode: "PreviewStream",
       incognito: false,
-      hotkey: "Alt+Space",
+      hotkey: "Alt+`",
       sttEngine: "openAi",
 
       isRecording: false,

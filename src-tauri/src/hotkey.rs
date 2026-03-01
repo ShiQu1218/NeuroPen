@@ -1,7 +1,7 @@
 //! Global hotkey listener.
 //!
-//! - `Alt+Space` pressed  → emit `hotkey://press`
-//! - `Alt+Space` released → emit `hotkey://release`
+//! - `Alt+Backquote` pressed  → emit `hotkey://press`
+//! - `Alt+Backquote` released → emit `hotkey://release`
 //! - `Alt+Z`    pressed   → emit `hotkey://undo`
 //!
 //! Uses `tauri-plugin-global-shortcut`.
@@ -18,16 +18,18 @@ static CURRENT_SHORTCUT: Mutex<Option<(Option<Modifiers>, Code)>> = Mutex::new(N
 pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Unregister any existing shortcuts first (idempotent)
     let alt_space = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+    let alt_backquote = Shortcut::new(Some(Modifiers::ALT), Code::Backquote);
     let alt_z = Shortcut::new(Some(Modifiers::ALT), Code::KeyZ);
     let _ = app.global_shortcut().unregister(alt_space);
+    let _ = app.global_shortcut().unregister(alt_backquote);
     let _ = app.global_shortcut().unregister(alt_z);
 
-    register_trigger(app, Some(Modifiers::ALT), Code::Space)?;
+    register_trigger(app, Some(Modifiers::ALT), Code::Backquote)?;
     register_undo(app)?;
     Ok(())
 }
 
-/// Register the main trigger hotkey (Alt+Space by default).
+/// Register the main trigger hotkey (Alt+` by default).
 fn register_trigger(
     app: &tauri::AppHandle,
     modifiers: Option<Modifiers>,
@@ -40,11 +42,11 @@ fn register_trigger(
         match event.state {
             ShortcutState::Pressed => {
                 let _ = app_handle.emit("hotkey://press", ());
-                println!("[hotkey] Alt+Space pressed");
+                println!("[hotkey] Trigger pressed");
             }
             ShortcutState::Released => {
                 let _ = app_handle.emit("hotkey://release", ());
-                println!("[hotkey] Alt+Space released");
+                println!("[hotkey] Trigger released");
             }
         }
     })?;

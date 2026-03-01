@@ -2,7 +2,7 @@
  * Settings UI
  *
  * Phase 4 implementation:
- * - Hotkey configuration (default: Alt+Space)
+ * - Hotkey configuration (default: Alt+`)
  * - Wake word setting (default: 助理)
  * - STT engine selector (OpenAI Whisper API / Local Whisper)
  * - Local model path (shown only when local engine selected and available)
@@ -15,6 +15,7 @@
  */
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { useAppStore } from "../store/useAppStore";
 
 export default function Settings() {
@@ -33,6 +34,10 @@ export default function Settings() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKeySaveStatus, setApiKeySaveStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [hotkeyStatus, setHotkeyStatus] = useState<"" | "error">("");
+  const [settingsSaveStatus, setSettingsSaveStatus] = useState<"" | "saved" | "error">("");
+  const [draftWakeWord, setDraftWakeWord] = useState(wakeWord);
+  const [draftHotkey, setDraftHotkey] = useState(hotkey);
+  const [draftOutputMode, setDraftOutputMode] = useState(outputMode);
 
   // Query backend once on mount
   useEffect(() => {
@@ -44,6 +49,18 @@ export default function Settings() {
       .then((has) => setApiKeySet(has))
       .catch(() => setApiKeySet(false));
   }, []);
+
+  useEffect(() => {
+    setDraftWakeWord(wakeWord);
+  }, [wakeWord]);
+
+  useEffect(() => {
+    setDraftHotkey(hotkey);
+  }, [hotkey]);
+
+  useEffect(() => {
+    setDraftOutputMode(outputMode);
+  }, [outputMode]);
 
   const handleSaveApiKey = () => {
     setApiKeySaveStatus("saving");
@@ -60,6 +77,52 @@ export default function Settings() {
       });
   };
 
+  const handleSaveSettings = async () => {
+    const nextWakeWord = draftWakeWord.trim();
+    if (!nextWakeWord) {
+      setSettingsSaveStatus("error");
+      setTimeout(() => setSettingsSaveStatus(""), 2000);
+      return;
+    }
+
+    try {
+      if (draftHotkey !== hotkey) {
+        await invoke("change_hotkey", { hotkeyStr: draftHotkey });
+      }
+
+      setWakeWord(nextWakeWord);
+      setHotkey(draftHotkey);
+      setOutputMode(draftOutputMode);
+      await emit("talkflow://settings-saved", {
+        wakeWord: nextWakeWord,
+        hotkey: draftHotkey,
+        outputMode: draftOutputMode,
+      });
+
+      setHotkeyStatus("");
+      setSettingsSaveStatus("saved");
+      setTimeout(() => setSettingsSaveStatus(""), 2000);
+    } catch (err) {
+      console.error("[Settings] save settings failed:", err);
+      setHotkeyStatus("error");
+      setSettingsSaveStatus("error");
+      setTimeout(() => setSettingsSaveStatus(""), 2000);
+    }
+  };
+
+  const handleCancelSettings = () => {
+    setDraftWakeWord(wakeWord);
+    setDraftHotkey(hotkey);
+    setDraftOutputMode(outputMode);
+    setHotkeyStatus("");
+    setSettingsSaveStatus("");
+  };
+
+  const hasSettingsChanges =
+    draftWakeWord !== wakeWord ||
+    draftHotkey !== hotkey ||
+    draftOutputMode !== outputMode;
+
   return (
     <div className="p-6 space-y-5 text-sm text-gray-800">
       <h1 className="text-lg font-semibold">TalkFlow 設定</h1>
@@ -69,7 +132,7 @@ export default function Settings() {
         <label className="font-medium">全域熱鍵</label>
         <input
           className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
-          value={hotkey}
+          value={draftHotkey}
           readOnly
           placeholder="按下快捷鍵組合…"
           onKeyDown={(e) => {
@@ -90,20 +153,11 @@ export default function Settings() {
             parts.push(key);
 
             const newHotkey = parts.join("+");
-            // Register with backend first, only update UI on success
-            invoke("change_hotkey", { hotkeyStr: newHotkey })
-              .then(() => {
-                setHotkey(newHotkey);
-                setHotkeyStatus("");
-              })
-              .catch((err) => {
-                console.error("[Settings] change_hotkey failed:", err);
-                setHotkeyStatus("error");
-                setTimeout(() => setHotkeyStatus(""), 2000);
-              });
+            setDraftHotkey(newHotkey);
+            setHotkeyStatus("");
           }}
         />
-        <p className="text-xs text-gray-400">點擊欄位後按下想要的快捷鍵組合（按住錄音，放開停止）。</p>
+        <p className="text-xs text-gray-400">點擊欄位後按下想要的快捷鍵組合，按「儲存」後生效。</p>
         {hotkeyStatus === "error" && (
           <p className="text-xs text-red-600">快捷鍵註冊失敗，請嘗試其他組合。</p>
         )}
@@ -114,8 +168,8 @@ export default function Settings() {
         <label className="font-medium">喚醒詞</label>
         <input
           className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
-          value={wakeWord}
-          onChange={(e) => setWakeWord(e.target.value)}
+          value={draftWakeWord}
+          onChange={(e) => setDraftWakeWord(e.target.value)}
           placeholder="助理"
         />
         <p className="text-xs text-gray-400">注意：變更喚醒詞可能導致誤觸發，請謹慎使用。</p>
@@ -184,8 +238,8 @@ export default function Settings() {
               type="radio"
               name="outputMode"
               value="PreviewStream"
-              checked={outputMode === "PreviewStream"}
-              onChange={() => setOutputMode("PreviewStream")}
+              checked={draftOutputMode === "PreviewStream"}
+              onChange={() => setDraftOutputMode("PreviewStream")}
             />
             預覽串流
           </label>
@@ -194,8 +248,8 @@ export default function Settings() {
               type="radio"
               name="outputMode"
               value="DirectInject"
-              checked={outputMode === "DirectInject"}
-              onChange={() => setOutputMode("DirectInject")}
+              checked={draftOutputMode === "DirectInject"}
+              onChange={() => setDraftOutputMode("DirectInject")}
             />
             直接注入
           </label>
@@ -247,6 +301,29 @@ export default function Settings() {
           <span
             className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${incognito ? "translate-x-5" : ""}`}
           />
+        </button>
+      </div>
+
+      <div className="pt-2 flex items-center justify-end gap-2">
+        {settingsSaveStatus === "saved" && (
+          <p className="text-xs text-green-600">設定已套用。</p>
+        )}
+        {settingsSaveStatus === "error" && (
+          <p className="text-xs text-red-600">儲存失敗，請確認喚醒詞與熱鍵設定。</p>
+        )}
+        <button
+          onClick={handleCancelSettings}
+          disabled={!hasSettingsChanges}
+          className="px-3 py-1 rounded text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          取消
+        </button>
+        <button
+          onClick={handleSaveSettings}
+          disabled={!hasSettingsChanges}
+          className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          儲存
         </button>
       </div>
     </div>
