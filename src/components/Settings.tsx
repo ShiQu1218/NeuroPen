@@ -23,6 +23,8 @@ export default function Settings() {
     wakeWord, setWakeWord,
     sttModelPath, setSttModelPath,
     outputMode, setOutputMode,
+    llmProvider, setLlmProvider,
+    llmModel, setLlmModel,
     incognito, setIncognito,
     hotkey, setHotkey,
     sttEngine, setSttEngine,
@@ -37,7 +39,10 @@ export default function Settings() {
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<"" | "saved" | "error">("");
   const [draftWakeWord, setDraftWakeWord] = useState(wakeWord);
   const [draftHotkey, setDraftHotkey] = useState(hotkey);
+  const [draftSttEngine, setDraftSttEngine] = useState(sttEngine);
   const [draftOutputMode, setDraftOutputMode] = useState(outputMode);
+  const [draftLlmProvider, setDraftLlmProvider] = useState(llmProvider);
+  const [draftLlmModel, setDraftLlmModel] = useState(llmModel);
 
   // Query backend once on mount
   useEffect(() => {
@@ -59,8 +64,26 @@ export default function Settings() {
   }, [hotkey]);
 
   useEffect(() => {
+    setDraftSttEngine(sttEngine);
+  }, [sttEngine]);
+
+  useEffect(() => {
     setDraftOutputMode(outputMode);
   }, [outputMode]);
+
+  useEffect(() => {
+    setDraftLlmProvider(llmProvider);
+  }, [llmProvider]);
+
+  useEffect(() => {
+    setDraftLlmModel(llmModel);
+  }, [llmModel]);
+
+  useEffect(() => {
+    if (draftLlmProvider !== "openAi" && draftSttEngine === "openAi") {
+      setDraftSttEngine("local");
+    }
+  }, [draftLlmProvider, draftSttEngine]);
 
   const handleSaveApiKey = () => {
     setApiKeySaveStatus("saving");
@@ -79,7 +102,13 @@ export default function Settings() {
 
   const handleSaveSettings = async () => {
     const nextWakeWord = draftWakeWord.trim();
+    const nextModel = draftLlmModel.trim();
     if (!nextWakeWord) {
+      setSettingsSaveStatus("error");
+      setTimeout(() => setSettingsSaveStatus(""), 2000);
+      return;
+    }
+    if (!nextModel) {
       setSettingsSaveStatus("error");
       setTimeout(() => setSettingsSaveStatus(""), 2000);
       return;
@@ -92,11 +121,17 @@ export default function Settings() {
 
       setWakeWord(nextWakeWord);
       setHotkey(draftHotkey);
+      setSttEngine(draftSttEngine);
       setOutputMode(draftOutputMode);
+      setLlmProvider(draftLlmProvider);
+      setLlmModel(nextModel);
       await emit("talkflow://settings-saved", {
         wakeWord: nextWakeWord,
         hotkey: draftHotkey,
+        sttEngine: draftSttEngine,
         outputMode: draftOutputMode,
+        llmProvider: draftLlmProvider,
+        llmModel: nextModel,
       });
 
       setHotkeyStatus("");
@@ -113,7 +148,10 @@ export default function Settings() {
   const handleCancelSettings = () => {
     setDraftWakeWord(wakeWord);
     setDraftHotkey(hotkey);
+    setDraftSttEngine(sttEngine);
     setDraftOutputMode(outputMode);
+    setDraftLlmProvider(llmProvider);
+    setDraftLlmModel(llmModel);
     setHotkeyStatus("");
     setSettingsSaveStatus("");
   };
@@ -121,7 +159,10 @@ export default function Settings() {
   const hasSettingsChanges =
     draftWakeWord !== wakeWord ||
     draftHotkey !== hotkey ||
-    draftOutputMode !== outputMode;
+    draftSttEngine !== sttEngine ||
+    draftOutputMode !== outputMode ||
+    draftLlmProvider !== llmProvider ||
+    draftLlmModel !== llmModel;
 
   return (
     <div className="p-6 space-y-5 text-sm text-gray-800">
@@ -177,25 +218,37 @@ export default function Settings() {
 
       {/* STT Engine selector */}
       <div className="space-y-1">
-        <label className="font-medium">STT 引擎</label>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-1.5 cursor-pointer">
+        <label className="font-medium">本地 STT 引擎選擇</label>
+        {draftLlmProvider === "openAi" && (
+          <label className="flex items-center gap-2 text-xs text-gray-600">
             <input
-              type="radio"
-              name="sttEngine"
-              value="openAi"
-              checked={sttEngine === "openAi"}
-              onChange={() => setSttEngine("openAi")}
+              type="checkbox"
+              checked={draftSttEngine === "openAi"}
+              onChange={(e) => setDraftSttEngine(e.target.checked ? "openAi" : "local")}
             />
-            OpenAI Whisper API
+            使用 Whisper API（OpenAI）
           </label>
+        )}
+        <div className="flex gap-4">
+          {draftLlmProvider === "openAi" && (
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="sttEngine"
+                value="openAi"
+                checked={draftSttEngine === "openAi"}
+                onChange={() => setDraftSttEngine("openAi")}
+              />
+              OpenAI Whisper API
+            </label>
+          )}
           <label className={`flex items-center gap-1.5 ${localSttAvailable ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}>
             <input
               type="radio"
               name="sttEngine"
               value="local"
-              checked={sttEngine === "local"}
-              onChange={() => localSttAvailable && setSttEngine("local")}
+              checked={draftSttEngine === "local"}
+              onChange={() => localSttAvailable && setDraftSttEngine("local")}
               disabled={!localSttAvailable}
             />
             本地 Whisper
@@ -214,7 +267,7 @@ export default function Settings() {
       </div>
 
       {/* Local model path — only when local engine is selected and available */}
-      {sttEngine === "local" && localSttAvailable && (
+      {draftSttEngine === "local" && localSttAvailable && (
         <div className="space-y-1">
           <label className="font-medium">本地模型路徑</label>
           <input
@@ -256,40 +309,62 @@ export default function Settings() {
         </div>
       </div>
 
+      {/* LLM Provider + Model */}
+      <div className="space-y-1">
+        <label className="font-medium">LLM API 提供商</label>
+        <select
+          className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
+          value={draftLlmProvider}
+          onChange={(e) => setDraftLlmProvider(e.target.value as "openAi" | "gemini" | "claude" | "grok")}
+        >
+          <option value="openAi">OpenAI</option>
+          <option value="gemini">Gemini</option>
+          <option value="claude">Claude</option>
+          <option value="grok">Grok</option>
+        </select>
+      </div>
+      <div className="space-y-1">
+        <label className="font-medium">LLM Model</label>
+        <input
+          className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
+          value={draftLlmModel}
+          onChange={(e) => setDraftLlmModel(e.target.value)}
+          placeholder="e.g. gpt-4o-mini / gemini-1.5-pro / claude-3-5-sonnet-latest / grok-2-latest"
+        />
+      </div>
+
       {/* API Key — sent to Rust, never stored in localStorage */}
-      {(sttEngine === "openAi" || !localSttAvailable) && (
-        <div className="space-y-1">
-          <label className="font-medium">OpenAI API Key</label>
-          {apiKeySet && (
-            <p className="text-xs text-green-600">API Key 已設定。重新輸入可覆蓋。</p>
-          )}
-          <div className="flex gap-2">
-            <input
-              type="password"
-              className="flex-1 border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder={apiKeySet ? "••••••••" : "sk-…"}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && apiKeyInput) handleSaveApiKey();
-              }}
-            />
-            <button
-              onClick={handleSaveApiKey}
-              disabled={!apiKeyInput || apiKeySaveStatus === "saving"}
-              className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              {apiKeySaveStatus === "saving" ? "儲存中…" : "儲存"}
-            </button>
-          </div>
-          {apiKeySaveStatus === "saved" && (
-            <p className="text-xs text-green-600">已儲存至安全記憶體。</p>
-          )}
-          {apiKeySaveStatus === "error" && (
-            <p className="text-xs text-red-600">儲存失敗，請重試。</p>
-          )}
+      <div className="space-y-1">
+        <label className="font-medium">LLM / STT API Key</label>
+        {apiKeySet && (
+          <p className="text-xs text-green-600">API Key 已設定。重新輸入可覆蓋。</p>
+        )}
+        <div className="flex gap-2">
+          <input
+            type="password"
+            className="flex-1 border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
+            value={apiKeyInput}
+            onChange={(e) => setApiKeyInput(e.target.value)}
+            placeholder={apiKeySet ? "••••••••" : "輸入對應提供商 API Key"}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && apiKeyInput) handleSaveApiKey();
+            }}
+          />
+          <button
+            onClick={handleSaveApiKey}
+            disabled={!apiKeyInput || apiKeySaveStatus === "saving"}
+            className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {apiKeySaveStatus === "saving" ? "儲存中…" : "儲存"}
+          </button>
         </div>
-      )}
+        {apiKeySaveStatus === "saved" && (
+          <p className="text-xs text-green-600">已儲存至安全記憶體。</p>
+        )}
+        {apiKeySaveStatus === "error" && (
+          <p className="text-xs text-red-600">儲存失敗，請重試。</p>
+        )}
+      </div>
 
       {/* Incognito */}
       <div className="flex items-center gap-3">

@@ -25,7 +25,11 @@ const EXPANDED_SIZE = { width: 220, height: 240 };
 
 export default function QuickActionIcon() {
   const outputMode = useAppStore((s) => s.outputMode);
+  const llmProvider = useAppStore((s) => s.llmProvider);
+  const llmModel = useAppStore((s) => s.llmModel);
   const [runtimeOutputMode, setRuntimeOutputMode] = useState(outputMode);
+  const [runtimeLlmProvider, setRuntimeLlmProvider] = useState(llmProvider);
+  const [runtimeLlmModel, setRuntimeLlmModel] = useState(llmModel);
   const [expanded, setExpanded] = useState(false);
   const [customInput, setCustomInput] = useState("");
   const [isInputFocused, setIsInputFocused] = useState(false);
@@ -41,6 +45,14 @@ export default function QuickActionIcon() {
   }, [outputMode]);
 
   useEffect(() => {
+    setRuntimeLlmProvider(llmProvider);
+  }, [llmProvider]);
+
+  useEffect(() => {
+    setRuntimeLlmModel(llmModel);
+  }, [llmModel]);
+
+  useEffect(() => {
     let unlistenSelection: (() => void) | null = null;
     let unlistenSettings: (() => void) | null = null;
     void (async () => {
@@ -50,11 +62,21 @@ export default function QuickActionIcon() {
           stableSelectionRef.current = event.payload.text ?? "";
         }
       );
-      unlistenSettings = await listen<{ outputMode?: "DirectInject" | "PreviewStream" }>(
+      unlistenSettings = await listen<{
+        outputMode?: "DirectInject" | "PreviewStream";
+        llmProvider?: "openAi" | "gemini" | "claude" | "grok";
+        llmModel?: string;
+      }>(
         "talkflow://settings-saved",
         (event) => {
           if (event.payload.outputMode) {
             setRuntimeOutputMode(event.payload.outputMode);
+          }
+          if (event.payload.llmProvider) {
+            setRuntimeLlmProvider(event.payload.llmProvider);
+          }
+          if (event.payload.llmModel) {
+            setRuntimeLlmModel(event.payload.llmModel);
           }
         }
       );
@@ -164,6 +186,8 @@ export default function QuickActionIcon() {
       selectedText,
       instruction,
       outputMode: runtimeOutputMode,
+      provider: runtimeLlmProvider,
+      model: runtimeLlmModel,
     });
     if (runtimeOutputMode === "DirectInject") {
       await invoke("restore_clipboard");

@@ -69,9 +69,12 @@ function MainWindow() {
     setSelectedText,
     setCurrentMode,
     setSttError,
+    setSttEngine,
     setWakeWord,
     setHotkey,
     setOutputMode,
+    setLlmProvider,
+    setLlmModel,
     resetSession,
   } = useAppStore();
 
@@ -131,7 +134,14 @@ function MainWindow() {
         }
       );
 
-      await safeRegister<{ wakeWord: string; hotkey: string; outputMode: "DirectInject" | "PreviewStream" }>(
+      await safeRegister<{
+        wakeWord: string;
+        hotkey: string;
+        sttEngine: "openAi" | "local";
+        outputMode: "DirectInject" | "PreviewStream";
+        llmProvider: "openAi" | "gemini" | "claude" | "grok";
+        llmModel: string;
+      }>(
         "talkflow://settings-saved",
         (event) => {
           const payload = event.payload;
@@ -141,8 +151,17 @@ function MainWindow() {
           if (payload.hotkey) {
             setHotkey(payload.hotkey);
           }
+          if (payload.sttEngine) {
+            setSttEngine(payload.sttEngine);
+          }
           if (payload.outputMode) {
             setOutputMode(payload.outputMode);
+          }
+          if (payload.llmProvider) {
+            setLlmProvider(payload.llmProvider);
+          }
+          if (payload.llmModel) {
+            setLlmModel(payload.llmModel);
           }
           setStatusMsg("設定已更新");
           setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
@@ -385,6 +404,8 @@ function MainWindow() {
               selectedText: store.selectedText,
               instruction: result.transcript,
               outputMode: store.outputMode,
+              provider: store.llmProvider,
+              model: store.llmModel,
             });
             if (store.outputMode === "DirectInject") {
               await invoke("restore_clipboard");
@@ -419,6 +440,8 @@ function MainWindow() {
               selectedText: "",
               instruction: result.transcript,
               outputMode: store.outputMode,
+              provider: store.llmProvider,
+              model: store.llmModel,
             });
             if (store.outputMode === "DirectInject") {
               await invoke("restore_clipboard");

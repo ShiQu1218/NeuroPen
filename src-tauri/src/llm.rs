@@ -1,14 +1,16 @@
-//! OpenAI streaming LLM client.
+//! Multi-provider LLM client.
 //!
-//! Phase 3 implementation:
-//! - POST /v1/chat/completions with `stream: true`
-//! - Parse Server-Sent Events (SSE) line by line
-//! - Emit Tauri events:
-//!     `llm://token(text)` — each streamed token
-//!     `llm://done`        — generation complete
-//!     `llm://error(msg)`  — API or network failure
+//! Supported providers:
+//! - OpenAI
+//! - Gemini
+//! - Claude
+//! - Grok
+//!
+//! Emits:
+//!   `llm://token(text)` — output chunk (single full chunk in current implementation)
+//!   `llm://done`        — generation complete
+//!   `llm://error(msg)`  — API/network failure
 
-use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
@@ -19,6 +21,15 @@ pub enum OutputMode {
     DirectInject,
     /// Open the Preview Window and stream tokens there.
     PreviewStream,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LlmProvider {
+    OpenAi,
+    Gemini,
+    Claude,
+    Grok,
 }
 
 /// Preset B1 quick-action prompts.
@@ -39,18 +50,181 @@ pub struct LlmError {
     pub message: String,
 }
 
-/// Calls the OpenAI chat completions API and streams the response.
-///
-/// Emits `llm://token`, `llm://done`, and `llm://error` events.
-/// In `DirectInject` mode, injects the full output into the locked window after streaming.
+fn default_model(provider: &LlmProvider) -> &'static str {
+    match provider {
+        LlmProvider::OpenAi => "gpt-4o-mini",
+        LlmProvider::Gemini => "gemini-1.5-flash",
+        LlmProvider::Claude => "claude-3-5-sonnet-latest",
+        LlmProvider::Grok => "grok-2-latest",
+    }
+}
+
+fn extract_openai_text(parsed: &serde_json::Value) -> Option<String> {
+    if let Some(content) = parsed["choices"][0]["message"]["content"].as_str() {
+        return Some(content.to_string());
+    }
+    if let Some(arr) = parsed["choices"][0]["message"]["content"].as_array() {
+        let mut out = String::new();
+        for part in arr {
+            if let Some(text) = part["text"].as_str() {
+                out.push_str(text);
+            }
+        }
+        if !out.is_empty() {
+            return Some(out);
+        }
+    }
+    None
+}
+
+async fn call_openai_compatible(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "stream": false,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_message },
+        ]
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(base_url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("LLM API request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("LLM API read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("LLM API error ({status}): {body}"));
+    }
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("LLM API parse failed: {e}"))?;
+    extract_openai_text(&parsed).ok_or_else(|| format!("Unexpected LLM response: {body}"))
+}
+
+async fn call_gemini(
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, String> {
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model, api_key
+    );
+    let body = serde_json::json!({
+        "system_instruction": { "parts": [{ "text": system_prompt }] },
+        "contents": [{ "parts": [{ "text": user_message }] }],
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Gemini API request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Gemini API read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Gemini API error ({status}): {body}"));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Gemini API parse failed: {e}"))?;
+    let mut out = String::new();
+    if let Some(parts) = parsed["candidates"][0]["content"]["parts"].as_array() {
+        for part in parts {
+            if let Some(text) = part["text"].as_str() {
+                out.push_str(text);
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(format!("Unexpected Gemini response: {body}"));
+    }
+    Ok(out)
+}
+
+async fn call_claude(
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": 1024,
+        "system": system_prompt,
+        "messages": [{ "role": "user", "content": user_message }],
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Claude API request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Claude API read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Claude API error ({status}): {body}"));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Claude API parse failed: {e}"))?;
+    let mut out = String::new();
+    if let Some(arr) = parsed["content"].as_array() {
+        for part in arr {
+            if part["type"].as_str() == Some("text") {
+                if let Some(text) = part["text"].as_str() {
+                    out.push_str(text);
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(format!("Unexpected Claude response: {body}"));
+    }
+    Ok(out)
+}
+
 pub async fn call_llm(
     api_key: &str,
     selected_text: &str,
     instruction: &str,
     output_mode: OutputMode,
+    provider: LlmProvider,
+    model: &str,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Build messages based on whether we have selected text (B1/B2) or not (C)
     let (system_prompt, user_message) = if selected_text.is_empty() {
         (
             "You are a helpful assistant. Answer the user's question concisely in the same language they use.",
@@ -63,109 +237,55 @@ pub async fn call_llm(
         )
     };
 
-    let body = serde_json::json!({
-        "model": "gpt-4o-mini",
-        "stream": true,
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": user_message },
-        ]
-    });
+    let chosen_model = if model.trim().is_empty() {
+        default_model(&provider).to_string()
+    } else {
+        model.trim().to_string()
+    };
 
-    let client = reqwest::Client::new();
-    let resp = client
-        .post("https://api.openai.com/v1/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| {
-            let msg = format!("LLM API request failed: {e}");
-            let _ = app.emit("llm://error", LlmError { message: msg.clone() });
-            msg
-        })?;
-
-    let status = resp.status();
-    if !status.is_success() {
-        let error_body = resp.text().await.unwrap_or_default();
-        let msg = format!("LLM API error ({status}): {error_body}");
-        let _ = app.emit("llm://error", LlmError { message: msg.clone() });
-        return Err(msg);
-    }
-
-    // Stream SSE response
-    let mut stream = resp.bytes_stream();
-    let mut line_buf = String::new();
-    let mut full_output = String::new();
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| {
-            let msg = format!("Stream read error: {e}");
-            let _ = app.emit("llm://error", LlmError { message: msg.clone() });
-            msg
-        })?;
-
-        let text = String::from_utf8_lossy(&chunk);
-        line_buf.push_str(&text);
-
-        // Process complete lines
-        while let Some(newline_pos) = line_buf.find('\n') {
-            let line = line_buf[..newline_pos].trim_end_matches('\r').to_string();
-            line_buf = line_buf[newline_pos + 1..].to_string();
-
-            // Skip empty lines and SSE comment lines
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-
-            // Strip "data: " prefix
-            let data = if let Some(stripped) = line.strip_prefix("data: ") {
-                stripped
-            } else {
-                continue;
-            };
-
-            // Check for stream end
-            if data == "[DONE]" {
-                let _ = app.emit("llm://done", ());
-                println!("[llm] Stream complete, {} chars total", full_output.len());
-
-                // DirectInject: inject full output into locked window
-                if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
-                    if let Err(e) = crate::injection::inject_text(&full_output) {
-                        let msg = format!("Injection failed: {e}");
-                        let _ = app.emit("llm://error", LlmError { message: msg.clone() });
-                        return Err(msg);
-                    }
-                    println!("[llm] DirectInject: injected {} chars", full_output.len());
-                }
-
-                return Ok(());
-            }
-
-            // Parse JSON to extract delta content
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(data) {
-                if let Some(content) = parsed["choices"][0]["delta"]["content"].as_str() {
-                    if !content.is_empty() {
-                        full_output.push_str(content);
-                        let _ = app.emit("llm://token", LlmToken { text: content.to_string() });
-                    }
-                }
-            }
+    let full_output = match provider {
+        LlmProvider::OpenAi => {
+            call_openai_compatible(
+                "https://api.openai.com/v1/chat/completions",
+                api_key,
+                &chosen_model,
+                system_prompt,
+                &user_message,
+            )
+            .await
+        }
+        LlmProvider::Grok => {
+            call_openai_compatible(
+                "https://api.x.ai/v1/chat/completions",
+                api_key,
+                &chosen_model,
+                system_prompt,
+                &user_message,
+            )
+            .await
+        }
+        LlmProvider::Gemini => {
+            call_gemini(api_key, &chosen_model, system_prompt, &user_message).await
+        }
+        LlmProvider::Claude => {
+            call_claude(api_key, &chosen_model, system_prompt, &user_message).await
         }
     }
+    .map_err(|e| {
+        let _ = app.emit("llm://error", LlmError { message: e.clone() });
+        e
+    })?;
 
-    // If we get here without [DONE], the stream ended unexpectedly
     if !full_output.is_empty() {
-        let _ = app.emit("llm://done", ());
+        let _ = app.emit("llm://token", LlmToken { text: full_output.clone() });
+    }
+    let _ = app.emit("llm://done", ());
 
-        if output_mode == OutputMode::DirectInject {
-            if let Err(e) = crate::injection::inject_text(&full_output) {
-                let msg = format!("Injection failed: {e}");
-                let _ = app.emit("llm://error", LlmError { message: msg.clone() });
-                return Err(msg);
-            }
+    if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
+        if let Err(e) = crate::injection::inject_text(&full_output) {
+            let msg = format!("Injection failed: {e}");
+            let _ = app.emit("llm://error", LlmError { message: msg.clone() });
+            return Err(msg);
         }
     }
 

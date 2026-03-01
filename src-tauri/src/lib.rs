@@ -153,9 +153,20 @@ async fn call_llm(
     selected_text: String,
     instruction: String,
     output_mode: llm::OutputMode,
+    provider: llm::LlmProvider,
+    model: String,
 ) -> Result<(), String> {
     let api_key = stt::get_api_key()?;
-    llm::call_llm(&api_key, &selected_text, &instruction, output_mode, app).await
+    llm::call_llm(
+        &api_key,
+        &selected_text,
+        &instruction,
+        output_mode,
+        provider,
+        &model,
+        app,
+    )
+    .await
 }
 
 /// Route a completed STT transcript to determine the operating mode.

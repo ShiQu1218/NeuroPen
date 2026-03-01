@@ -6,15 +6,27 @@ import { useAppStore } from "../store/useAppStore";
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
+  const [runtimeLlmProvider, setRuntimeLlmProvider] = useState<"openAi" | "gemini" | "claude" | "grok">("openAi");
+  const [runtimeLlmModel, setRuntimeLlmModel] = useState("gpt-4o-mini");
   const outputRef = useRef<HTMLDivElement>(null);
 
   const llmOutput = useAppStore((s) => s.llmOutput);
   const isLlmLoading = useAppStore((s) => s.isLlmLoading);
   const llmError = useAppStore((s) => s.llmError);
   const lastSelectedText = useAppStore((s) => s.lastSelectedText);
+  const llmProvider = useAppStore((s) => s.llmProvider);
+  const llmModel = useAppStore((s) => s.llmModel);
   const setLlmOutput = useAppStore((s) => s.setLlmOutput);
   const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
   const setLlmError = useAppStore((s) => s.setLlmError);
+
+  useEffect(() => {
+    setRuntimeLlmProvider(llmProvider);
+  }, [llmProvider]);
+
+  useEffect(() => {
+    setRuntimeLlmModel(llmModel);
+  }, [llmModel]);
 
   // Listen to LLM streaming events
   useEffect(() => {
@@ -47,6 +59,17 @@ export default function PreviewWindow() {
           useAppStore.getState().setLlmError("");
           useAppStore.getState().setLastSelectedText(event.payload.selectedText ?? "");
           useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
+        }
+      );
+      await register<{ llmProvider?: "openAi" | "gemini" | "claude" | "grok"; llmModel?: string }>(
+        "talkflow://settings-saved",
+        (event) => {
+          if (event.payload.llmProvider) {
+            setRuntimeLlmProvider(event.payload.llmProvider);
+          }
+          if (event.payload.llmModel) {
+            setRuntimeLlmModel(event.payload.llmModel);
+          }
         }
       );
     })();
@@ -121,6 +144,8 @@ export default function PreviewWindow() {
       selectedText: selectedContext,
       instruction: input,
       outputMode: "PreviewStream",
+      provider: runtimeLlmProvider,
+      model: runtimeLlmModel,
     });
   };
 

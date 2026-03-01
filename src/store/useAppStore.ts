@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type OutputMode = "DirectInject" | "PreviewStream";
+export type LlmProvider = "openAi" | "gemini" | "claude" | "grok";
 
 export type SttEngine = "openAi" | "local";
 
@@ -12,6 +13,8 @@ interface AppState {
   wakeWord: string;
   sttModelPath: string;
   outputMode: OutputMode;
+  llmProvider: LlmProvider;
+  llmModel: string;
   incognito: boolean;
   hotkey: string;
   sttEngine: SttEngine;
@@ -34,6 +37,8 @@ interface AppState {
   setWakeWord: (word: string) => void;
   setSttModelPath: (path: string) => void;
   setOutputMode: (mode: OutputMode) => void;
+  setLlmProvider: (provider: LlmProvider) => void;
+  setLlmModel: (model: string) => void;
   setIncognito: (on: boolean) => void;
   setHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
@@ -59,6 +64,8 @@ export const useAppStore = create<AppState>()(
       wakeWord: "助理",
       sttModelPath: "",
       outputMode: "PreviewStream",
+      llmProvider: "openAi",
+      llmModel: "gpt-4o-mini",
       incognito: false,
       hotkey: "Alt+`",
       sttEngine: "openAi",
@@ -79,6 +86,8 @@ export const useAppStore = create<AppState>()(
       setWakeWord: (word) => set({ wakeWord: word }),
       setSttModelPath: (path) => set({ sttModelPath: path }),
       setOutputMode: (mode) => set({ outputMode: mode }),
+      setLlmProvider: (provider) => set({ llmProvider: provider }),
+      setLlmModel: (model) => set({ llmModel: model }),
       setIncognito: (on) => set({ incognito: on }),
       setHotkey: (hotkey) => set({ hotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
@@ -115,6 +124,8 @@ export const useAppStore = create<AppState>()(
         wakeWord: state.wakeWord,
         sttModelPath: state.sttModelPath,
         outputMode: state.outputMode,
+        llmProvider: state.llmProvider,
+        llmModel: state.llmModel,
         incognito: state.incognito,
         hotkey: state.hotkey,
         sttEngine: state.sttEngine,
