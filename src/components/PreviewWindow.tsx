@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize } from "@tauri-apps/api/dpi";
+import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
 import { useAppStore, type AppLanguage } from "../store/useAppStore";
 
@@ -10,6 +10,9 @@ const PREVIEW_WIDTH = 340;
 const PREVIEW_MIN_HEIGHT = 240;
 const PREVIEW_MAX_HEIGHT = 420;
 const PREVIEW_CHROME_HEIGHT = 180;
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
@@ -26,6 +29,30 @@ export default function PreviewWindow() {
   const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
   const setLlmError = useAppStore((s) => s.setLlmError);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const keepPreviewInBounds = async (width: number, height: number) => {
+    try {
+      const win = getCurrentWindow();
+      const pos = await win.outerPosition();
+      const monitors = await availableMonitors();
+      if (monitors.length === 0) return;
+      const targetMonitor = monitors.find(
+        (monitor) =>
+          pos.x >= monitor.position.x &&
+          pos.x <= monitor.position.x + monitor.size.width &&
+          pos.y >= monitor.position.y &&
+          pos.y <= monitor.position.y + monitor.size.height
+      ) ?? monitors[0];
+      const minX = targetMonitor.position.x;
+      const minY = targetMonitor.position.y;
+      const maxX = targetMonitor.position.x + targetMonitor.size.width - width;
+      const maxY = targetMonitor.position.y + targetMonitor.size.height - height;
+      const clampedX = Math.round(clampNumber(pos.x, minX, Math.max(minX, maxX)));
+      const clampedY = Math.round(clampNumber(pos.y, minY, Math.max(minY, maxY)));
+      await win.setPosition(new PhysicalPosition(clampedX, clampedY));
+    } catch (err) {
+      console.warn("[Preview] keepPreviewInBounds failed:", err);
+    }
+  };
 
   // Listen to LLM streaming events
   useEffect(() => {
@@ -53,9 +80,16 @@ export default function PreviewWindow() {
       await register<{ selectedText?: string; instruction?: string }>(
         "talkflow://preview-session",
         (event) => {
-          void getCurrentWindow().setSize(
-            new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
-          );
+          void (async () => {
+            try {
+              await getCurrentWindow().setSize(
+                new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
+              );
+              await keepPreviewInBounds(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT);
+            } catch (err) {
+              console.warn("[Preview] preview-session resize failed:", err);
+            }
+          })();
           useAppStore.getState().setLlmOutput("");
           useAppStore.getState().setIsLlmLoading(true);
           useAppStore.getState().setLlmError("");
@@ -83,9 +117,16 @@ export default function PreviewWindow() {
   useEffect(() => {
     if (outputRef.current) {
       if (!llmOutput.trim()) {
-        void getCurrentWindow().setSize(
-          new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
-        );
+        void (async () => {
+          try {
+            await getCurrentWindow().setSize(
+              new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
+            );
+            await keepPreviewInBounds(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT);
+          } catch (err) {
+            console.warn("[Preview] reset size failed:", err);
+          }
+        })();
         return;
       }
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -94,7 +135,14 @@ export default function PreviewWindow() {
         PREVIEW_MAX_HEIGHT,
         Math.max(PREVIEW_MIN_HEIGHT, outputHeight + PREVIEW_CHROME_HEIGHT)
       );
-      void getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, nextHeight));
+      void (async () => {
+        try {
+          await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, nextHeight));
+          await keepPreviewInBounds(PREVIEW_WIDTH, nextHeight);
+        } catch (err) {
+          console.warn("[Preview] grow size failed:", err);
+        }
+      })();
     }
   }, [llmOutput]);
 

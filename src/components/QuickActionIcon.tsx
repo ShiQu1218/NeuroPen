@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
@@ -9,12 +9,14 @@ import { useAppStore, type AppLanguage, type QuickActionCommand } from "../store
 
 const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 260 };
+const PREVIEW_INITIAL_SIZE = { width: 340, height: 240 };
 
 export default function QuickActionIcon() {
   const outputMode = useAppStore((s) => s.outputMode);
   const llmProvider = useAppStore((s) => s.llmProvider);
   const llmModel = useAppStore((s) => s.llmModel);
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
+  const setQuickActionCommands = useAppStore((s) => s.setQuickActionCommands);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -23,10 +25,34 @@ export default function QuickActionIcon() {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeRaf = useRef<number | null>(null);
+  const dragLockUntil = useRef(0);
   const stableSelectionRef = useRef("");
   const panelRef = useRef<HTMLDivElement | null>(null);
   const setQaInteracting = useCallback(async (active: boolean) => {
     await emit("talkflow://qa-interacting", { active });
+  }, []);
+  const clampNumber = (value: number, min: number, max: number) =>
+    Math.min(Math.max(value, min), max);
+  const clampToMonitorBounds = useCallback(async (x: number, y: number, width: number, height: number) => {
+    const monitors = await availableMonitors();
+    if (monitors.length === 0) {
+      return { x, y };
+    }
+    const targetMonitor = monitors.find(
+      (monitor) =>
+        x >= monitor.position.x &&
+        x <= monitor.position.x + monitor.size.width &&
+        y >= monitor.position.y &&
+        y <= monitor.position.y + monitor.size.height
+    ) ?? monitors[0];
+    const minX = targetMonitor.position.x;
+    const minY = targetMonitor.position.y;
+    const maxX = targetMonitor.position.x + targetMonitor.size.width - width;
+    const maxY = targetMonitor.position.y + targetMonitor.size.height - height;
+    return {
+      x: Math.round(clampNumber(x, minX, Math.max(minX, maxX))),
+      y: Math.round(clampNumber(y, minY, Math.max(minY, maxY))),
+    };
   }, []);
 
   useEffect(() => {
@@ -50,11 +76,17 @@ export default function QuickActionIcon() {
           fadeRaf.current = null;
         });
       });
-      unlistenSettings = await listen<{ language?: AppLanguage }>(
+      unlistenSettings = await listen<{
+        language?: AppLanguage;
+        quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
+      }>(
         "talkflow://settings-saved",
         (event) => {
           if (event.payload.language) {
             setLanguage(event.payload.language);
+          }
+          if (event.payload.quickActionCommands) {
+            setQuickActionCommands(event.payload.quickActionCommands);
           }
         }
       );
@@ -71,7 +103,7 @@ export default function QuickActionIcon() {
       unlistenSettings?.();
       void setQaInteracting(false);
     };
-  }, [setLanguage, setQaInteracting]);
+  }, [setLanguage, setQaInteracting, setQuickActionCommands]);
 
   const expand = useCallback(() => {
     if (collapseTimer.current) {
@@ -80,15 +112,23 @@ export default function QuickActionIcon() {
     }
     if (!expanded) {
       setExpanded(true);
-      getCurrentWindow()
-        .setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height))
-        .catch(() => {});
+      void (async () => {
+        try {
+          const win = getCurrentWindow();
+          await win.setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height));
+          const pos = await win.outerPosition();
+          const clamped = await clampToMonitorBounds(pos.x, pos.y, EXPANDED_SIZE.width, EXPANDED_SIZE.height);
+          await win.setPosition(new PhysicalPosition(clamped.x, clamped.y));
+        } catch {
+          // noop
+        }
+      })();
     }
     void setQaInteracting(true);
-  }, [expanded, setQaInteracting]);
+  }, [expanded, setQaInteracting, clampToMonitorBounds]);
 
   const collapse = useCallback((force = false) => {
-    if (isInputFocused && !force) return;
+    if ((isInputFocused || Date.now() < dragLockUntil.current) && !force) return;
     if (collapseTimer.current) {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
@@ -137,22 +177,32 @@ export default function QuickActionIcon() {
     const scaleFactor = await getCurrentWindow().scaleFactor();
 
     if (outputMode === "PreviewStream") {
-      await emit("talkflow://preview-session", {
-        selectedText,
-        instruction,
-      });
       const previewWin = await WebviewWindow.getByLabel("preview");
       if (previewWin) {
+        await previewWin.setSize(
+          new LogicalSize(PREVIEW_INITIAL_SIZE.width, PREVIEW_INITIAL_SIZE.height)
+        );
         const previewX = pointer
           ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
           : qaPos.x;
         const previewY = pointer
           ? Math.round(qaPos.y + pointer.y * scaleFactor + 12)
           : qaPos.y + qaSize.height + 4;
-        await previewWin.setPosition(new PhysicalPosition(previewX, previewY));
+        const previewSize = await previewWin.outerSize();
+        const clampedPreviewPos = await clampToMonitorBounds(
+          previewX,
+          previewY,
+          previewSize.width || PREVIEW_INITIAL_SIZE.width,
+          previewSize.height || PREVIEW_INITIAL_SIZE.height
+        );
+        await previewWin.setPosition(new PhysicalPosition(clampedPreviewPos.x, clampedPreviewPos.y));
         await previewWin.show();
         await previewWin.setFocus();
       }
+      await emit("talkflow://preview-session", {
+        selectedText,
+        instruction,
+      });
     }
 
     await invoke("call_llm", {
@@ -180,6 +230,22 @@ export default function QuickActionIcon() {
     await showPreviewAndCallLlm(instruction, pointer);
   };
 
+  const handleStartDrag = async () => {
+    dragLockUntil.current = Date.now() + 1500;
+    try {
+      await getCurrentWindow().startDragging();
+    } finally {
+      dragLockUntil.current = Date.now() + 180;
+      if (!panelRef.current?.matches(":hover")) {
+        setTimeout(() => {
+          if (!panelRef.current?.matches(":hover")) {
+            collapse();
+          }
+        }, 220);
+      }
+    }
+  };
+
   if (!expanded) {
     return (
       <div
@@ -201,7 +267,15 @@ export default function QuickActionIcon() {
       onMouseEnter={expand}
       onMouseLeave={() => collapse()}
     >
-      <p className="px-1 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">{t("quickAction.title")}</p>
+      <div
+        className="px-1 py-0.5 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide cursor-move select-none"
+        onMouseDown={(e) => {
+          if ((e.target as HTMLElement).closest("button,input,textarea")) return;
+          void handleStartDrag();
+        }}
+      >
+        {t("quickAction.title")}
+      </div>
       {quickActionCommands.length === 0 ? (
         <p className="px-2 py-1 text-xs text-slate-400">{t("quickAction.empty")}</p>
       ) : (

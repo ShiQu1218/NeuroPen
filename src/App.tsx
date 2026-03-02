@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import "./App.css";
 
 import PreviewWindow from "./components/PreviewWindow";
@@ -57,6 +57,31 @@ const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
 
 const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" =>
   engine === "localWhisper" ? "localWhisper" : "openAi";
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(Math.max(value, min), max);
+
+const clampToMonitorBounds = async (x: number, y: number, width: number, height: number) => {
+  const monitors = await availableMonitors();
+  if (monitors.length === 0) {
+    return { x, y };
+  }
+  const targetMonitor = monitors.find(
+    (monitor) =>
+      x >= monitor.position.x &&
+      x <= monitor.position.x + monitor.size.width &&
+      y >= monitor.position.y &&
+      y <= monitor.position.y + monitor.size.height
+  ) ?? monitors[0];
+  const minX = targetMonitor.position.x;
+  const minY = targetMonitor.position.y;
+  const maxX = targetMonitor.position.x + targetMonitor.size.width - width;
+  const maxY = targetMonitor.position.y + targetMonitor.size.height - height;
+  return {
+    x: Math.round(clampNumber(x, minX, Math.max(minX, maxX))),
+    y: Math.round(clampNumber(y, minY, Math.max(minY, maxY))),
+  };
+};
 
 const containsNonLatinScript = (text: string) =>
   /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF\u0400-\u04FF\u0600-\u06FF]/.test(text);
@@ -289,26 +314,24 @@ function MainWindow() {
             setSelectedText(text);
             await emit("talkflow://stable-selection", { text });
 
-            // Auto-close old Preview Window when new selection appears
-            const previewWin = await WebviewWindow.getByLabel("preview");
-            if (previewWin) {
-              const isVisible = await previewWin.isVisible();
-              if (isVisible) {
-                await previewWin.hide();
-                // Reset LLM state in main window store
-                const s = useAppStore.getState();
-                s.setLlmOutput("");
-                s.setIsLlmLoading(false);
-                s.setLlmError("");
-              }
-            }
-
             // Position QA icon below selection end (fallback to cursor).
             const x = typeof anchor_x === "number" ? anchor_x : cursor_x;
             const y = typeof anchor_y === "number" ? anchor_y : cursor_y;
             const currentFingerprint = `${text}::${x}::${y}`;
             // Lock target window + cache clipboard once per unique selection.
             if (currentFingerprint !== lastSelectionFingerprint) {
+              // Auto-close old Preview Window only when the selection actually changed.
+              const previewWin = await WebviewWindow.getByLabel("preview");
+              if (previewWin) {
+                const isVisible = await previewWin.isVisible();
+                if (isVisible) {
+                  await previewWin.hide();
+                  const s = useAppStore.getState();
+                  s.setLlmOutput("");
+                  s.setIsLlmLoading(false);
+                  s.setLlmError("");
+                }
+              }
               try {
                 await invoke("trigger_hotkey");
                 lastSelectionFingerprint = currentFingerprint;
@@ -316,7 +339,15 @@ function MainWindow() {
                 console.warn("[App] trigger_hotkey failed:", err);
               }
             }
-            await qaWin.setPosition(new PhysicalPosition(x + 8, y + 8));
+            await qaWin.setSize(new LogicalSize(40, 40));
+            const qaSize = await qaWin.outerSize();
+            const clampedQaPos = await clampToMonitorBounds(
+              x + 8,
+              y + 8,
+              qaSize.width,
+              qaSize.height
+            );
+            await qaWin.setPosition(new PhysicalPosition(clampedQaPos.x, clampedQaPos.y));
             await qaWin.show();
             await emit("talkflow://qa-show");
           } else {
