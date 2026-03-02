@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n, type TranslationKey } from "../i18n";
 import {
   useAppStore,
@@ -195,6 +196,16 @@ export default function Settings() {
   });
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
 
+  // Prevent the settings window from being destroyed on close — hide it instead.
+  useEffect(() => {
+    const win = getCurrentWindow();
+    const unlisten = win.onCloseRequested(async (event) => {
+      event.preventDefault();
+      await win.hide();
+    });
+    return () => { void unlisten.then((fn) => fn()); };
+  }, []);
+
   // Query backend once on mount
   useEffect(() => {
     invoke<{
@@ -224,11 +235,10 @@ export default function Settings() {
 
     invoke<boolean>("get_launch_on_startup")
       .then((enabled) => {
-        setLaunchOnStartup(enabled);
         setDraftLaunchOnStartup(enabled);
       })
       .catch(() => {});
-  }, [setLaunchOnStartup]);
+  }, []);
 
   // Sync all drafts from store (2a: merged 7 useEffects into 1)
   useEffect(() => {
@@ -381,7 +391,9 @@ export default function Settings() {
       if (draftLaunchOnStartup !== launchOnStartup) {
         await invoke("set_launch_on_startup", { enabled: draftLaunchOnStartup });
       }
-      await invoke("set_audio_device", { name: draftMicrophoneSource });
+      if (draftMicrophoneSource !== microphoneSource) {
+        await invoke("set_audio_device", { name: draftMicrophoneSource });
+      }
 
       setWakeWord(nextWakeWord);
       setHotkey(draftHotkey);

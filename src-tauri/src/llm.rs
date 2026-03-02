@@ -12,8 +12,12 @@
 //!   `llm://done`        — generation complete
 //!   `llm://error(msg)`  — API/network failure
 
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
+
+/// Shared HTTP client — reuses TCP/TLS connections across LLM calls.
+static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
 
 /// Controls where LLM output is sent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -91,10 +95,12 @@ fn default_model(provider: &LlmProvider) -> &'static str {
     }
 }
 
+const AUTO_LANGUAGE: &str = "auto";
+
 fn preferred_language_hint(preferred_language: Option<&str>) -> Option<String> {
     let code = preferred_language
         .map(str::trim)
-        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))?;
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case(AUTO_LANGUAGE))?;
     let name = match code {
         "zh-TW" => "Traditional Chinese",
         "zh-CN" => "Simplified Chinese",
@@ -168,8 +174,7 @@ async fn call_openai_compatible(
         ]
     });
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = HTTP_CLIENT
         .post(base_url)
         .header("Authorization", format!("Bearer {api_key}"))
         .header("Content-Type", "application/json")
@@ -206,8 +211,7 @@ async fn call_gemini(
         "contents": [{ "parts": [{ "text": user_message }] }],
     });
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = HTTP_CLIENT
         .post(url)
         .header("Content-Type", "application/json")
         .json(&body)
@@ -253,8 +257,7 @@ async fn call_claude(
         "messages": [{ "role": "user", "content": user_message }],
     });
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = HTTP_CLIENT
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
@@ -301,8 +304,7 @@ async fn call_ollama(model: &str, system_prompt: &str, user_message: &str) -> Re
         ]
     });
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = HTTP_CLIENT
         .post("http://127.0.0.1:11434/api/chat")
         .header("Content-Type", "application/json")
         .json(&body)
@@ -329,6 +331,25 @@ async fn call_ollama(model: &str, system_prompt: &str, user_message: &str) -> Re
     Err(format!("Unexpected Ollama response: {body}"))
 }
 
+fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
+    match provider {
+        LlmProvider::OpenAi => Some("https://api.openai.com/v1/chat/completions"),
+        LlmProvider::Grok => Some("https://api.x.ai/v1/chat/completions"),
+        LlmProvider::Qwen => Some("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"),
+        LlmProvider::Doubao => Some("https://ark.cn-beijing.volces.com/api/v3/chat/completions"),
+        LlmProvider::Deepseek => Some("https://api.deepseek.com/v1/chat/completions"),
+        _ => None,
+    }
+}
+
+fn resolve_model(model: &str, provider: &LlmProvider) -> String {
+    if model.trim().is_empty() {
+        default_model(provider).to_string()
+    } else {
+        model.trim().to_string()
+    }
+}
+
 async fn call_provider(
     api_key: &str,
     provider: &LlmProvider,
@@ -336,60 +357,14 @@ async fn call_provider(
     system_prompt: &str,
     user_message: &str,
 ) -> Result<String, String> {
+    if let Some(url) = openai_compatible_url(provider) {
+        return call_openai_compatible(url, api_key, chosen_model, system_prompt, user_message).await;
+    }
     match provider {
-        LlmProvider::OpenAi => {
-            call_openai_compatible(
-                "https://api.openai.com/v1/chat/completions",
-                api_key,
-                chosen_model,
-                system_prompt,
-                user_message,
-            )
-            .await
-        }
-        LlmProvider::Grok => {
-            call_openai_compatible(
-                "https://api.x.ai/v1/chat/completions",
-                api_key,
-                chosen_model,
-                system_prompt,
-                user_message,
-            )
-            .await
-        }
-        LlmProvider::Qwen => {
-            call_openai_compatible(
-                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
-                api_key,
-                chosen_model,
-                system_prompt,
-                user_message,
-            )
-            .await
-        }
-        LlmProvider::Doubao => {
-            call_openai_compatible(
-                "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-                api_key,
-                chosen_model,
-                system_prompt,
-                user_message,
-            )
-            .await
-        }
-        LlmProvider::Deepseek => {
-            call_openai_compatible(
-                "https://api.deepseek.com/v1/chat/completions",
-                api_key,
-                chosen_model,
-                system_prompt,
-                user_message,
-            )
-            .await
-        }
         LlmProvider::Gemini => call_gemini(api_key, chosen_model, system_prompt, user_message).await,
         LlmProvider::Claude => call_claude(api_key, chosen_model, system_prompt, user_message).await,
         LlmProvider::Ollama => call_ollama(chosen_model, system_prompt, user_message).await,
+        _ => unreachable!(),
     }
 }
 
@@ -404,12 +379,7 @@ pub async fn call_llm(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
-
-    let chosen_model = if model.trim().is_empty() {
-        default_model(&provider).to_string()
-    } else {
-        model.trim().to_string()
-    };
+    let chosen_model = resolve_model(model, &provider);
 
     let full_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message)
     .await
@@ -443,10 +413,6 @@ pub async fn call_llm_text(
     preferred_language: Option<String>,
 ) -> Result<String, String> {
     let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
-    let chosen_model = if model.trim().is_empty() {
-        default_model(&provider).to_string()
-    } else {
-        model.trim().to_string()
-    };
+    let chosen_model = resolve_model(model, &provider);
     call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await
 }

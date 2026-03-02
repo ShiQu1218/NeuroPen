@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
 import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
+import { clampToMonitorBounds } from "../utils/windowBounds";
 
 const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 260 };
@@ -32,29 +33,6 @@ export default function QuickActionIcon() {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const setQaInteracting = useCallback(async (active: boolean) => {
     await emit("talkflow://qa-interacting", { active });
-  }, []);
-  const clampNumber = (value: number, min: number, max: number) =>
-    Math.min(Math.max(value, min), max);
-  const clampToMonitorBounds = useCallback(async (x: number, y: number, width: number, height: number) => {
-    const monitors = await availableMonitors();
-    if (monitors.length === 0) {
-      return { x, y };
-    }
-    const targetMonitor = monitors.find(
-      (monitor) =>
-        x >= monitor.position.x &&
-        x <= monitor.position.x + monitor.size.width &&
-        y >= monitor.position.y &&
-        y <= monitor.position.y + monitor.size.height
-    ) ?? monitors[0];
-    const minX = targetMonitor.position.x;
-    const minY = targetMonitor.position.y;
-    const maxX = targetMonitor.position.x + targetMonitor.size.width - width;
-    const maxY = targetMonitor.position.y + targetMonitor.size.height - height;
-    return {
-      x: Math.round(clampNumber(x, minX, Math.max(minX, maxX))),
-      y: Math.round(clampNumber(y, minY, Math.max(minY, maxY))),
-    };
   }, []);
 
   useEffect(() => {
@@ -131,7 +109,7 @@ export default function QuickActionIcon() {
       })();
     }
     void setQaInteracting(true);
-  }, [expanded, setQaInteracting, clampToMonitorBounds]);
+  }, [expanded, setQaInteracting]);
 
   const collapse = useCallback((force = false) => {
     if ((isInputFocused || Date.now() < dragLockUntil.current) && !force) return;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,6 +12,7 @@ import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
 import { useAppStore } from "./store/useAppStore";
 import type { AppLanguage, LlmProvider, PreferredLanguage, PunctuationMode } from "./store/useAppStore";
+import { clampToMonitorBounds } from "./utils/windowBounds";
 
 /**
  * Prevent a window from being destroyed on close — hide it instead.
@@ -57,31 +58,6 @@ const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
 
 const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" =>
   engine === "localWhisper" ? "localWhisper" : "openAi";
-
-const clampNumber = (value: number, min: number, max: number) =>
-  Math.min(Math.max(value, min), max);
-
-const clampToMonitorBounds = async (x: number, y: number, width: number, height: number) => {
-  const monitors = await availableMonitors();
-  if (monitors.length === 0) {
-    return { x, y };
-  }
-  const targetMonitor = monitors.find(
-    (monitor) =>
-      x >= monitor.position.x &&
-      x <= monitor.position.x + monitor.size.width &&
-      y >= monitor.position.y &&
-      y <= monitor.position.y + monitor.size.height
-  ) ?? monitors[0];
-  const minX = targetMonitor.position.x;
-  const minY = targetMonitor.position.y;
-  const maxX = targetMonitor.position.x + targetMonitor.size.width - width;
-  const maxY = targetMonitor.position.y + targetMonitor.size.height - height;
-  return {
-    x: Math.round(clampNumber(x, minX, Math.max(minX, maxX))),
-    y: Math.round(clampNumber(y, minY, Math.max(minY, maxY))),
-  };
-};
 
 const containsNonLatinScript = (text: string) =>
   /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF\u0400-\u04FF\u0600-\u06FF]/.test(text);
@@ -193,13 +169,13 @@ function MainWindow() {
       }
 
       const isTalkFlowWindowFocused = async () => {
-        for (const label of ["main", "quick-action", "preview", "settings", "recording-indicator"]) {
-          const win = await WebviewWindow.getByLabel(label);
-          if (win && (await win.isFocused())) {
-            return true;
-          }
-        }
-        return false;
+        const results = await Promise.all(
+          ["main", "quick-action", "preview", "settings", "recording-indicator"].map(async (label) => {
+            const win = await WebviewWindow.getByLabel(label);
+            return win ? win.isFocused() : false;
+          })
+        );
+        return results.some(Boolean);
       };
 
       const stopRecordingNow = async () => {
@@ -310,11 +286,6 @@ function MainWindow() {
           }
           if (typeof payload.microphoneSource === "string") {
             setMicrophoneSource(payload.microphoneSource);
-            void invoke("set_audio_device", {
-              name: payload.microphoneSource,
-            }).catch((err) => {
-              console.warn("[App] set_audio_device sync failed:", err);
-            });
           }
           if (typeof payload.launchOnStartup === "boolean") {
             setLaunchOnStartup(payload.launchOnStartup);

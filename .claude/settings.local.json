@@ -5,7 +5,8 @@
       "Bash(cl:*)",
       "Bash(where:*)",
       "Bash(g++:*)",
-      "Bash(gh pr:*)"
+      "Bash(gh pr:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

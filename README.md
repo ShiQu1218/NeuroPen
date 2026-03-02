@@ -58,6 +58,12 @@ TalkFlow 依「是否有選字」與「語音內容」進行路由：
 4. **Mode C — 一般 LLM 問答**  
    無選字時，將語音當成一般提問送給 LLM。
 
+### 多模態 LLM（開發中）
+
+- 在 `設定 > LLM` 勾選多模態後，會直接把錄音與文字（若有選字）送給 LLM。
+- 啟用多模態時，STT 選項會鎖定為不可選。
+- 若無選字，則由 LLM 自行判斷最合適的回覆形式。
+
 ---
 
 ## 介面與互動
@@ -180,7 +186,7 @@ npm run tauri build -- --features local-stt,local-stt-cuda
 | 一般 | 顯示語言、LLM 輸出偏好語言、全域熱鍵、喚醒詞、開機自動啟動 |
 | 語音與 STT | STT 引擎、本地模型管理（安裝/刪除/切換）、麥克風來源、STT 輸出策略、智慧標點、詞彙庫匯入、情境感知 |
 | 快捷指令 | Quick Action 指令新增/編輯/刪除 |
-| LLM | 輸出模式、Provider、Model、API Key |
+| LLM | 輸出模式、Provider、Model、API Key、多模態勾選（直接把錄音和文字丟給 LLM；啟用後 STT 不可選） |
 | 隱私 | 隱私模式（停用 LLM 呼叫） |
 
 ---

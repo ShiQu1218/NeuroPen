@@ -4115,6 +4115,7 @@ dependencies = [
  "cpal",
  "dirs 5.0.1",
  "futures-util",
+ "once_cell",
  "reqwest 0.12.28",
  "ringbuf",
  "serde",

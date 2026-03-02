@@ -231,23 +231,31 @@ const WINDOWS_RUN_VALUE_NAME: &str = "TalkFlow";
 
 #[cfg(target_os = "windows")]
 fn set_windows_launch_on_startup(enabled: bool) -> Result<(), String> {
-    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_WRITE};
     use winreg::RegKey;
 
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-    let (run_key, _) = hkcu
-        .create_subkey(WINDOWS_RUN_KEY_PATH)
-        .map_err(|e| format!("Failed to open Run key: {e}"))?;
 
     if enabled {
+        let (run_key, _) = hkcu
+            .create_subkey(WINDOWS_RUN_KEY_PATH)
+            .map_err(|e| format!("Failed to open Run key: {e}"))?;
         let exe = std::env::current_exe().map_err(|e| format!("Failed to get current exe path: {e}"))?;
         let value = format!("\"{}\"", exe.display());
         run_key
             .set_value(WINDOWS_RUN_VALUE_NAME, &value)
             .map_err(|e| format!("Failed to set Run key value: {e}"))?;
-    } else if let Err(e) = run_key.delete_value(WINDOWS_RUN_VALUE_NAME) {
-        if e.kind() != ErrorKind::NotFound {
-            return Err(format!("Failed to delete Run key value: {e}"));
+    } else {
+        match hkcu.open_subkey_with_flags(WINDOWS_RUN_KEY_PATH, KEY_WRITE) {
+            Ok(run_key) => {
+                if let Err(e) = run_key.delete_value(WINDOWS_RUN_VALUE_NAME) {
+                    if e.kind() != ErrorKind::NotFound {
+                        return Err(format!("Failed to delete Run key value: {e}"));
+                    }
+                }
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => { /* key doesn't exist, nothing to delete */ }
+            Err(e) => return Err(format!("Failed to open Run key: {e}")),
         }
     }
 
