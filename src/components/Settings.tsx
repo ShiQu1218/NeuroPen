@@ -453,6 +453,23 @@ export default function Settings() {
     );
   };
 
+  const handleMoveQuickActionCommand = (commandId: string, direction: "up" | "down") => {
+    setDraftQuickActionCommands((prev) => {
+      const fromIndex = prev.findIndex((command) => command.id === commandId);
+      if (fromIndex < 0) {
+        return prev;
+      }
+      const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
+      if (toIndex < 0 || toIndex >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
   const handleImportVocabularyFile = async (file: File | null) => {
     if (!file) return;
     try {
@@ -940,7 +957,7 @@ export default function Settings() {
                 </button>
               </div>
               <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
-                {draftQuickActionCommands.map((command) => (
+                {draftQuickActionCommands.map((command, index) => (
                   <div key={command.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
                     <input
                       className="w-full input-field px-2 py-1 text-xs"
@@ -954,7 +971,23 @@ export default function Settings() {
                       onChange={(e) => handleUpdateQuickActionCommand(command.id, "instruction", e.target.value)}
                       placeholder={t("settings.quickAction.instructionPlaceholder")}
                     />
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-1.5">
+                      <button
+                        onClick={() => handleMoveQuickActionCommand(command.id, "up")}
+                        disabled={index === 0}
+                        className="btn-secondary px-2.5 py-1 rounded-lg text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="上移"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        onClick={() => handleMoveQuickActionCommand(command.id, "down")}
+                        disabled={index === draftQuickActionCommands.length - 1}
+                        className="btn-secondary px-2.5 py-1 rounded-lg text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="下移"
+                      >
+                        ↓
+                      </button>
                       <button
                         onClick={() => handleDeleteQuickActionCommand(command.id)}
                         className="btn-danger px-2.5 py-1 rounded-lg text-xs"
