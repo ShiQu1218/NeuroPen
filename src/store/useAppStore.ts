@@ -7,6 +7,18 @@ export type LlmProvider = "openAi" | "gemini" | "claude" | "grok" | "ollama";
 export type SttEngine = "openAi" | "local";
 
 export type AppMode = "A" | "B1" | "B2" | "C" | null;
+export interface QuickActionCommand {
+  id: string;
+  label: string;
+  instruction: string;
+}
+
+const DEFAULT_QUICK_ACTION_COMMANDS: QuickActionCommand[] = [
+  { id: "translate", label: "翻譯成英文", instruction: "Translate the selected text to English." },
+  { id: "summarize", label: "摘要", instruction: "Summarize the selected text concisely." },
+  { id: "grammar", label: "修正語法", instruction: "Fix grammar and spelling errors in the selected text." },
+  { id: "formalize", label: "正式化", instruction: "Rewrite the selected text in a formal tone." },
+];
 
 interface AppState {
   // --- User preferences (persisted) ---
@@ -18,6 +30,7 @@ interface AppState {
   incognito: boolean;
   hotkey: string;
   sttEngine: SttEngine;
+  quickActionCommands: QuickActionCommand[];
 
   // --- Runtime state (not persisted) ---
   isRecording: boolean;
@@ -42,6 +55,7 @@ interface AppState {
   setIncognito: (on: boolean) => void;
   setHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
+  setQuickActionCommands: (commands: QuickActionCommand[]) => void;
   setIsRecording: (recording: boolean) => void;
   setSelectedText: (text: string) => void;
   setCurrentMode: (mode: AppMode) => void;
@@ -69,6 +83,7 @@ export const useAppStore = create<AppState>()(
       incognito: false,
       hotkey: "Alt+`",
       sttEngine: "openAi",
+      quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
 
       isRecording: false,
       selectedText: "",
@@ -91,6 +106,7 @@ export const useAppStore = create<AppState>()(
       setIncognito: (on) => set({ incognito: on }),
       setHotkey: (hotkey) => set({ hotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
+      setQuickActionCommands: (commands) => set({ quickActionCommands: commands }),
       setIsRecording: (recording) => set({ isRecording: recording }),
       setSelectedText: (text) => set({ selectedText: text }),
       setCurrentMode: (mode) => set({ currentMode: mode }),
@@ -129,6 +145,7 @@ export const useAppStore = create<AppState>()(
         incognito: state.incognito,
         hotkey: state.hotkey,
         sttEngine: state.sttEngine,
+        quickActionCommands: state.quickActionCommands,
       }),
     }
   )

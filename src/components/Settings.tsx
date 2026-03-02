@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
-import { useAppStore } from "../store/useAppStore";
+import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
 
 interface LocalSttModel {
   id: string;
@@ -31,7 +31,7 @@ interface LocalSttModel {
   modelPath: string;
 }
 
-type SettingsSection = "general" | "stt" | "llm" | "privacy";
+type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "privacy";
 
 export default function Settings() {
   const {
@@ -43,6 +43,7 @@ export default function Settings() {
     incognito, setIncognito,
     hotkey, setHotkey,
     sttEngine, setSttEngine,
+    quickActionCommands, setQuickActionCommands,
     localSttAvailable, setLocalSttAvailable,
     apiKeySet, setApiKeySet,
   } = useAppStore();
@@ -59,6 +60,7 @@ export default function Settings() {
   const [draftOutputMode, setDraftOutputMode] = useState(outputMode);
   const [draftLlmProvider, setDraftLlmProvider] = useState(llmProvider);
   const [draftLlmModel, setDraftLlmModel] = useState(llmModel);
+  const [draftQuickActionCommands, setDraftQuickActionCommands] = useState<QuickActionCommand[]>(quickActionCommands);
   const [localModels, setLocalModels] = useState<LocalSttModel[]>([]);
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [localModelBusyId, setLocalModelBusyId] = useState("");
@@ -105,6 +107,10 @@ export default function Settings() {
   }, [llmModel]);
 
   useEffect(() => {
+    setDraftQuickActionCommands(quickActionCommands);
+  }, [quickActionCommands]);
+
+  useEffect(() => {
     if (draftLlmProvider !== "openAi" && draftSttEngine === "openAi") {
       setDraftSttEngine("local");
     }
@@ -145,12 +151,24 @@ export default function Settings() {
   const handleSaveSettings = async () => {
     const nextWakeWord = draftWakeWord.trim();
     const nextModel = draftLlmModel.trim();
+    const nextQuickActionCommands = draftQuickActionCommands
+      .map((command) => ({
+        ...command,
+        label: command.label.trim(),
+        instruction: command.instruction.trim(),
+      }))
+      .filter((command) => command.label && command.instruction);
     if (!nextWakeWord) {
       setSettingsSaveStatus("error");
       setTimeout(() => setSettingsSaveStatus(""), 2000);
       return;
     }
     if (!nextModel) {
+      setSettingsSaveStatus("error");
+      setTimeout(() => setSettingsSaveStatus(""), 2000);
+      return;
+    }
+    if (nextQuickActionCommands.length === 0) {
       setSettingsSaveStatus("error");
       setTimeout(() => setSettingsSaveStatus(""), 2000);
       return;
@@ -168,6 +186,7 @@ export default function Settings() {
       setOutputMode(draftOutputMode);
       setLlmProvider(draftLlmProvider);
       setLlmModel(nextModel);
+      setQuickActionCommands(nextQuickActionCommands);
       await emit("talkflow://settings-saved", {
         wakeWord: nextWakeWord,
         hotkey: draftHotkey,
@@ -176,6 +195,7 @@ export default function Settings() {
         outputMode: draftOutputMode,
         llmProvider: draftLlmProvider,
         llmModel: nextModel,
+        quickActionCommands: nextQuickActionCommands,
       });
 
       setHotkeyStatus("");
@@ -199,9 +219,41 @@ export default function Settings() {
     setDraftOutputMode(outputMode);
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
+    setDraftQuickActionCommands(quickActionCommands);
     setHotkeyStatus("");
     setHotkeyErrorMessage("");
     setSettingsSaveStatus("");
+  };
+
+  const handleAddQuickActionCommand = () => {
+    setDraftQuickActionCommands((prev) => [
+      ...prev,
+      {
+        id: `custom-${Date.now()}`,
+        label: "新指令",
+        instruction: "",
+      },
+    ]);
+  };
+
+  const handleUpdateQuickActionCommand = (
+    commandId: string,
+    field: "label" | "instruction",
+    value: string
+  ) => {
+    setDraftQuickActionCommands((prev) =>
+      prev.map((command) =>
+        command.id === commandId
+          ? { ...command, [field]: value }
+          : command
+      )
+    );
+  };
+
+  const handleDeleteQuickActionCommand = (commandId: string) => {
+    setDraftQuickActionCommands((prev) =>
+      prev.filter((command) => command.id !== commandId)
+    );
   };
 
   const handleInstallLocalModel = async (modelId: string) => {
@@ -284,7 +336,8 @@ export default function Settings() {
     draftSttEngine !== sttEngine ||
     draftOutputMode !== outputMode ||
     draftLlmProvider !== llmProvider ||
-    draftLlmModel !== llmModel;
+    draftLlmModel !== llmModel ||
+    JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands);
 
   return (
     <div className="p-6 space-y-5 text-sm text-gray-800">
@@ -309,6 +362,14 @@ export default function Settings() {
               }`}
             >
               語音與 STT
+            </button>
+            <button
+              onClick={() => setActiveSection("quickAction")}
+              className={`w-full rounded px-2 py-1.5 text-left text-xs font-medium transition-colors ${
+                activeSection === "quickAction" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:bg-white"
+              }`}
+            >
+              快捷指令
             </button>
             <button
               onClick={() => setActiveSection("llm")}
@@ -546,6 +607,52 @@ export default function Settings() {
                 )}
               </div>
             </>
+          )}
+
+          {activeSection === "quickAction" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="font-medium">Quick Action 快捷指令</label>
+                  <p className="text-xs text-gray-400">可新增、編輯、刪除。原有四個已作為預設指令。</p>
+                </div>
+                <button
+                  onClick={handleAddQuickActionCommand}
+                  className="px-2.5 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors"
+                >
+                  新增指令
+                </button>
+              </div>
+              <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+                {draftQuickActionCommands.map((command) => (
+                  <div key={command.id} className="rounded border border-gray-200 bg-gray-50 p-3 space-y-2">
+                    <input
+                      className="w-full border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-400"
+                      value={command.label}
+                      onChange={(e) => handleUpdateQuickActionCommand(command.id, "label", e.target.value)}
+                      placeholder="按鈕名稱"
+                    />
+                    <textarea
+                      className="w-full min-h-[72px] border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-400"
+                      value={command.instruction}
+                      onChange={(e) => handleUpdateQuickActionCommand(command.id, "instruction", e.target.value)}
+                      placeholder="輸入此按鈕對 LLM 的指令內容"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        onClick={() => handleDeleteQuickActionCommand(command.id)}
+                        className="px-2.5 py-1 rounded text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 transition-colors"
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {draftQuickActionCommands.length === 0 && (
+                  <p className="text-xs text-amber-700">請至少新增一個快捷指令，否則無法儲存設定。</p>
+                )}
+              </div>
+            </div>
           )}
 
           {activeSection === "llm" && (

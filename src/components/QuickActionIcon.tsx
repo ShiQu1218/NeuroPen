@@ -4,32 +4,20 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
-import { useAppStore } from "../store/useAppStore";
-
-const PRESETS = [
-  { id: "translate", label: "翻譯成英文" },
-  { id: "summarize", label: "摘要" },
-  { id: "grammar", label: "修正語法" },
-  { id: "formalize", label: "正式化" },
-] as const;
-
-const PRESET_INSTRUCTIONS: Record<string, string> = {
-  translate: "Translate the selected text to English.",
-  summarize: "Summarize the selected text concisely.",
-  grammar: "Fix grammar and spelling errors in the selected text.",
-  formalize: "Rewrite the selected text in a formal tone.",
-};
+import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
 
 const ICON_SIZE = { width: 40, height: 40 };
-const EXPANDED_SIZE = { width: 220, height: 240 };
+const EXPANDED_SIZE = { width: 220, height: 260 };
 
 export default function QuickActionIcon() {
   const outputMode = useAppStore((s) => s.outputMode);
   const llmProvider = useAppStore((s) => s.llmProvider);
   const llmModel = useAppStore((s) => s.llmModel);
+  const quickActionCommands = useAppStore((s) => s.quickActionCommands);
   const [runtimeOutputMode, setRuntimeOutputMode] = useState(outputMode);
   const [runtimeLlmProvider, setRuntimeLlmProvider] = useState(llmProvider);
   const [runtimeLlmModel, setRuntimeLlmModel] = useState(llmModel);
+  const [runtimeQuickActionCommands, setRuntimeQuickActionCommands] = useState(quickActionCommands);
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
   const [customInput, setCustomInput] = useState("");
@@ -55,6 +43,10 @@ export default function QuickActionIcon() {
   }, [llmModel]);
 
   useEffect(() => {
+    setRuntimeQuickActionCommands(quickActionCommands);
+  }, [quickActionCommands]);
+
+  useEffect(() => {
     let unlistenSelection: (() => void) | null = null;
     let unlistenSettings: (() => void) | null = null;
     let unlistenQaShow: (() => void) | null = null;
@@ -69,6 +61,7 @@ export default function QuickActionIcon() {
         outputMode?: "DirectInject" | "PreviewStream";
         llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama";
         llmModel?: string;
+        quickActionCommands?: QuickActionCommand[];
       }>(
         "talkflow://settings-saved",
         (event) => {
@@ -80,6 +73,9 @@ export default function QuickActionIcon() {
           }
           if (event.payload.llmModel) {
             setRuntimeLlmModel(event.payload.llmModel);
+          }
+          if (event.payload.quickActionCommands) {
+            setRuntimeQuickActionCommands(event.payload.quickActionCommands);
           }
         }
       );
@@ -115,7 +111,6 @@ export default function QuickActionIcon() {
     }
     if (!expanded) {
       setExpanded(true);
-      // Resize window to fit the expanded panel
       getCurrentWindow()
         .setSize(new LogicalSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height))
         .catch(() => {});
@@ -129,7 +124,6 @@ export default function QuickActionIcon() {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
     }
-    // Delay collapse to avoid flicker when moving between icon and panel
     collapseTimer.current = setTimeout(() => {
       setExpanded(false);
       setCustomInput("");
@@ -144,7 +138,6 @@ export default function QuickActionIcon() {
     instruction: string,
     pointer?: { x: number; y: number }
   ) => {
-    // Fetch selectedText directly from Rust (cross-window store won't work)
     let selectedText = stableSelectionRef.current.trim();
     try {
       if (!selectedText) {
@@ -152,9 +145,7 @@ export default function QuickActionIcon() {
         if (sel.has_selection && sel.text) {
           selectedText = sel.text;
         } else {
-          // Fallback: read via clipboard (Ctrl+C)
-          const clipText = await invoke<string>("read_selection_clipboard");
-          selectedText = clipText;
+          selectedText = await invoke<string>("read_selection_clipboard");
         }
       }
     } catch (err) {
@@ -164,28 +155,19 @@ export default function QuickActionIcon() {
     if (!selectedText) {
       await invoke("restore_clipboard");
       await setQaInteracting(false);
-      console.warn("[QuickAction] No selected text found, aborting");
       return;
     }
 
-    // Fallback Ctrl+C may have changed clipboard; restore immediately.
     await invoke("restore_clipboard");
     await setQaInteracting(false);
-
-    // Hide quick-action icon
     await getCurrentWindow().hide();
-
-    // Reset icon state for next time
     setExpanded(false);
-    setCustomInput("");
 
-    // Get current window position so we can position preview below
     const qaPos = await getCurrentWindow().outerPosition();
     const qaSize = await getCurrentWindow().outerSize();
     const scaleFactor = await getCurrentWindow().scaleFactor();
 
     if (runtimeOutputMode === "PreviewStream") {
-      // Show preview window positioned below the quick action icon
       await emit("talkflow://preview-session", {
         selectedText,
         instruction,
@@ -198,15 +180,12 @@ export default function QuickActionIcon() {
         const previewY = pointer
           ? Math.round(qaPos.y + pointer.y * scaleFactor + 12)
           : qaPos.y + qaSize.height + 4;
-        await previewWin.setPosition(
-          new PhysicalPosition(previewX, previewY)
-        );
+        await previewWin.setPosition(new PhysicalPosition(previewX, previewY));
         await previewWin.show();
         await previewWin.setFocus();
       }
     }
 
-    // Call LLM
     await invoke("call_llm", {
       selectedText,
       instruction,
@@ -219,12 +198,11 @@ export default function QuickActionIcon() {
     }
   };
 
-  const invokePreset = async (
-    presetId: string,
+  const invokeCommand = async (
+    command: QuickActionCommand,
     pointer?: { x: number; y: number }
   ) => {
-    const instruction = PRESET_INSTRUCTIONS[presetId];
-    await showPreviewAndCallLlm(instruction, pointer);
+    await showPreviewAndCallLlm(command.instruction, pointer);
   };
 
   const invokeCustom = async (pointer?: { x: number; y: number }) => {
@@ -234,7 +212,6 @@ export default function QuickActionIcon() {
   };
 
   if (!expanded) {
-    // Phase 1: Small icon button
     return (
       <div
         className={`flex items-center justify-center w-[36px] h-[36px] bg-white rounded-full shadow-lg cursor-pointer hover:bg-blue-50 transition-all duration-200 ease-out ${
@@ -248,7 +225,6 @@ export default function QuickActionIcon() {
     );
   }
 
-  // Phase 2: Expanded options panel
   return (
     <div
       ref={panelRef}
@@ -256,18 +232,23 @@ export default function QuickActionIcon() {
       onMouseEnter={expand}
       onMouseLeave={() => collapse()}
     >
-      {PRESETS.map((preset) => (
-        <button
-          key={preset.id}
-          className="text-left px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-700 transition-colors"
-          onClick={(e) =>
-            invokePreset(preset.id, { x: e.clientX, y: e.clientY })
-          }
-        >
-          {preset.label}
-        </button>
-      ))}
-
+      {runtimeQuickActionCommands.length === 0 ? (
+        <p className="px-2 py-1 text-xs text-gray-400">請到設定新增快捷指令</p>
+      ) : (
+        <div className="max-h-[170px] overflow-y-auto space-y-1">
+          {runtimeQuickActionCommands.map((command) => (
+            <button
+              key={command.id}
+              className="w-full text-left px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-700 transition-colors"
+              onClick={(e) =>
+                invokeCommand(command, { x: e.clientX, y: e.clientY })
+              }
+            >
+              {command.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-1 mt-1 border-t border-gray-100 pt-1">
         <input
           className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs outline-none"

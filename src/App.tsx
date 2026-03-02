@@ -66,6 +66,7 @@ function MainWindow() {
     setOutputMode,
     setLlmProvider,
     setLlmModel,
+    setQuickActionCommands,
     resetSession,
   } = useAppStore();
 
@@ -154,6 +155,7 @@ function MainWindow() {
         outputMode: "DirectInject" | "PreviewStream";
         llmProvider: "openAi" | "gemini" | "claude" | "grok" | "ollama";
         llmModel: string;
+        quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
         "talkflow://settings-saved",
         (event) => {
@@ -178,6 +180,9 @@ function MainWindow() {
           }
           if (payload.llmModel) {
             setLlmModel(payload.llmModel);
+          }
+          if (payload.quickActionCommands) {
+            setQuickActionCommands(payload.quickActionCommands);
           }
           setStatusMsg("設定已更新");
           setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
