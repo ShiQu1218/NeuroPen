@@ -67,7 +67,7 @@ export default function QuickActionIcon() {
       );
       unlistenSettings = await listen<{
         outputMode?: "DirectInject" | "PreviewStream";
-        llmProvider?: "openAi" | "gemini" | "claude" | "grok";
+        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama";
         llmModel?: string;
       }>(
         "talkflow://settings-saved",

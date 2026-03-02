@@ -184,7 +184,11 @@ async fn call_llm(
     provider: llm::LlmProvider,
     model: String,
 ) -> Result<(), String> {
-    let api_key = stt::get_api_key()?;
+    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
+        String::new()
+    } else {
+        stt::get_api_key()?
+    };
     llm::call_llm(
         &api_key,
         &selected_text,

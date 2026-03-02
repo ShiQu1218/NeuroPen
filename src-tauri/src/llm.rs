@@ -5,6 +5,7 @@
 //! - Gemini
 //! - Claude
 //! - Grok
+//! - Ollama (local)
 //!
 //! Emits:
 //!   `llm://token(text)` — output chunk (single full chunk in current implementation)
@@ -30,6 +31,7 @@ pub enum LlmProvider {
     Gemini,
     Claude,
     Grok,
+    Ollama,
 }
 
 /// Preset B1 quick-action prompts.
@@ -79,6 +81,7 @@ fn default_model(provider: &LlmProvider) -> &'static str {
         LlmProvider::Gemini => "gemini-1.5-flash",
         LlmProvider::Claude => "claude-3-5-sonnet-latest",
         LlmProvider::Grok => "grok-2-latest",
+        LlmProvider::Ollama => "llama3.2",
     }
 }
 
@@ -239,6 +242,44 @@ async fn call_claude(
     Ok(out)
 }
 
+async fn call_ollama(model: &str, system_prompt: &str, user_message: &str) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "stream": false,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_message }
+        ]
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post("http://127.0.0.1:11434/api/chat")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Ollama response read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Ollama API error ({status}): {body}"));
+    }
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Ollama response parse failed: {e}"))?;
+    if let Some(text) = parsed["message"]["content"].as_str() {
+        if !text.is_empty() {
+            return Ok(text.to_string());
+        }
+    }
+    Err(format!("Unexpected Ollama response: {body}"))
+}
+
 pub async fn call_llm(
     api_key: &str,
     selected_text: &str,
@@ -293,6 +334,7 @@ pub async fn call_llm(
         LlmProvider::Claude => {
             call_claude(api_key, &chosen_model, system_prompt, &user_message).await
         }
+        LlmProvider::Ollama => call_ollama(&chosen_model, system_prompt, &user_message).await,
     }
     .map_err(|e| {
         let _ = app.emit("llm://error", LlmError { message: e.clone() });

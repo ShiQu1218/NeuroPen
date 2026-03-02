@@ -152,7 +152,7 @@ function MainWindow() {
         sttEngine: "openAi" | "local";
         sttModelPath?: string;
         outputMode: "DirectInject" | "PreviewStream";
-        llmProvider: "openAi" | "gemini" | "claude" | "grok";
+        llmProvider: "openAi" | "gemini" | "claude" | "grok" | "ollama";
         llmModel: string;
       }>(
         "talkflow://settings-saved",

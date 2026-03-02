@@ -12,7 +12,7 @@ const PREVIEW_CHROME_HEIGHT = 180;
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
-  const [runtimeLlmProvider, setRuntimeLlmProvider] = useState<"openAi" | "gemini" | "claude" | "grok">("openAi");
+  const [runtimeLlmProvider, setRuntimeLlmProvider] = useState<"openAi" | "gemini" | "claude" | "grok" | "ollama">("openAi");
   const [runtimeLlmModel, setRuntimeLlmModel] = useState("gpt-4o-mini");
   const outputRef = useRef<HTMLDivElement>(null);
 
@@ -70,7 +70,7 @@ export default function PreviewWindow() {
           useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
         }
       );
-      await register<{ llmProvider?: "openAi" | "gemini" | "claude" | "grok"; llmModel?: string }>(
+      await register<{ llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama"; llmModel?: string }>(
         "talkflow://settings-saved",
         (event) => {
           if (event.payload.llmProvider) {

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type OutputMode = "DirectInject" | "PreviewStream";
-export type LlmProvider = "openAi" | "gemini" | "claude" | "grok";
+export type LlmProvider = "openAi" | "gemini" | "claude" | "grok" | "ollama";
 
 export type SttEngine = "openAi" | "local";
 

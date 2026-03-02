@@ -128,6 +128,19 @@ fn is_left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
 }
 
+/// Fallback selection capture for apps where UIA text pattern is unavailable (e.g. VSCode).
+#[cfg(target_os = "windows")]
+fn try_read_selection_via_clipboard_once() -> Option<String> {
+    let clipboard_before = crate::clipboard::read_clipboard().ok()?;
+    crate::injection::simulate_ctrl_c().ok()?;
+    let copied = crate::clipboard::read_clipboard().ok();
+    let _ = crate::clipboard::write_clipboard(&clipboard_before);
+    match copied {
+        Some(text) if !text.trim().is_empty() => Some(text),
+        _ => None,
+    }
+}
+
 /// Start a background thread that polls for text selection changes.
 /// Emits `talkflow://selection-changed` with
 /// `{ has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y }`.
@@ -139,24 +152,51 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         let mut last_emitted_selection = false;
         let mut last_emitted_text = String::new();
         let mut last_left_down = false;
+        let mut drag_start: Option<(i32, i32)> = None;
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(50));
 
-            let (raw_has_selection, raw_text) = match get_selected_text() {
-                SelectionResult::Selected(t) => (true, t),
-                SelectionResult::None | SelectionResult::Unavailable => (false, String::new()),
+            let (raw_has_selection, raw_text, raw_unavailable) = match get_selected_text() {
+                SelectionResult::Selected(t) => (true, t, false),
+                SelectionResult::None => (false, String::new(), false),
+                SelectionResult::Unavailable => (false, String::new(), true),
             };
             let left_down = is_left_button_down();
-            // Only surface selection after mouse release so icon appears post-selection.
-            let (has_selection, text) = if raw_has_selection && !left_down {
-                (true, raw_text)
+            let just_released = last_left_down && !left_down;
+            let (cx, cy) = get_cursor_pos();
+
+            if left_down && !last_left_down {
+                drag_start = Some((cx, cy));
+            }
+            let was_drag_select = if just_released {
+                match drag_start {
+                    Some((sx, sy)) => (cx - sx).abs() >= 6 || (cy - sy).abs() >= 6,
+                    None => false,
+                }
             } else {
-                (false, String::new())
+                false
+            };
+            if just_released {
+                drag_start = None;
+            }
+
+            // Only surface selection after mouse release so icon appears post-selection.
+            let mut has_selection = raw_has_selection && !left_down;
+            let mut text = if has_selection {
+                raw_text
+            } else {
+                String::new()
             };
 
-            let (cx, cy) = get_cursor_pos();
-            let just_released = last_left_down && !left_down;
+            // Fallback for editors like VSCode that don't expose TextPattern via UIA.
+            if just_released && was_drag_select && !has_selection && raw_unavailable {
+                if let Some(fallback_text) = try_read_selection_via_clipboard_once() {
+                    has_selection = true;
+                    text = fallback_text;
+                }
+            }
+
             let selection_changed =
                 has_selection != last_emitted_selection || text != last_emitted_text;
 

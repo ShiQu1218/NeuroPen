@@ -583,12 +583,13 @@ export default function Settings() {
                 <select
                   className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
                   value={draftLlmProvider}
-                  onChange={(e) => setDraftLlmProvider(e.target.value as "openAi" | "gemini" | "claude" | "grok")}
+                  onChange={(e) => setDraftLlmProvider(e.target.value as "openAi" | "gemini" | "claude" | "grok" | "ollama")}
                 >
                   <option value="openAi">OpenAI</option>
                   <option value="gemini">Gemini</option>
                   <option value="claude">Claude</option>
                   <option value="grok">Grok</option>
+                  <option value="ollama">Ollama（本地）</option>
                 </select>
               </div>
               <div className="space-y-1">
@@ -597,13 +598,16 @@ export default function Settings() {
                   className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
                   value={draftLlmModel}
                   onChange={(e) => setDraftLlmModel(e.target.value)}
-                  placeholder="e.g. gpt-4o-mini / gemini-1.5-pro / claude-3-5-sonnet-latest / grok-2-latest"
+                  placeholder="e.g. gpt-4o-mini / gemini-1.5-pro / claude-3-5-sonnet-latest / grok-2-latest / llama3.2"
                 />
               </div>
 
               {/* API Key — sent to Rust, never stored in localStorage */}
               <div className="space-y-1">
                 <label className="font-medium">LLM / STT API Key</label>
+                {draftLlmProvider === "ollama" && (
+                  <p className="text-xs text-gray-500">使用 Ollama 不需要 API Key（本機 11434）。</p>
+                )}
                 {apiKeySet && (
                   <p className="text-xs text-green-600">API Key 已設定。重新輸入可覆蓋。</p>
                 )}
