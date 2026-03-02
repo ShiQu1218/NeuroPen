@@ -340,57 +340,99 @@ export default function Settings() {
     JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands);
 
   return (
-    <div className="p-6 space-y-5 text-sm text-gray-800">
-      <h1 className="text-lg font-semibold">TalkFlow 設定</h1>
+    <div className="h-screen bg-[#f5f5f7] p-6 text-sm text-zinc-800 flex flex-col overflow-hidden">
+      <div className="shrink-0">
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900">TalkFlow 設定</h1>
+        <p className="text-xs text-slate-500 mt-1">調整語音、快捷指令與模型設定，變更後按「儲存」生效。</p>
+      </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[170px_minmax(0,1fr)]">
-        <div className="rounded border border-gray-200 bg-gray-50 p-2">
-          <p className="px-2 py-1 text-xs font-medium text-gray-500">設定目錄</p>
+      <div className="mt-4 grid grid-cols-[210px_minmax(0,1fr)] gap-4 flex-1 min-h-0">
+        <div className="self-start rounded-2xl border border-white/80 bg-white/80 backdrop-blur-md p-2 shadow-[0_10px_30px_rgba(0,0,0,0.06)] min-h-0 overflow-y-auto">
+          <p className="px-2 py-1 text-xs font-semibold text-zinc-500">設定目錄</p>
           <div className="space-y-1">
             <button
               onClick={() => setActiveSection("general")}
-              className={`w-full rounded px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-                activeSection === "general" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:bg-white"
+              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
+                activeSection === "general" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
               }`}
             >
-              一般
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M12 3v4m0 10v4m9-9h-4M7 12H3m14.364 6.364-2.828-2.828M9.464 9.464 6.636 6.636m10.728 0-2.828 2.828M9.464 14.536l-2.828 2.828" />
+                  </svg>
+                </span>
+                <span>一般</span>
+              </span>
             </button>
             <button
               onClick={() => setActiveSection("stt")}
-              className={`w-full rounded px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-                activeSection === "stt" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:bg-white"
+              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
+                activeSection === "stt" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
               }`}
             >
-              語音與 STT
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <rect x="9" y="3" width="6" height="12" rx="3" />
+                    <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-3 0h6" />
+                  </svg>
+                </span>
+                <span>語音與 STT</span>
+              </span>
             </button>
             <button
               onClick={() => setActiveSection("quickAction")}
-              className={`w-full rounded px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-                activeSection === "quickAction" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:bg-white"
+              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
+                activeSection === "quickAction" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
               }`}
             >
-              快捷指令
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M7 7h10v10H7z" />
+                    <path d="M3 12h2m14 0h2M12 3v2m0 14v2" />
+                  </svg>
+                </span>
+                <span>快捷指令</span>
+              </span>
             </button>
             <button
               onClick={() => setActiveSection("llm")}
-              className={`w-full rounded px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-                activeSection === "llm" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:bg-white"
+              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
+                activeSection === "llm" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
               }`}
             >
-              LLM
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M4 12a8 8 0 1 0 8-8" />
+                    <path d="M12 8v4l3 2" />
+                  </svg>
+                </span>
+                <span>LLM</span>
+              </span>
             </button>
             <button
               onClick={() => setActiveSection("privacy")}
-              className={`w-full rounded px-2 py-1.5 text-left text-xs font-medium transition-colors ${
-                activeSection === "privacy" ? "bg-white text-blue-700 shadow-sm" : "text-gray-600 hover:bg-white"
+              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
+                activeSection === "privacy" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
               }`}
             >
-              隱私
+              <span className="flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path d="M12 3 5 6v5c0 5 3.5 8 7 10 3.5-2 7-5 7-10V6l-7-3Z" />
+                  </svg>
+                </span>
+                <span>隱私</span>
+              </span>
             </button>
           </div>
         </div>
 
-        <div className="space-y-5">
+        <div className="rounded-2xl border border-white/80 bg-white/85 backdrop-blur-md p-4 shadow-[0_18px_40px_rgba(0,0,0,0.08)] min-h-0 flex flex-col">
+          <div className="space-y-5 min-h-0 overflow-y-auto pr-1">
           {activeSection === "general" && (
             <>
               {/* Hotkey */}
@@ -618,14 +660,14 @@ export default function Settings() {
                 </div>
                 <button
                   onClick={handleAddQuickActionCommand}
-                  className="px-2.5 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 transition-colors"
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-zinc-900 hover:bg-black transition-colors"
                 >
                   新增指令
                 </button>
               </div>
               <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
                 {draftQuickActionCommands.map((command) => (
-                  <div key={command.id} className="rounded border border-gray-200 bg-gray-50 p-3 space-y-2">
+                  <div key={command.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
                     <input
                       className="w-full border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-400"
                       value={command.label}
@@ -641,7 +683,7 @@ export default function Settings() {
                     <div className="flex justify-end">
                       <button
                         onClick={() => handleDeleteQuickActionCommand(command.id)}
-                        className="px-2.5 py-1 rounded text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 transition-colors"
+                        className="px-2.5 py-1 rounded-lg text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 transition-colors"
                       >
                         刪除
                       </button>
@@ -760,10 +802,11 @@ export default function Settings() {
               </button>
             </div>
           )}
+          </div>
         </div>
       </div>
 
-      <div className="pt-2 flex items-center justify-end gap-2">
+      <div className="pt-3 mt-3 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
         {settingsSaveStatus === "saved" && (
           <p className="text-xs text-green-600">設定已套用。</p>
         )}
@@ -773,14 +816,14 @@ export default function Settings() {
         <button
           onClick={handleCancelSettings}
           disabled={!hasSettingsChanges}
-          className="px-3 py-1 rounded text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           取消
         </button>
         <button
           onClick={handleSaveSettings}
           disabled={!hasSettingsChanges}
-          className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-white bg-zinc-900 hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           儲存
         </button>

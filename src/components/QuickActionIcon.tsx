@@ -214,13 +214,13 @@ export default function QuickActionIcon() {
   if (!expanded) {
     return (
       <div
-        className={`flex items-center justify-center w-[36px] h-[36px] bg-white rounded-full shadow-lg cursor-pointer hover:bg-blue-50 transition-all duration-200 ease-out ${
+        className={`flex items-center justify-center w-[36px] h-[36px] bg-white/85 backdrop-blur-md border border-white/80 rounded-full shadow-[0_10px_28px_rgba(0,0,0,0.18)] cursor-pointer transition-all duration-200 ease-out ${
           iconVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
         }`}
         onMouseEnter={expand}
         onClick={expand}
       >
-        <span className="text-base leading-none select-none">✦</span>
+        <span className="text-lg leading-none select-none text-zinc-700">✦</span>
       </div>
     );
   }
@@ -228,18 +228,19 @@ export default function QuickActionIcon() {
   return (
     <div
       ref={panelRef}
-      className="flex flex-col gap-1 p-2 bg-white rounded-lg shadow-lg text-sm"
+      className="flex flex-col gap-2 p-2.5 bg-white/88 backdrop-blur-xl rounded-2xl border border-white/80 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm"
       onMouseEnter={expand}
       onMouseLeave={() => collapse()}
     >
+      <p className="px-1 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">快速操作</p>
       {runtimeQuickActionCommands.length === 0 ? (
-        <p className="px-2 py-1 text-xs text-gray-400">請到設定新增快捷指令</p>
+        <p className="px-2 py-1 text-xs text-slate-400">請到設定新增快捷指令</p>
       ) : (
         <div className="max-h-[170px] overflow-y-auto space-y-1">
           {runtimeQuickActionCommands.map((command) => (
             <button
               key={command.id}
-              className="w-full text-left px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-700 transition-colors"
+              className="w-full text-left px-3 py-1.5 rounded-xl bg-white/80 hover:bg-zinc-100 hover:text-zinc-900 border border-zinc-200/60 transition-colors"
               onClick={(e) =>
                 invokeCommand(command, { x: e.clientX, y: e.clientY })
               }
@@ -249,9 +250,9 @@ export default function QuickActionIcon() {
           ))}
         </div>
       )}
-      <div className="flex items-center gap-1 mt-1 border-t border-gray-100 pt-1">
+      <div className="flex items-center gap-1.5 mt-1 border-t border-slate-100 pt-2">
         <input
-          className="flex-1 border border-gray-200 rounded px-2 py-1 text-xs outline-none"
+          className="flex-1 border border-zinc-200 rounded-xl px-2.5 py-1.5 text-xs bg-white/90 outline-none focus:border-zinc-400"
           placeholder="自訂指令…"
           value={customInput}
           onChange={(e) => setCustomInput(e.target.value)}
@@ -270,7 +271,7 @@ export default function QuickActionIcon() {
           }}
         />
         <button
-          className="text-blue-500 hover:text-blue-700 text-xs disabled:opacity-40"
+          className="px-2.5 py-1.5 rounded-xl bg-zinc-900 text-white hover:bg-black text-xs disabled:opacity-40"
           disabled={!customInput.trim()}
           onClick={(e) => invokeCustom({ x: e.clientX, y: e.clientY })}
         >

@@ -174,18 +174,21 @@ export default function PreviewWindow() {
   const hasOutput = llmOutput.length > 0;
 
   return (
-    <div className="flex flex-col h-screen bg-white text-gray-900 select-text rounded-lg border border-gray-200 shadow-xl overflow-hidden">
+    <div className="flex flex-col h-screen bg-white/90 text-zinc-900 select-text rounded-2xl border border-white/80 shadow-[0_28px_60px_rgba(0,0,0,0.16)] overflow-hidden backdrop-blur-xl">
       {/* Custom title bar (draggable) */}
       <div
-        className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200 cursor-move shrink-0"
+        className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"
         onMouseDown={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           void handleStartDrag();
         }}
       >
-        <span className="text-xs text-gray-400 select-none pointer-events-none">TalkFlow Preview</span>
+        <div className="pointer-events-none select-none">
+          <span className="text-xs font-semibold text-zinc-700">TalkFlow Preview</span>
+          <p className="text-[10px] text-zinc-400 leading-tight">可拖曳、複製或直接取代原文</p>
+        </div>
         <button
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-red-100 hover:text-red-600 text-gray-400 transition-colors"
+          className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
           onClick={handleClose}
           title="關閉"
         >
@@ -199,7 +202,7 @@ export default function PreviewWindow() {
       {/* Output area */}
       <div
         ref={outputRef}
-        className="flex-1 overflow-auto p-4 font-mono text-sm whitespace-pre-wrap border-b border-gray-200"
+        className="flex-1 overflow-auto p-4 font-mono text-sm whitespace-pre-wrap border-b border-zinc-200 bg-zinc-50/80"
       >
         {llmError ? (
           <span className="text-red-500">{llmError}</span>
@@ -213,9 +216,9 @@ export default function PreviewWindow() {
       </div>
 
       {/* Refinement input */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
         <input
-          className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-400"
+          className="flex-1 border border-zinc-200 rounded-xl bg-white px-2.5 py-1.5 text-sm outline-none focus:border-zinc-400"
           placeholder="輸入補充指令…"
           value={refinementInput}
           onChange={(e) => setRefinementInput(e.target.value)}
@@ -225,7 +228,7 @@ export default function PreviewWindow() {
           disabled={isLlmLoading}
         />
         <button
-          className="text-blue-500 hover:text-blue-700 disabled:opacity-40"
+          className="px-2.5 py-1.5 rounded-xl bg-zinc-900 text-white hover:bg-black disabled:opacity-40"
           disabled={isLlmLoading || !refinementInput.trim()}
           onClick={handleRefinement}
         >
@@ -234,23 +237,23 @@ export default function PreviewWindow() {
       </div>
 
       {/* Action buttons */}
-      <div className="flex justify-center gap-3 px-3 py-2 shrink-0">
+      <div className="flex justify-center gap-3 px-3 py-2.5 shrink-0 bg-white/80">
         <button
-          className="px-4 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-sm disabled:opacity-40"
+          className="px-4 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 text-sm disabled:opacity-40"
           disabled={!hasOutput}
           onClick={handleCopy}
         >
           複製
         </button>
         <button
-          className="px-4 py-1.5 rounded bg-blue-500 hover:bg-blue-600 text-white text-sm disabled:opacity-40"
+          className="px-4 py-1.5 rounded-xl bg-zinc-900 hover:bg-black text-white text-sm disabled:opacity-40"
           disabled={!hasOutput || isLlmLoading}
           onClick={handleReplace}
         >
           取代
         </button>
         <button
-          className="px-4 py-1.5 rounded bg-gray-100 hover:bg-gray-200 text-sm"
+          className="px-4 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 text-sm"
           onClick={handleClose}
         >
           關閉
