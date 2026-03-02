@@ -13,7 +13,7 @@
  * State is persisted via the Zustand store (localStorage), except API key
  * which is stored only in Rust process memory via the set_api_key command.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
@@ -32,6 +32,62 @@ interface LocalSttModel {
 }
 
 type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "privacy";
+
+const STATUS_RESET_MS = 2000;
+const RATING_INDICES = [0, 1, 2, 3, 4];
+
+const NAV_ITEMS: { id: SettingsSection; label: string; icon: React.ReactNode }[] = [
+  {
+    id: "general",
+    label: "一般",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M12 3v4m0 10v4m9-9h-4M7 12H3m14.364 6.364-2.828-2.828M9.464 9.464 6.636 6.636m10.728 0-2.828 2.828M9.464 14.536l-2.828 2.828" />
+      </svg>
+    ),
+  },
+  {
+    id: "stt",
+    label: "語音與 STT",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="9" y="3" width="6" height="12" rx="3" />
+        <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-3 0h6" />
+      </svg>
+    ),
+  },
+  {
+    id: "quickAction",
+    label: "快捷指令",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M7 7h10v10H7z" />
+        <path d="M3 12h2m14 0h2M12 3v2m0 14v2" />
+      </svg>
+    ),
+  },
+  {
+    id: "llm",
+    label: "LLM",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M12 2a7 7 0 0 0-7 7c0 2.5 1.2 4.5 3 5.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3c1.8-1.2 3-3.2 3-5.7a7 7 0 0 0-7-7Z" />
+        <path d="M9 21h6M10 17v4M14 17v4" />
+        <path d="M9 10h0M15 10h0" />
+        <path d="M9.5 13a3.5 3.5 0 0 0 5 0" />
+      </svg>
+    ),
+  },
+  {
+    id: "privacy",
+    label: "隱私",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M12 3 5 6v5c0 5 3.5 8 7 10 3.5-2 7-5 7-10V6l-7-3Z" />
+      </svg>
+    ),
+  },
+];
 
 export default function Settings() {
   const {
@@ -82,33 +138,16 @@ export default function Settings() {
       .catch(() => setApiKeySet(false));
   }, []);
 
+  // Sync all drafts from store (2a: merged 7 useEffects into 1)
   useEffect(() => {
     setDraftWakeWord(wakeWord);
-  }, [wakeWord]);
-
-  useEffect(() => {
     setDraftHotkey(hotkey);
-  }, [hotkey]);
-
-  useEffect(() => {
     setDraftSttEngine(sttEngine);
-  }, [sttEngine]);
-
-  useEffect(() => {
     setDraftOutputMode(outputMode);
-  }, [outputMode]);
-
-  useEffect(() => {
     setDraftLlmProvider(llmProvider);
-  }, [llmProvider]);
-
-  useEffect(() => {
     setDraftLlmModel(llmModel);
-  }, [llmModel]);
-
-  useEffect(() => {
     setDraftQuickActionCommands(quickActionCommands);
-  }, [quickActionCommands]);
+  }, [wakeWord, hotkey, sttEngine, outputMode, llmProvider, llmModel, quickActionCommands]);
 
   useEffect(() => {
     if (draftLlmProvider !== "openAi" && draftSttEngine === "openAi") {
@@ -140,12 +179,36 @@ export default function Settings() {
         setApiKeySet(apiKeyInput.length > 0);
         setApiKeyInput("");
         setApiKeySaveStatus("saved");
-        setTimeout(() => setApiKeySaveStatus(""), 2000);
+        setTimeout(() => setApiKeySaveStatus(""), STATUS_RESET_MS);
       })
       .catch(() => {
         setApiKeySaveStatus("error");
-        setTimeout(() => setApiKeySaveStatus(""), 2000);
+        setTimeout(() => setApiKeySaveStatus(""), STATUS_RESET_MS);
       });
+  };
+
+  // 2d: shared helper for model busy operations
+  const withModelBusy = async (
+    modelId: string,
+    action: "install" | "delete" | "select",
+    fn: () => Promise<void>,
+    successMsg: string,
+    errorMsg: string,
+  ) => {
+    setLocalModelBusyId(modelId);
+    setLocalModelBusyAction(action);
+    setLocalModelStatus({ type: "", message: "" });
+    try {
+      await fn();
+      await loadLocalModels();
+      setLocalModelStatus({ type: "success", message: successMsg });
+    } catch (err) {
+      console.error(`[Settings] ${action}_local_stt_model failed:`, err);
+      setLocalModelStatus({ type: "error", message: errorMsg });
+    } finally {
+      setLocalModelBusyId("");
+      setLocalModelBusyAction("");
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -158,19 +221,9 @@ export default function Settings() {
         instruction: command.instruction.trim(),
       }))
       .filter((command) => command.label && command.instruction);
-    if (!nextWakeWord) {
+    if (!nextWakeWord || !nextModel || nextQuickActionCommands.length === 0) {
       setSettingsSaveStatus("error");
-      setTimeout(() => setSettingsSaveStatus(""), 2000);
-      return;
-    }
-    if (!nextModel) {
-      setSettingsSaveStatus("error");
-      setTimeout(() => setSettingsSaveStatus(""), 2000);
-      return;
-    }
-    if (nextQuickActionCommands.length === 0) {
-      setSettingsSaveStatus("error");
-      setTimeout(() => setSettingsSaveStatus(""), 2000);
+      setTimeout(() => setSettingsSaveStatus(""), STATUS_RESET_MS);
       return;
     }
 
@@ -201,14 +254,14 @@ export default function Settings() {
       setHotkeyStatus("");
       setHotkeyErrorMessage("");
       setSettingsSaveStatus("saved");
-      setTimeout(() => setSettingsSaveStatus(""), 2000);
+      setTimeout(() => setSettingsSaveStatus(""), STATUS_RESET_MS);
     } catch (err) {
       console.error("[Settings] save settings failed:", err);
       const message = err instanceof Error ? err.message : String(err);
       setHotkeyStatus("error");
       setHotkeyErrorMessage(message);
       setSettingsSaveStatus("error");
-      setTimeout(() => setSettingsSaveStatus(""), 2000);
+      setTimeout(() => setSettingsSaveStatus(""), STATUS_RESET_MS);
     }
   };
 
@@ -256,88 +309,72 @@ export default function Settings() {
     );
   };
 
-  const handleInstallLocalModel = async (modelId: string) => {
-    setLocalModelBusyId(modelId);
-    setLocalModelBusyAction("install");
-    setLocalModelStatus({ type: "", message: "" });
-    try {
-      await invoke("install_local_stt_model", { modelId });
-      await loadLocalModels();
-      setLocalModelStatus({ type: "success", message: "模型安裝完成" });
-    } catch (err) {
-      console.error("[Settings] install_local_stt_model failed:", err);
-      setLocalModelStatus({ type: "error", message: "模型安裝失敗，請稍後再試" });
-    } finally {
-      setLocalModelBusyId("");
-      setLocalModelBusyAction("");
-    }
-  };
+  const handleInstallLocalModel = (modelId: string) =>
+    withModelBusy(
+      modelId,
+      "install",
+      () => invoke<void>("install_local_stt_model", { modelId }),
+      "模型安裝完成",
+      "模型安裝失敗，請稍後再試",
+    );
 
-  const handleDeleteLocalModel = async (modelId: string) => {
-    setLocalModelBusyId(modelId);
-    setLocalModelBusyAction("delete");
-    setLocalModelStatus({ type: "", message: "" });
-    try {
-      const deleting = localModels.find((model) => model.id === modelId);
-      await invoke("delete_local_stt_model", { modelId });
-      if (deleting && deleting.modelPath === sttModelPath) {
-        setSttModelPath("");
+  const handleDeleteLocalModel = (modelId: string) =>
+    withModelBusy(
+      modelId,
+      "delete",
+      async () => {
+        const deleting = localModels.find((model) => model.id === modelId);
+        await invoke("delete_local_stt_model", { modelId });
+        if (deleting && deleting.modelPath === sttModelPath) {
+          setSttModelPath("");
+          await emit("talkflow://settings-saved", {
+            wakeWord: draftWakeWord.trim() || wakeWord,
+            hotkey: draftHotkey,
+            sttEngine: draftSttEngine,
+            sttModelPath: "",
+            outputMode: draftOutputMode,
+            llmProvider: draftLlmProvider,
+            llmModel: draftLlmModel.trim() || llmModel,
+          });
+        }
+      },
+      "模型已刪除",
+      "模型刪除失敗，請稍後再試",
+    );
+
+  const handleSelectLocalModel = (modelId: string) =>
+    withModelBusy(
+      modelId,
+      "select",
+      async () => {
+        const selectedPath = await invoke<string>("select_local_stt_model", { modelId });
+        setSttModelPath(selectedPath);
         await emit("talkflow://settings-saved", {
           wakeWord: draftWakeWord.trim() || wakeWord,
           hotkey: draftHotkey,
           sttEngine: draftSttEngine,
-          sttModelPath: "",
+          sttModelPath: selectedPath,
           outputMode: draftOutputMode,
           llmProvider: draftLlmProvider,
           llmModel: draftLlmModel.trim() || llmModel,
         });
-      }
-      await loadLocalModels();
-      setLocalModelStatus({ type: "success", message: "模型已刪除" });
-    } catch (err) {
-      console.error("[Settings] delete_local_stt_model failed:", err);
-      setLocalModelStatus({ type: "error", message: "模型刪除失敗，請稍後再試" });
-    } finally {
-      setLocalModelBusyId("");
-      setLocalModelBusyAction("");
-    }
-  };
+      },
+      "已切換目前使用模型",
+      "模型切換失敗，請先確認已安裝",
+    );
 
-  const handleSelectLocalModel = async (modelId: string) => {
-    setLocalModelBusyId(modelId);
-    setLocalModelBusyAction("select");
-    setLocalModelStatus({ type: "", message: "" });
-    try {
-      const selectedPath = await invoke<string>("select_local_stt_model", { modelId });
-      setSttModelPath(selectedPath);
-      await emit("talkflow://settings-saved", {
-        wakeWord: draftWakeWord.trim() || wakeWord,
-        hotkey: draftHotkey,
-        sttEngine: draftSttEngine,
-        sttModelPath: selectedPath,
-        outputMode: draftOutputMode,
-        llmProvider: draftLlmProvider,
-        llmModel: draftLlmModel.trim() || llmModel,
-      });
-      await loadLocalModels();
-      setLocalModelStatus({ type: "success", message: "已切換目前使用模型" });
-    } catch (err) {
-      console.error("[Settings] select_local_stt_model failed:", err);
-      setLocalModelStatus({ type: "error", message: "模型切換失敗，請先確認已安裝" });
-    } finally {
-      setLocalModelBusyId("");
-      setLocalModelBusyAction("");
-    }
-  };
-
-  const hasSettingsChanges =
-    draftWakeWord !== wakeWord ||
-    draftHotkey !== hotkey ||
-    draftSttEngine !== sttEngine ||
-    draftOutputMode !== outputMode ||
-    draftLlmProvider !== llmProvider ||
-    draftLlmModel !== llmModel ||
-    JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands);
+  // 2e: useMemo for hasSettingsChanges
+  const hasSettingsChanges = useMemo(
+    () =>
+      draftWakeWord !== wakeWord ||
+      draftHotkey !== hotkey ||
+      draftSttEngine !== sttEngine ||
+      draftOutputMode !== outputMode ||
+      draftLlmProvider !== llmProvider ||
+      draftLlmModel !== llmModel ||
+      JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands),
+    [draftWakeWord, wakeWord, draftHotkey, hotkey, draftSttEngine, sttEngine, draftOutputMode, outputMode, draftLlmProvider, llmProvider, draftLlmModel, llmModel, draftQuickActionCommands, quickActionCommands],
+  );
 
   return (
     <div className="h-screen bg-[#f5f5f7] p-6 text-sm text-zinc-800 flex flex-col overflow-hidden">
@@ -347,91 +384,28 @@ export default function Settings() {
       </div>
 
       <div className="mt-4 grid grid-cols-[210px_minmax(0,1fr)] gap-4 flex-1 min-h-0">
-        <div className="self-start rounded-2xl border border-white/80 bg-white/80 backdrop-blur-md p-2 shadow-[0_10px_30px_rgba(0,0,0,0.06)] min-h-0 overflow-y-auto">
+        {/* 2b: sidebar rendered via NAV_ITEMS.map() */}
+        <div className="self-start glass-panel-sm p-2 min-h-0 overflow-y-auto">
           <p className="px-2 py-1 text-xs font-semibold text-zinc-500">設定目錄</p>
           <div className="space-y-1">
-            <button
-              onClick={() => setActiveSection("general")}
-              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
-                activeSection === "general" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
-                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M12 3v4m0 10v4m9-9h-4M7 12H3m14.364 6.364-2.828-2.828M9.464 9.464 6.636 6.636m10.728 0-2.828 2.828M9.464 14.536l-2.828 2.828" />
-                  </svg>
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveSection(item.id)}
+                className={activeSection === item.id ? "nav-tab-active" : "nav-tab-inactive"}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
+                    {item.icon}
+                  </span>
+                  <span>{item.label}</span>
                 </span>
-                <span>一般</span>
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveSection("stt")}
-              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
-                activeSection === "stt" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
-                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <rect x="9" y="3" width="6" height="12" rx="3" />
-                    <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-3 0h6" />
-                  </svg>
-                </span>
-                <span>語音與 STT</span>
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveSection("quickAction")}
-              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
-                activeSection === "quickAction" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
-                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M7 7h10v10H7z" />
-                    <path d="M3 12h2m14 0h2M12 3v2m0 14v2" />
-                  </svg>
-                </span>
-                <span>快捷指令</span>
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveSection("llm")}
-              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
-                activeSection === "llm" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
-                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M4 12a8 8 0 1 0 8-8" />
-                    <path d="M12 8v4l3 2" />
-                  </svg>
-                </span>
-                <span>LLM</span>
-              </span>
-            </button>
-            <button
-              onClick={() => setActiveSection("privacy")}
-              className={`w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors ${
-                activeSection === "privacy" ? "bg-white text-zinc-900 shadow-sm ring-1 ring-black/5" : "text-zinc-600 hover:bg-white/70"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
-                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path d="M12 3 5 6v5c0 5 3.5 8 7 10 3.5-2 7-5 7-10V6l-7-3Z" />
-                  </svg>
-                </span>
-                <span>隱私</span>
-              </span>
-            </button>
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/80 bg-white/85 backdrop-blur-md p-4 shadow-[0_18px_40px_rgba(0,0,0,0.08)] min-h-0 flex flex-col">
+        <div className="glass-panel-md p-4 min-h-0 flex flex-col">
           <div className="space-y-5 min-h-0 overflow-y-auto pr-1">
           {activeSection === "general" && (
             <>
@@ -439,7 +413,7 @@ export default function Settings() {
               <div className="space-y-1">
                 <label className="font-medium">全域熱鍵</label>
                 <input
-                  className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
+                  className="w-full input-field px-2 py-1"
                   value={draftHotkey}
                   readOnly
                   placeholder="按下快捷鍵組合…"
@@ -473,7 +447,7 @@ export default function Settings() {
                       setHotkeyStatus("");
                       setHotkeyErrorMessage("");
                     }}
-                    className="px-2 py-1 rounded text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
+                    className="btn-secondary px-2 py-1 text-xs"
                   >
                     設回預設 Alt+`
                   </button>
@@ -492,7 +466,7 @@ export default function Settings() {
               <div className="space-y-1">
                 <label className="font-medium">喚醒詞</label>
                 <input
-                  className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
+                  className="w-full input-field px-2 py-1"
                   value={draftWakeWord}
                   onChange={(e) => setDraftWakeWord(e.target.value)}
                   placeholder="助理"
@@ -588,7 +562,7 @@ export default function Settings() {
                           <div className="flex items-center gap-2 text-[11px] text-gray-600">
                             <span className="w-10">速度</span>
                             <div className="flex gap-1">
-                              {Array.from({ length: 5 }).map((_, idx) => (
+                              {RATING_INDICES.map((idx) => (
                                 <span
                                   key={`speed-${model.id}-${idx}`}
                                   className={`h-1.5 w-4 rounded ${idx < model.speed ? "bg-emerald-500" : "bg-gray-200"}`}
@@ -599,7 +573,7 @@ export default function Settings() {
                           <div className="flex items-center gap-2 text-[11px] text-gray-600">
                             <span className="w-10">準確</span>
                             <div className="flex gap-1">
-                              {Array.from({ length: 5 }).map((_, idx) => (
+                              {RATING_INDICES.map((idx) => (
                                 <span
                                   key={`accuracy-${model.id}-${idx}`}
                                   className={`h-1.5 w-4 rounded ${idx < model.accuracy ? "bg-blue-500" : "bg-gray-200"}`}
@@ -630,7 +604,7 @@ export default function Settings() {
                               <button
                                 onClick={() => handleDeleteLocalModel(model.id)}
                                 disabled={!!localModelBusyId}
-                                className="px-2.5 py-1 rounded text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                className="btn-danger px-2.5 py-1 rounded text-xs"
                               >
                                 {isBusy && localModelBusyAction === "delete" ? "刪除中…" : "刪除"}
                               </button>
@@ -660,7 +634,7 @@ export default function Settings() {
                 </div>
                 <button
                   onClick={handleAddQuickActionCommand}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-zinc-900 hover:bg-black transition-colors"
+                  className="btn-primary px-3 py-1.5 text-xs"
                 >
                   新增指令
                 </button>
@@ -669,13 +643,13 @@ export default function Settings() {
                 {draftQuickActionCommands.map((command) => (
                   <div key={command.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
                     <input
-                      className="w-full border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-400"
+                      className="w-full input-field px-2 py-1 text-xs"
                       value={command.label}
                       onChange={(e) => handleUpdateQuickActionCommand(command.id, "label", e.target.value)}
                       placeholder="按鈕名稱"
                     />
                     <textarea
-                      className="w-full min-h-[72px] border border-gray-300 rounded px-2 py-1 text-xs outline-none focus:border-blue-400"
+                      className="w-full min-h-[72px] input-field px-2 py-1 text-xs"
                       value={command.instruction}
                       onChange={(e) => handleUpdateQuickActionCommand(command.id, "instruction", e.target.value)}
                       placeholder="輸入此按鈕對 LLM 的指令內容"
@@ -683,7 +657,7 @@ export default function Settings() {
                     <div className="flex justify-end">
                       <button
                         onClick={() => handleDeleteQuickActionCommand(command.id)}
-                        className="px-2.5 py-1 rounded-lg text-xs font-medium text-red-700 bg-red-100 hover:bg-red-200 transition-colors"
+                        className="btn-danger px-2.5 py-1 rounded-lg text-xs"
                       >
                         刪除
                       </button>
@@ -730,7 +704,7 @@ export default function Settings() {
               <div className="space-y-1">
                 <label className="font-medium">LLM API 提供商</label>
                 <select
-                  className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400"
+                  className="w-full input-field px-2 py-1"
                   value={draftLlmProvider}
                   onChange={(e) => setDraftLlmProvider(e.target.value as "openAi" | "gemini" | "claude" | "grok" | "ollama")}
                 >
@@ -744,7 +718,7 @@ export default function Settings() {
               <div className="space-y-1">
                 <label className="font-medium">LLM Model</label>
                 <input
-                  className="w-full border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
+                  className="w-full input-field px-2 py-1 font-mono text-xs"
                   value={draftLlmModel}
                   onChange={(e) => setDraftLlmModel(e.target.value)}
                   placeholder="e.g. gpt-4o-mini / gemini-1.5-pro / claude-3-5-sonnet-latest / grok-2-latest / llama3.2"
@@ -763,7 +737,7 @@ export default function Settings() {
                 <div className="flex gap-2">
                   <input
                     type="password"
-                    className="flex-1 border border-gray-300 rounded px-2 py-1 outline-none focus:border-blue-400 font-mono text-xs"
+                    className="flex-1 input-field px-2 py-1 font-mono text-xs"
                     value={apiKeyInput}
                     onChange={(e) => setApiKeyInput(e.target.value)}
                     placeholder={apiKeySet ? "••••••••" : "輸入對應提供商 API Key"}
@@ -816,14 +790,14 @@ export default function Settings() {
         <button
           onClick={handleCancelSettings}
           disabled={!hasSettingsChanges}
-          className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="btn-secondary px-3.5 py-1.5 text-xs"
         >
           取消
         </button>
         <button
           onClick={handleSaveSettings}
           disabled={!hasSettingsChanges}
-          className="px-3.5 py-1.5 rounded-lg text-xs font-medium text-white bg-zinc-900 hover:bg-black disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="btn-primary px-3.5 py-1.5 text-xs"
         >
           儲存
         </button>

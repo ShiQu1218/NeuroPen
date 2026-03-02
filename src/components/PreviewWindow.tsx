@@ -12,8 +12,6 @@ const PREVIEW_CHROME_HEIGHT = 180;
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
-  const [runtimeLlmProvider, setRuntimeLlmProvider] = useState<"openAi" | "gemini" | "claude" | "grok" | "ollama">("openAi");
-  const [runtimeLlmModel, setRuntimeLlmModel] = useState("gpt-4o-mini");
   const outputRef = useRef<HTMLDivElement>(null);
 
   const llmOutput = useAppStore((s) => s.llmOutput);
@@ -25,14 +23,6 @@ export default function PreviewWindow() {
   const setLlmOutput = useAppStore((s) => s.setLlmOutput);
   const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
   const setLlmError = useAppStore((s) => s.setLlmError);
-
-  useEffect(() => {
-    setRuntimeLlmProvider(llmProvider);
-  }, [llmProvider]);
-
-  useEffect(() => {
-    setRuntimeLlmModel(llmModel);
-  }, [llmModel]);
 
   // Listen to LLM streaming events
   useEffect(() => {
@@ -70,17 +60,6 @@ export default function PreviewWindow() {
           useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
         }
       );
-      await register<{ llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama"; llmModel?: string }>(
-        "talkflow://settings-saved",
-        (event) => {
-          if (event.payload.llmProvider) {
-            setRuntimeLlmProvider(event.payload.llmProvider);
-          }
-          if (event.payload.llmModel) {
-            setRuntimeLlmModel(event.payload.llmModel);
-          }
-        }
-      );
     })();
 
     return () => {
@@ -113,13 +92,11 @@ export default function PreviewWindow() {
   };
 
   const handleReplace = async () => {
-    // Restore focus to the original target window before injecting
     const restored = await invoke<boolean>("restore_focus");
     if (!restored) {
       setLlmError("找不到原始目標視窗，無法取代");
       return;
     }
-    // Small delay to let the OS switch focus
     await new Promise((r) => setTimeout(r, 100));
     const focusOk = await invoke<boolean>("verify_focus");
     if (!focusOk) {
@@ -166,15 +143,15 @@ export default function PreviewWindow() {
       selectedText: selectedContext,
       instruction: input,
       outputMode: "PreviewStream",
-      provider: runtimeLlmProvider,
-      model: runtimeLlmModel,
+      provider: llmProvider,
+      model: llmModel,
     });
   };
 
   const hasOutput = llmOutput.length > 0;
 
   return (
-    <div className="flex flex-col h-screen bg-white/90 text-zinc-900 select-text rounded-2xl border border-white/80 shadow-[0_28px_60px_rgba(0,0,0,0.16)] overflow-hidden backdrop-blur-xl">
+    <div className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden">
       {/* Custom title bar (draggable) */}
       <div
         className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"
@@ -218,7 +195,7 @@ export default function PreviewWindow() {
       {/* Refinement input */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
         <input
-          className="flex-1 border border-zinc-200 rounded-xl bg-white px-2.5 py-1.5 text-sm outline-none focus:border-zinc-400"
+          className="flex-1 input-field px-2.5 py-1.5 text-sm"
           placeholder="輸入補充指令…"
           value={refinementInput}
           onChange={(e) => setRefinementInput(e.target.value)}
@@ -228,7 +205,7 @@ export default function PreviewWindow() {
           disabled={isLlmLoading}
         />
         <button
-          className="px-2.5 py-1.5 rounded-xl bg-zinc-900 text-white hover:bg-black disabled:opacity-40"
+          className="btn-primary px-2.5 py-1.5 text-sm"
           disabled={isLlmLoading || !refinementInput.trim()}
           onClick={handleRefinement}
         >
@@ -239,21 +216,21 @@ export default function PreviewWindow() {
       {/* Action buttons */}
       <div className="flex justify-center gap-3 px-3 py-2.5 shrink-0 bg-white/80">
         <button
-          className="px-4 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 text-sm disabled:opacity-40"
+          className="btn-secondary px-4 py-1.5 text-sm"
           disabled={!hasOutput}
           onClick={handleCopy}
         >
           複製
         </button>
         <button
-          className="px-4 py-1.5 rounded-xl bg-zinc-900 hover:bg-black text-white text-sm disabled:opacity-40"
+          className="btn-primary px-4 py-1.5 text-sm"
           disabled={!hasOutput || isLlmLoading}
           onClick={handleReplace}
         >
           取代
         </button>
         <button
-          className="px-4 py-1.5 rounded-xl bg-zinc-100 border border-zinc-200 hover:bg-zinc-200 text-sm"
+          className="btn-secondary px-4 py-1.5 text-sm"
           onClick={handleClose}
         >
           關閉

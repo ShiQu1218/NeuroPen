@@ -131,12 +131,17 @@ fn is_left_button_down() -> bool {
 /// Fallback selection capture for apps where UIA text pattern is unavailable (e.g. VSCode).
 #[cfg(target_os = "windows")]
 fn try_read_selection_via_clipboard_once() -> Option<String> {
-    let clipboard_before = crate::clipboard::read_clipboard().ok()?;
-    crate::injection::simulate_ctrl_c().ok()?;
+    let clipboard_before = crate::clipboard::read_clipboard().unwrap_or_default();
+    if crate::injection::simulate_ctrl_c().is_err() {
+        return None;
+    }
+    // Give the target app time to process Ctrl+C and update the clipboard.
+    // Electron/browser apps can be slow; 150ms covers most cases.
+    std::thread::sleep(std::time::Duration::from_millis(150));
     let copied = crate::clipboard::read_clipboard().ok();
     let _ = crate::clipboard::write_clipboard(&clipboard_before);
     match copied {
-        Some(text) if !text.trim().is_empty() => Some(text),
+        Some(text) if !text.trim().is_empty() && text != clipboard_before => Some(text),
         _ => None,
     }
 }
@@ -153,11 +158,14 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         let mut last_emitted_text = String::new();
         let mut last_left_down = false;
         let mut drag_start: Option<(i32, i32)> = None;
+        // Sticky selection: when clipboard fallback succeeds, remember the
+        // selection so it persists across polls until the user clicks again.
+        let mut sticky_text: Option<String> = None;
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(50));
 
-            let (raw_has_selection, raw_text, raw_unavailable) = match get_selected_text() {
+            let (raw_has_selection, raw_text, _raw_unavailable) = match get_selected_text() {
                 SelectionResult::Selected(t) => (true, t, false),
                 SelectionResult::None => (false, String::new(), false),
                 SelectionResult::Unavailable => (false, String::new(), true),
@@ -168,6 +176,8 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
 
             if left_down && !last_left_down {
                 drag_start = Some((cx, cy));
+                // User started a new click/drag — clear sticky selection
+                sticky_text = None;
             }
             let was_drag_select = if just_released {
                 match drag_start {
@@ -189,12 +199,22 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 String::new()
             };
 
-            // Fallback for editors like VSCode that don't expose TextPattern via UIA.
-            if just_released && was_drag_select && !has_selection && raw_unavailable {
+            // Fallback for apps where UIA doesn't report selection
+            // (e.g. VSCode, Electron apps, browser content areas).
+            // Trigger clipboard fallback whenever a drag-select occurred
+            // but UIA returned no selection, regardless of Unavailable status.
+            if just_released && was_drag_select && !has_selection {
                 if let Some(fallback_text) = try_read_selection_via_clipboard_once() {
                     has_selection = true;
-                    text = fallback_text;
+                    text = fallback_text.clone();
+                    sticky_text = Some(fallback_text);
                 }
+            }
+
+            // If no UIA selection but we have a sticky fallback selection, keep it.
+            if !has_selection && !left_down && sticky_text.is_some() {
+                has_selection = true;
+                text = sticky_text.clone().unwrap();
             }
 
             let selection_changed =

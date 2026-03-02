@@ -14,10 +14,6 @@ export default function QuickActionIcon() {
   const llmProvider = useAppStore((s) => s.llmProvider);
   const llmModel = useAppStore((s) => s.llmModel);
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
-  const [runtimeOutputMode, setRuntimeOutputMode] = useState(outputMode);
-  const [runtimeLlmProvider, setRuntimeLlmProvider] = useState(llmProvider);
-  const [runtimeLlmModel, setRuntimeLlmModel] = useState(llmModel);
-  const [runtimeQuickActionCommands, setRuntimeQuickActionCommands] = useState(quickActionCommands);
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
   const [customInput, setCustomInput] = useState("");
@@ -31,52 +27,13 @@ export default function QuickActionIcon() {
   }, []);
 
   useEffect(() => {
-    setRuntimeOutputMode(outputMode);
-  }, [outputMode]);
-
-  useEffect(() => {
-    setRuntimeLlmProvider(llmProvider);
-  }, [llmProvider]);
-
-  useEffect(() => {
-    setRuntimeLlmModel(llmModel);
-  }, [llmModel]);
-
-  useEffect(() => {
-    setRuntimeQuickActionCommands(quickActionCommands);
-  }, [quickActionCommands]);
-
-  useEffect(() => {
     let unlistenSelection: (() => void) | null = null;
-    let unlistenSettings: (() => void) | null = null;
     let unlistenQaShow: (() => void) | null = null;
     void (async () => {
       unlistenSelection = await listen<{ text: string }>(
         "talkflow://stable-selection",
         (event) => {
           stableSelectionRef.current = event.payload.text ?? "";
-        }
-      );
-      unlistenSettings = await listen<{
-        outputMode?: "DirectInject" | "PreviewStream";
-        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama";
-        llmModel?: string;
-        quickActionCommands?: QuickActionCommand[];
-      }>(
-        "talkflow://settings-saved",
-        (event) => {
-          if (event.payload.outputMode) {
-            setRuntimeOutputMode(event.payload.outputMode);
-          }
-          if (event.payload.llmProvider) {
-            setRuntimeLlmProvider(event.payload.llmProvider);
-          }
-          if (event.payload.llmModel) {
-            setRuntimeLlmModel(event.payload.llmModel);
-          }
-          if (event.payload.quickActionCommands) {
-            setRuntimeQuickActionCommands(event.payload.quickActionCommands);
-          }
         }
       );
       unlistenQaShow = await listen("talkflow://qa-show", () => {
@@ -98,7 +55,6 @@ export default function QuickActionIcon() {
         cancelAnimationFrame(fadeRaf.current);
       }
       unlistenSelection?.();
-      unlistenSettings?.();
       unlistenQaShow?.();
       void setQaInteracting(false);
     };
@@ -167,7 +123,7 @@ export default function QuickActionIcon() {
     const qaSize = await getCurrentWindow().outerSize();
     const scaleFactor = await getCurrentWindow().scaleFactor();
 
-    if (runtimeOutputMode === "PreviewStream") {
+    if (outputMode === "PreviewStream") {
       await emit("talkflow://preview-session", {
         selectedText,
         instruction,
@@ -189,11 +145,11 @@ export default function QuickActionIcon() {
     await invoke("call_llm", {
       selectedText,
       instruction,
-      outputMode: runtimeOutputMode,
-      provider: runtimeLlmProvider,
-      model: runtimeLlmModel,
+      outputMode,
+      provider: llmProvider,
+      model: llmModel,
     });
-    if (runtimeOutputMode === "DirectInject") {
+    if (outputMode === "DirectInject") {
       await invoke("restore_clipboard");
     }
   };
@@ -228,16 +184,16 @@ export default function QuickActionIcon() {
   return (
     <div
       ref={panelRef}
-      className="flex flex-col gap-2 p-2.5 bg-white/88 backdrop-blur-xl rounded-2xl border border-white/80 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm"
+      className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm"
       onMouseEnter={expand}
       onMouseLeave={() => collapse()}
     >
       <p className="px-1 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">快速操作</p>
-      {runtimeQuickActionCommands.length === 0 ? (
+      {quickActionCommands.length === 0 ? (
         <p className="px-2 py-1 text-xs text-slate-400">請到設定新增快捷指令</p>
       ) : (
         <div className="max-h-[170px] overflow-y-auto space-y-1">
-          {runtimeQuickActionCommands.map((command) => (
+          {quickActionCommands.map((command) => (
             <button
               key={command.id}
               className="w-full text-left px-3 py-1.5 rounded-xl bg-white/80 hover:bg-zinc-100 hover:text-zinc-900 border border-zinc-200/60 transition-colors"
@@ -252,7 +208,7 @@ export default function QuickActionIcon() {
       )}
       <div className="flex items-center gap-1.5 mt-1 border-t border-slate-100 pt-2">
         <input
-          className="flex-1 border border-zinc-200 rounded-xl px-2.5 py-1.5 text-xs bg-white/90 outline-none focus:border-zinc-400"
+          className="flex-1 input-field px-2.5 py-1.5 text-xs bg-white/90"
           placeholder="自訂指令…"
           value={customInput}
           onChange={(e) => setCustomInput(e.target.value)}
@@ -271,7 +227,7 @@ export default function QuickActionIcon() {
           }}
         />
         <button
-          className="px-2.5 py-1.5 rounded-xl bg-zinc-900 text-white hover:bg-black text-xs disabled:opacity-40"
+          className="btn-primary px-2.5 py-1.5 text-xs"
           disabled={!customInput.trim()}
           onClick={(e) => invokeCustom({ x: e.clientX, y: e.clientY })}
         >
