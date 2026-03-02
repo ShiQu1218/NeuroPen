@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LogicalSize } from "@tauri-apps/api/dpi";
 import { useAppStore } from "../store/useAppStore";
+
+const PREVIEW_WIDTH = 340;
+const PREVIEW_MIN_HEIGHT = 240;
+const PREVIEW_MAX_HEIGHT = 420;
+const PREVIEW_CHROME_HEIGHT = 180;
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
@@ -54,6 +60,9 @@ export default function PreviewWindow() {
       await register<{ selectedText?: string; instruction?: string }>(
         "talkflow://preview-session",
         (event) => {
+          void getCurrentWindow().setSize(
+            new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
+          );
           useAppStore.getState().setLlmOutput("");
           useAppStore.getState().setIsLlmLoading(true);
           useAppStore.getState().setLlmError("");
@@ -80,10 +89,22 @@ export default function PreviewWindow() {
     };
   }, []);
 
-  // Auto-scroll to bottom when output changes
+  // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {
     if (outputRef.current) {
+      if (!llmOutput.trim()) {
+        void getCurrentWindow().setSize(
+          new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
+        );
+        return;
+      }
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
+      const outputHeight = Math.max(60, outputRef.current.scrollHeight);
+      const nextHeight = Math.min(
+        PREVIEW_MAX_HEIGHT,
+        Math.max(PREVIEW_MIN_HEIGHT, outputHeight + PREVIEW_CHROME_HEIGHT)
+      );
+      void getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, nextHeight));
     }
   }, [llmOutput]);
 
@@ -114,6 +135,7 @@ export default function PreviewWindow() {
 
   const handleClose = async () => {
     await invoke("restore_clipboard");
+    await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT));
     await getCurrentWindow().hide();
     setLlmOutput("");
     setIsLlmLoading(false);

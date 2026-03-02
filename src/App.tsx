@@ -241,6 +241,7 @@ function MainWindow() {
             }
             await qaWin.setPosition(new PhysicalPosition(x + 8, y + 8));
             await qaWin.show();
+            await emit("talkflow://qa-show");
           } else {
             lastSelectionFingerprint = "";
             if (qaInteracting) return;

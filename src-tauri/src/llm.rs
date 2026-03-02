@@ -50,6 +50,29 @@ pub struct LlmError {
     pub message: String,
 }
 
+async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str) {
+    const CHUNK_CHARS: usize = 24;
+    const CHUNK_DELAY_MS: u64 = 12;
+
+    let mut chunk = String::new();
+    let mut chunk_len = 0usize;
+
+    for ch in full_output.chars() {
+        chunk.push(ch);
+        chunk_len += 1;
+        if chunk_len >= CHUNK_CHARS {
+            let _ = app.emit("llm://token", LlmToken { text: chunk.clone() });
+            chunk.clear();
+            chunk_len = 0;
+            tokio::time::sleep(std::time::Duration::from_millis(CHUNK_DELAY_MS)).await;
+        }
+    }
+
+    if !chunk.is_empty() {
+        let _ = app.emit("llm://token", LlmToken { text: chunk });
+    }
+}
+
 fn default_model(provider: &LlmProvider) -> &'static str {
     match provider {
         LlmProvider::OpenAi => "gpt-4o-mini",
@@ -277,7 +300,7 @@ pub async fn call_llm(
     })?;
 
     if !full_output.is_empty() {
-        let _ = app.emit("llm://token", LlmToken { text: full_output.clone() });
+        emit_output_stream(&app, &full_output).await;
     }
     let _ = app.emit("llm://done", ());
 

@@ -31,9 +31,11 @@ export default function QuickActionIcon() {
   const [runtimeLlmProvider, setRuntimeLlmProvider] = useState(llmProvider);
   const [runtimeLlmModel, setRuntimeLlmModel] = useState(llmModel);
   const [expanded, setExpanded] = useState(false);
+  const [iconVisible, setIconVisible] = useState(true);
   const [customInput, setCustomInput] = useState("");
   const [isInputFocused, setIsInputFocused] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fadeRaf = useRef<number | null>(null);
   const stableSelectionRef = useRef("");
   const panelRef = useRef<HTMLDivElement | null>(null);
   const setQaInteracting = useCallback(async (active: boolean) => {
@@ -55,6 +57,7 @@ export default function QuickActionIcon() {
   useEffect(() => {
     let unlistenSelection: (() => void) | null = null;
     let unlistenSettings: (() => void) | null = null;
+    let unlistenQaShow: (() => void) | null = null;
     void (async () => {
       unlistenSelection = await listen<{ text: string }>(
         "talkflow://stable-selection",
@@ -80,13 +83,27 @@ export default function QuickActionIcon() {
           }
         }
       );
+      unlistenQaShow = await listen("talkflow://qa-show", () => {
+        if (fadeRaf.current !== null) {
+          cancelAnimationFrame(fadeRaf.current);
+        }
+        setIconVisible(false);
+        fadeRaf.current = requestAnimationFrame(() => {
+          setIconVisible(true);
+          fadeRaf.current = null;
+        });
+      });
     })();
     return () => {
       if (collapseTimer.current) {
         clearTimeout(collapseTimer.current);
       }
+      if (fadeRaf.current !== null) {
+        cancelAnimationFrame(fadeRaf.current);
+      }
       unlistenSelection?.();
       unlistenSettings?.();
+      unlistenQaShow?.();
       void setQaInteracting(false);
     };
   }, [setQaInteracting]);
@@ -123,7 +140,10 @@ export default function QuickActionIcon() {
     }, 200);
   }, [isInputFocused, setQaInteracting]);
 
-  const showPreviewAndCallLlm = async (instruction: string) => {
+  const showPreviewAndCallLlm = async (
+    instruction: string,
+    pointer?: { x: number; y: number }
+  ) => {
     // Fetch selectedText directly from Rust (cross-window store won't work)
     let selectedText = stableSelectionRef.current.trim();
     try {
@@ -162,6 +182,7 @@ export default function QuickActionIcon() {
     // Get current window position so we can position preview below
     const qaPos = await getCurrentWindow().outerPosition();
     const qaSize = await getCurrentWindow().outerSize();
+    const scaleFactor = await getCurrentWindow().scaleFactor();
 
     if (runtimeOutputMode === "PreviewStream") {
       // Show preview window positioned below the quick action icon
@@ -171,8 +192,12 @@ export default function QuickActionIcon() {
       });
       const previewWin = await WebviewWindow.getByLabel("preview");
       if (previewWin) {
-        const previewX = qaPos.x;
-        const previewY = qaPos.y + qaSize.height + 4;
+        const previewX = pointer
+          ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
+          : qaPos.x;
+        const previewY = pointer
+          ? Math.round(qaPos.y + pointer.y * scaleFactor + 12)
+          : qaPos.y + qaSize.height + 4;
         await previewWin.setPosition(
           new PhysicalPosition(previewX, previewY)
         );
@@ -194,22 +219,27 @@ export default function QuickActionIcon() {
     }
   };
 
-  const invokePreset = async (presetId: string) => {
+  const invokePreset = async (
+    presetId: string,
+    pointer?: { x: number; y: number }
+  ) => {
     const instruction = PRESET_INSTRUCTIONS[presetId];
-    await showPreviewAndCallLlm(instruction);
+    await showPreviewAndCallLlm(instruction, pointer);
   };
 
-  const invokeCustom = async () => {
+  const invokeCustom = async (pointer?: { x: number; y: number }) => {
     const instruction = customInput.trim();
     if (!instruction) return;
-    await showPreviewAndCallLlm(instruction);
+    await showPreviewAndCallLlm(instruction, pointer);
   };
 
   if (!expanded) {
     // Phase 1: Small icon button
     return (
       <div
-        className="flex items-center justify-center w-[36px] h-[36px] bg-white rounded-full shadow-lg cursor-pointer hover:bg-blue-50 transition-colors"
+        className={`flex items-center justify-center w-[36px] h-[36px] bg-white rounded-full shadow-lg cursor-pointer hover:bg-blue-50 transition-all duration-200 ease-out ${
+          iconVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+        }`}
         onMouseEnter={expand}
         onClick={expand}
       >
@@ -230,7 +260,9 @@ export default function QuickActionIcon() {
         <button
           key={preset.id}
           className="text-left px-3 py-1.5 rounded hover:bg-blue-50 hover:text-blue-700 transition-colors"
-          onClick={() => invokePreset(preset.id)}
+          onClick={(e) =>
+            invokePreset(preset.id, { x: e.clientX, y: e.clientY })
+          }
         >
           {preset.label}
         </button>
@@ -259,7 +291,7 @@ export default function QuickActionIcon() {
         <button
           className="text-blue-500 hover:text-blue-700 text-xs disabled:opacity-40"
           disabled={!customInput.trim()}
-          onClick={invokeCustom}
+          onClick={(e) => invokeCustom({ x: e.clientX, y: e.clientY })}
         >
           →
         </button>

@@ -128,8 +128,7 @@ fn is_left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
 }
 
-/// Start a background thread that polls for text selection changes every 500ms.
-/// Uses debounce: waits for 2 consecutive stable polls before emitting.
+/// Start a background thread that polls for text selection changes.
 /// Emits `talkflow://selection-changed` with
 /// `{ has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y }`.
 #[cfg(target_os = "windows")]
@@ -139,14 +138,10 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         init_com();
         let mut last_emitted_selection = false;
         let mut last_emitted_text = String::new();
-
-        // Debounce state: track the pending (candidate) selection
-        let mut pending_selection: Option<(bool, String, i32, i32)> = None;
-        let mut stable_count: u32 = 0;
-        const STABLE_THRESHOLD: u32 = 2; // Need 2 consecutive identical polls
+        let mut last_left_down = false;
 
         loop {
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(50));
 
             let (raw_has_selection, raw_text) = match get_selected_text() {
                 SelectionResult::Selected(t) => (true, t),
@@ -161,59 +156,38 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
             };
 
             let (cx, cy) = get_cursor_pos();
+            let just_released = last_left_down && !left_down;
+            let selection_changed =
+                has_selection != last_emitted_selection || text != last_emitted_text;
 
-            // Debounce: check if this poll matches the pending candidate
-            let matches_pending = match &pending_selection {
-                Some((ps, pt, _, _)) => *ps == has_selection && *pt == text,
-                None => false,
-            };
+            if selection_changed || just_released {
+                last_emitted_selection = has_selection;
+                last_emitted_text = text.clone();
 
-            if matches_pending {
-                stable_count += 1;
-            } else {
-                // New candidate
-                pending_selection = Some((has_selection, text.clone(), cx, cy));
-                stable_count = 1;
+                let payload = if has_selection {
+                    serde_json::json!({
+                        "has_selection": true,
+                        "text": text,
+                        "cursor_x": cx,
+                        "cursor_y": cy,
+                        "anchor_x": cx,
+                        "anchor_y": cy
+                    })
+                } else {
+                    serde_json::json!({
+                        "has_selection": false,
+                        "text": null,
+                        "cursor_x": cx,
+                        "cursor_y": cy,
+                        "anchor_x": null,
+                        "anchor_y": null
+                    })
+                };
+
+                let _ = app.emit("talkflow://selection-changed", payload);
             }
 
-            // Only emit after the selection has been stable for STABLE_THRESHOLD polls
-            if stable_count >= STABLE_THRESHOLD {
-                // Check if it's different from what we last emitted
-                if has_selection != last_emitted_selection || text != last_emitted_text {
-                    last_emitted_selection = has_selection;
-                    last_emitted_text = text.clone();
-
-                    let (anchor_cx, anchor_cy) = pending_selection
-                        .as_ref()
-                        .map(|(_, _, px, py)| (*px, *py))
-                        .unwrap_or((cx, cy));
-
-                    let payload = if has_selection {
-                        serde_json::json!({
-                            "has_selection": true,
-                            "text": text,
-                            "cursor_x": cx,
-                            "cursor_y": cy,
-                            "anchor_x": anchor_cx,
-                            "anchor_y": anchor_cy
-                        })
-                    } else {
-                        serde_json::json!({
-                            "has_selection": false,
-                            "text": null,
-                            "cursor_x": cx,
-                            "cursor_y": cy,
-                            "anchor_x": null,
-                            "anchor_y": null
-                        })
-                    };
-
-                    let _ = app.emit("talkflow://selection-changed", payload);
-                }
-                // Reset pending after emit
-                pending_selection = None;
-                stable_count = 0;
-            }
+            last_left_down = left_down;
         }
     });
 }
