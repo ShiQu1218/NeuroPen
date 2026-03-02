@@ -12,16 +12,6 @@ import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
 import { useAppStore } from "./store/useAppStore";
 
-const openSettings = async () => {
-  const win = await WebviewWindow.getByLabel("settings");
-  if (win) {
-    await win.show();
-    await win.setFocus();
-  } else {
-    console.warn("[App] settings window not found");
-  }
-};
-
 /**
  * Prevent a window from being destroyed on close — hide it instead.
  */
@@ -62,7 +52,7 @@ function App() {
 
 /** Main window handles hotkey events and orchestrates the full flow. */
 function MainWindow() {
-  const [statusMsg, setStatusMsg] = useState("按住熱鍵開始錄音");
+  const [, setStatusMsg] = useState("按住熱鍵開始錄音");
 
   const {
     setIsRecording,
@@ -506,55 +496,7 @@ function MainWindow() {
     };
   }, []);
 
-  const currentMode = useAppStore((s) => s.currentMode);
-  const isRec = useAppStore((s) => s.isRecording);
-  const sttError = useAppStore((s) => s.sttError);
-
-  return (
-    <main className="relative flex flex-col items-center justify-center h-screen bg-gray-50 text-gray-700">
-      <button
-        className="absolute top-3 right-3 p-1.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors"
-        onClick={openSettings}
-        title="設定"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      </button>
-      <h1 className="text-2xl font-semibold mb-2">TalkFlow</h1>
-      <p className="text-gray-400 text-sm">Windows AI Voice Assistant</p>
-
-      {/* Status indicator */}
-      <div className="mt-6 flex flex-col items-center gap-2">
-        {isRec && (
-          <span className="flex items-center gap-2 text-red-500 text-sm font-medium">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-            錄音中…
-          </span>
-        )}
-        {currentMode && (
-          <span className="text-xs text-blue-500 bg-blue-50 px-2 py-0.5 rounded">
-            Mode {currentMode}
-          </span>
-        )}
-        {sttError && (
-          <span className="text-xs text-red-500">{sttError}</span>
-        )}
-        <p className="mt-2 text-xs text-gray-300">{statusMsg}</p>
-      </div>
-    </main>
-  );
+  return null;
 }
 
 export default App;

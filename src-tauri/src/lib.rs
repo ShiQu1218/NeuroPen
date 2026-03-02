@@ -10,7 +10,11 @@ mod undo;
 mod window_focus;
 
 use serde::Serialize;
-use tauri::{Emitter, Listener};
+use tauri::{Emitter, Listener, Manager};
+#[cfg(desktop)]
+use tauri::menu::{Menu, MenuItem};
+#[cfg(desktop)]
+use tauri::tray::TrayIconBuilder;
 
 // ── Tauri command return types ──────────────────────────────────────────
 
@@ -217,6 +221,15 @@ fn change_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String
     hotkey::change_trigger(&app, modifiers, code)
 }
 
+fn show_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
+    let win = app
+        .get_webview_window("settings")
+        .ok_or_else(|| "settings window not found".to_string())?;
+    win.show().map_err(|e| e.to_string())?;
+    win.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ── App setup ───────────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -251,6 +264,45 @@ pub fn run() {
             change_hotkey,
         ])
         .setup(|app| {
+            #[cfg(desktop)]
+            {
+                let settings_item = MenuItem::with_id(
+                    app,
+                    "tray_open_settings",
+                    "設定",
+                    true,
+                    Option::<&str>::None,
+                )
+                .map_err(|e| e.to_string())?;
+                let quit_item =
+                    MenuItem::with_id(app, "tray_quit", "離開", true, Option::<&str>::None)
+                        .map_err(|e| e.to_string())?;
+                let tray_menu =
+                    Menu::with_items(app, &[&settings_item, &quit_item]).map_err(|e| e.to_string())?;
+
+                let mut tray_builder = TrayIconBuilder::with_id("talkflow-tray")
+                    .menu(&tray_menu)
+                    .tooltip("TalkFlow")
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "tray_open_settings" => {
+                            let _ = show_settings_window(app);
+                        }
+                        "tray_quit" => app.exit(0),
+                        _ => {}
+                    });
+
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    tray_builder = tray_builder.icon(icon);
+                }
+
+                tray_builder.build(app).map_err(|e| e.to_string())?;
+            }
+
+            if let Some(main_window) = app.get_webview_window("main") {
+                let _ = main_window.hide();
+            }
+
             // Initialize COM for UI Automation on the main thread
             selection::init_com();
 
