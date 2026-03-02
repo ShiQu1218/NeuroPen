@@ -17,7 +17,13 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
 /// Shared HTTP client — reuses TCP/TLS connections across LLM calls.
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
+static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .expect("Failed to build HTTP client")
+});
 
 /// Controls where LLM output is sent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -203,8 +209,8 @@ async fn call_gemini(
     user_message: &str,
 ) -> Result<String, String> {
     let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-        model, api_key
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+        model
     );
     let body = serde_json::json!({
         "system_instruction": { "parts": [{ "text": system_prompt }] },
@@ -213,6 +219,7 @@ async fn call_gemini(
 
     let resp = HTTP_CLIENT
         .post(url)
+        .header("x-goog-api-key", api_key)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()

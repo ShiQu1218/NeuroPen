@@ -129,8 +129,10 @@ fn is_left_button_down() -> bool {
 }
 
 /// Fallback selection capture for apps where UIA text pattern is unavailable (e.g. VSCode).
+/// Acquires the global clipboard operation lock to avoid racing with the hotkey flow.
 #[cfg(target_os = "windows")]
 fn try_read_selection_via_clipboard_once() -> Option<String> {
+    let _op = crate::clipboard::acquire_op_lock().ok()?;
     let clipboard_before = crate::clipboard::read_clipboard().unwrap_or_default();
     if crate::injection::simulate_ctrl_c().is_err() {
         return None;

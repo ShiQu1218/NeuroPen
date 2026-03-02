@@ -34,6 +34,7 @@ cpal = "0.15"
 ringbuf = "0.4"
 once_cell = "1"
 dirs = "5"
+keyring = { version = "3", features = ["windows-native"] }
 futures-util = "0.3"
 
 whisper-rs = { version = "0.15", optional = true }

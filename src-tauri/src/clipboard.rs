@@ -13,6 +13,17 @@ use std::sync::Mutex;
 
 static CLIPBOARD_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
+/// Global lock for multi-step clipboard operations (cache → use → restore).
+/// Any code path that performs a sequence of clipboard reads/writes must hold this
+/// lock for the entire duration to prevent interleaving with concurrent flows.
+static CLIPBOARD_OP_LOCK: Mutex<()> = Mutex::new(());
+
+/// Acquire the clipboard operation lock. Returns a guard that releases it on drop.
+/// Used by clipboard.rs functions and selection.rs clipboard fallback.
+pub fn acquire_op_lock() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    CLIPBOARD_OP_LOCK.lock().map_err(|e| format!("Clipboard op lock poisoned: {e}"))
+}
+
 #[cfg(target_os = "windows")]
 mod win32 {
     use windows::Win32::Foundation::{HANDLE, HGLOBAL, HWND};
@@ -85,15 +96,18 @@ mod win32 {
 }
 
 /// Saves the current clipboard text so it can be restored later.
+/// Acquires the global clipboard operation lock.
 pub fn cache_clipboard() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        let _op = acquire_op_lock()?;
         win32::open()?;
         let text = win32::read_text().unwrap_or_default();
         win32::close();
         if let Ok(mut guard) = CLIPBOARD_CACHE.lock() {
             *guard = Some(text.clone());
         }
+        #[cfg(debug_assertions)]
         println!("[clipboard] Cached {} chars", text.len());
         Ok(())
     }

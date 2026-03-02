@@ -44,6 +44,15 @@ pub fn undo_last_injection() -> Result<bool, String> {
 
     match record {
         Some(rec) => {
+            // Verify focus hasn't changed — avoid sending backspaces to the wrong window.
+            if !crate::window_focus::verify_focus_unchanged() {
+                // Put the record back so undo can be retried after refocusing.
+                if let Ok(mut guard) = LAST_INJECTION.lock() {
+                    *guard = Some(rec);
+                }
+                return Err("焦點視窗已變更，取消復原。請切回原視窗後再試。".into());
+            }
+
             let char_count = rec.injected.chars().count();
             println!(
                 "[undo] Undoing {} chars for HWND {}",

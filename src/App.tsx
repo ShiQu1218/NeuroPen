@@ -393,7 +393,7 @@ function MainWindow() {
 
         // ── New session ──
         const { has_selection, selected_text } = event.payload;
-        console.log("[App] talkflow://mode-start", event.payload);
+        if (import.meta.env.DEV) console.log("[App] talkflow://mode-start", event.payload);
 
         resetSession();
 
@@ -479,7 +479,7 @@ function MainWindow() {
       // ── 3. STT final result → route transcript ──
       await safeRegister<{ text: string }>("stt://final", async (event) => {
         const transcript = event.payload.text;
-        console.log("[App] stt://final:", transcript);
+        if (import.meta.env.DEV) console.log("[App] stt://final:", transcript);
 
         const store = useAppStore.getState();
         store.setTranscript(transcript);
@@ -497,7 +497,7 @@ function MainWindow() {
             incognito: store.incognito,
           });
 
-          console.log("[App] route_transcript result:", result);
+          if (import.meta.env.DEV) console.log("[App] route_transcript result:", result);
           const mode = result.mode as "A" | "B2" | "C";
           store.setCurrentMode(mode);
 

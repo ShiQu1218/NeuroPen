@@ -283,17 +283,52 @@ pub fn select_local_stt_model(model_id: String) -> Result<String, String> {
     Ok(target_path.to_string_lossy().to_string())
 }
 
-/// Store the OpenAI API key to a file and update the in-process cache.
-pub fn set_api_key(key: String) -> Result<(), String> {
-    let path = api_key_file_path()?;
+const KEYRING_SERVICE: &str = "talkflow";
+const KEYRING_LLM_USER: &str = "llm-api-key";
+const KEYRING_STT_USER: &str = "stt-api-key";
 
+fn keyring_set(user: &str, key: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, user)
+        .map_err(|e| format!("Credential store error: {e}"))?;
+    entry.set_password(key)
+        .map_err(|e| format!("Failed to save key to credential store: {e}"))
+}
+
+fn keyring_get(user: &str) -> Option<String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, user).ok()?;
+    entry.get_password().ok().filter(|k| !k.trim().is_empty())
+}
+
+fn keyring_delete(user: &str) {
+    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, user) {
+        let _ = entry.delete_credential();
+    }
+}
+
+/// Migrate a plaintext key file into the credential store and delete the file.
+fn migrate_key_file_to_keyring(file_path: &std::path::Path, keyring_user: &str) {
+    if let Ok(contents) = std::fs::read_to_string(file_path) {
+        let key = contents.trim().to_string();
+        if !key.is_empty() {
+            if keyring_set(keyring_user, &key).is_ok() {
+                let _ = std::fs::remove_file(file_path);
+            }
+        }
+    }
+}
+
+/// Store the LLM API key in the OS credential store and update the in-process cache.
+pub fn set_api_key(key: String) -> Result<(), String> {
     if key.is_empty() {
-        let _ = std::fs::remove_file(&path);
+        keyring_delete(KEYRING_LLM_USER);
+        // Also remove legacy file if it exists
+        if let Ok(path) = api_key_file_path() {
+            let _ = std::fs::remove_file(path);
+        }
         let mut cache = API_KEY_CACHE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
         *cache = None;
     } else {
-        std::fs::write(&path, &key)
-            .map_err(|e| format!("Failed to save API key: {e}"))?;
+        keyring_set(KEYRING_LLM_USER, &key)?;
         let mut cache = API_KEY_CACHE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
         *cache = Some(key);
     }
@@ -311,15 +346,17 @@ pub fn has_api_key() -> bool {
 }
 
 pub fn set_stt_api_key(key: String) -> Result<(), String> {
-    let path = stt_api_key_file_path()?;
     if key.is_empty() {
-        let _ = std::fs::remove_file(&path);
+        keyring_delete(KEYRING_STT_USER);
+        if let Ok(path) = stt_api_key_file_path() {
+            let _ = std::fs::remove_file(path);
+        }
         let mut cache = STT_API_KEY_CACHE
             .lock()
             .map_err(|e| format!("Lock poisoned: {e}"))?;
         *cache = None;
     } else {
-        std::fs::write(&path, &key).map_err(|e| format!("Failed to save STT API key: {e}"))?;
+        keyring_set(KEYRING_STT_USER, &key)?;
         let mut cache = STT_API_KEY_CACHE
             .lock()
             .map_err(|e| format!("Lock poisoned: {e}"))?;
@@ -343,20 +380,30 @@ pub(crate) fn get_stt_api_key() -> Result<String, String> {
             return Ok(key.clone());
         }
     }
-    let path = stt_api_key_file_path()?;
-    let key = std::fs::read_to_string(&path)
-        .map_err(|_| "未設定 Whisper STT API Key。請在設定中填入 STT API Key。".to_string())?;
-    let key = key.trim().to_string();
-    if key.is_empty() {
-        return Err("未設定 Whisper STT API Key。請在設定中填入 STT API Key。".to_string());
+    // Try credential store first
+    if let Some(key) = keyring_get(KEYRING_STT_USER) {
+        if let Ok(mut cache) = STT_API_KEY_CACHE.lock() {
+            *cache = Some(key.clone());
+        }
+        return Ok(key);
     }
-    if let Ok(mut cache) = STT_API_KEY_CACHE.lock() {
-        *cache = Some(key.clone());
+    // Migrate from legacy plaintext file
+    if let Ok(path) = stt_api_key_file_path() {
+        if path.is_file() {
+            migrate_key_file_to_keyring(&path, KEYRING_STT_USER);
+            if let Some(key) = keyring_get(KEYRING_STT_USER) {
+                if let Ok(mut cache) = STT_API_KEY_CACHE.lock() {
+                    *cache = Some(key.clone());
+                }
+                return Ok(key);
+            }
+        }
     }
-    Ok(key)
+    Err("未設定 Whisper STT API Key。請在設定中填入 STT API Key。".to_string())
 }
 
-/// Read the API key — checks in-process cache first, then file.
+/// Read the LLM API key — checks in-process cache first, then credential store.
+/// Migrates legacy plaintext files to the credential store on first access.
 /// Never exposed to frontend.
 pub(crate) fn get_api_key() -> Result<String, String> {
     // Check cache
@@ -365,18 +412,26 @@ pub(crate) fn get_api_key() -> Result<String, String> {
             return Ok(key.clone());
         }
     }
-    // Read from file and populate cache
-    let path = api_key_file_path()?;
-    let key = std::fs::read_to_string(&path)
-        .map_err(|_| "未設定 OpenAI API Key。請在設定中填入 API Key。".to_string())?;
-    let key = key.trim().to_string();
-    if key.is_empty() {
-        return Err("未設定 OpenAI API Key。請在設定中填入 API Key。".to_string());
+    // Try credential store
+    if let Some(key) = keyring_get(KEYRING_LLM_USER) {
+        if let Ok(mut cache) = API_KEY_CACHE.lock() {
+            *cache = Some(key.clone());
+        }
+        return Ok(key);
     }
-    if let Ok(mut cache) = API_KEY_CACHE.lock() {
-        *cache = Some(key.clone());
+    // Migrate from legacy plaintext file
+    if let Ok(path) = api_key_file_path() {
+        if path.is_file() {
+            migrate_key_file_to_keyring(&path, KEYRING_LLM_USER);
+            if let Some(key) = keyring_get(KEYRING_LLM_USER) {
+                if let Ok(mut cache) = API_KEY_CACHE.lock() {
+                    *cache = Some(key.clone());
+                }
+                return Ok(key);
+            }
+        }
     }
-    Ok(key)
+    Err("未設定 OpenAI API Key。請在設定中填入 API Key。".to_string())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -476,8 +531,10 @@ pub fn stop_recording(
         };
         match result {
             Ok(raw_text) => {
+                #[cfg(debug_assertions)]
                 println!("[stt] Raw transcript: {:?}", raw_text);
                 let text = deduplicate_transcript(&raw_text);
+                #[cfg(debug_assertions)]
                 if text != raw_text {
                     println!("[stt] Deduped transcript: {:?}", text);
                 }
@@ -634,6 +691,15 @@ fn normalize_template_path(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
+/// Validate that a path contains no shell metacharacters that could enable injection.
+/// Allows: alphanumeric, '.', '/', '\', '-', '_', ':', ' ' (spaces are safe when quoted).
+fn validate_shell_safe_path(value: &str, field_name: &str) -> Result<(), String> {
+    if value.chars().any(|c| matches!(c, '&' | '|' | ';' | '`' | '$' | '!' | '"' | '\'' | '<' | '>' | '(' | ')' | '{' | '}' | '\n' | '\r')) {
+        return Err(format!("{field_name} 包含不安全的字元，請移除特殊符號。"));
+    }
+    Ok(())
+}
+
 async fn transcribe_external_command(
     engine_name: &str,
     env_key: &str,
@@ -649,6 +715,12 @@ async fn transcribe_external_command(
         return Err(format!("{engine_name} 指令為空，請重新設定 {env_key}。"));
     }
 
+    // Validate model_path before interpolation to prevent shell injection.
+    let model_raw = model_path.trim().to_string();
+    if !model_raw.is_empty() {
+        validate_shell_safe_path(&model_raw, "模型路徑")?;
+    }
+
     let temp_dir = talkflow_dir()?.join("temp");
     if !temp_dir.exists() {
         std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
@@ -662,8 +734,10 @@ async fn transcribe_external_command(
     std::fs::write(&wav_path, wav_data).map_err(|e| format!("Failed to write temp wav: {e}"))?;
 
     let audio_raw = normalize_template_path(&wav_path);
+    // Validate audio path too (it's generated by us, but defense in depth).
+    validate_shell_safe_path(&audio_raw, "音訊路徑")?;
+
     let audio_quoted = format!("\"{audio_raw}\"");
-    let model_raw = model_path.trim().to_string();
     let model_quoted = if model_raw.is_empty() {
         String::new()
     } else {
@@ -867,6 +941,7 @@ async fn transcribe_openai(api_key: &str, samples: &[f32]) -> Result<String, Str
         return Err(format!("Whisper API error ({}): {}", status, body));
     }
 
+    #[cfg(debug_assertions)]
     println!("[stt] Whisper API raw response: {}", &body[..body.len().min(500)]);
 
     // Parse verbose_json format: { "text": "...", "segments": [...] }
@@ -883,6 +958,7 @@ async fn transcribe_openai(api_key: &str, samples: &[f32]) -> Result<String, Str
             let no_speech = seg["no_speech_prob"].as_f64().unwrap_or(0.0);
             let seg_text = seg["text"].as_str().unwrap_or("");
 
+            #[cfg(debug_assertions)]
             println!(
                 "[stt] Segment: {:?} (compression={:.2}, no_speech={:.2})",
                 seg_text, compression, no_speech
@@ -890,6 +966,7 @@ async fn transcribe_openai(api_key: &str, samples: &[f32]) -> Result<String, Str
 
             // Skip segments that look hallucinated
             if compression > 2.4 || no_speech > 0.6 {
+                #[cfg(debug_assertions)]
                 println!("[stt] Skipping hallucinated segment");
                 continue;
             }

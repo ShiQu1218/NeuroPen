@@ -6,7 +6,11 @@
       "Bash(where:*)",
       "Bash(g++:*)",
       "Bash(gh pr:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm audit:*)",
+      "Bash(python3:*)",
+      "Bash(grep:*)",
+      "Bash(cargo check:*)"
     ]
   }
 }
