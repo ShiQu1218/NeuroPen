@@ -5,7 +5,7 @@ import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
-import { useAppStore, type AppLanguage, type QuickActionCommand } from "../store/useAppStore";
+import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
 
 const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 260 };
@@ -15,9 +15,11 @@ export default function QuickActionIcon() {
   const outputMode = useAppStore((s) => s.outputMode);
   const llmProvider = useAppStore((s) => s.llmProvider);
   const llmModel = useAppStore((s) => s.llmModel);
+  const preferredLanguage = useAppStore((s) => s.preferredLanguage);
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
   const setQuickActionCommands = useAppStore((s) => s.setQuickActionCommands);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
@@ -78,12 +80,16 @@ export default function QuickActionIcon() {
       });
       unlistenSettings = await listen<{
         language?: AppLanguage;
+        preferredLanguage?: PreferredLanguage;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
         "talkflow://settings-saved",
         (event) => {
           if (event.payload.language) {
             setLanguage(event.payload.language);
+          }
+          if (event.payload.preferredLanguage) {
+            setPreferredLanguage(event.payload.preferredLanguage);
           }
           if (event.payload.quickActionCommands) {
             setQuickActionCommands(event.payload.quickActionCommands);
@@ -103,7 +109,7 @@ export default function QuickActionIcon() {
       unlistenSettings?.();
       void setQaInteracting(false);
     };
-  }, [setLanguage, setQaInteracting, setQuickActionCommands]);
+  }, [setLanguage, setPreferredLanguage, setQaInteracting, setQuickActionCommands]);
 
   const expand = useCallback(() => {
     if (collapseTimer.current) {
@@ -211,6 +217,7 @@ export default function QuickActionIcon() {
       outputMode,
       provider: llmProvider,
       model: llmModel,
+      preferredLanguage,
     });
     if (outputMode === "DirectInject") {
       await invoke("restore_clipboard");

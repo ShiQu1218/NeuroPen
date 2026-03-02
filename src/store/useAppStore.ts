@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 export type OutputMode = "DirectInject" | "PreviewStream";
-export type LlmProvider = "openAi" | "gemini" | "claude" | "grok" | "ollama";
+export type LlmProvider = "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
 export type SttOutputStrategy = "raw" | "llmRefine";
 export type PunctuationMode = "off" | "balanced" | "aggressive";
 export type AppLanguage =
@@ -18,6 +18,7 @@ export type AppLanguage =
   | "ru-RU";
 
 export type SttEngine = "openAi" | "localWhisper";
+export type PreferredLanguage = "auto" | AppLanguage;
 
 export type AppMode = "A" | "B1" | "B2" | "C" | null;
 export interface QuickActionCommand {
@@ -46,6 +47,9 @@ interface AppState {
   sttOutputStrategy: SttOutputStrategy;
   punctuationMode: PunctuationMode;
   contextAwareTone: boolean;
+  preferredLanguage: PreferredLanguage;
+  microphoneSource: string;
+  launchOnStartup: boolean;
   quickActionCommands: QuickActionCommand[];
   language: AppLanguage;
   vocabularyTerms: string[];
@@ -76,6 +80,9 @@ interface AppState {
   setSttOutputStrategy: (strategy: SttOutputStrategy) => void;
   setPunctuationMode: (mode: PunctuationMode) => void;
   setContextAwareTone: (enabled: boolean) => void;
+  setPreferredLanguage: (language: PreferredLanguage) => void;
+  setMicrophoneSource: (source: string) => void;
+  setLaunchOnStartup: (enabled: boolean) => void;
   setQuickActionCommands: (commands: QuickActionCommand[]) => void;
   setLanguage: (language: AppLanguage) => void;
   setVocabularyTerms: (terms: string[]) => void;
@@ -109,6 +116,9 @@ export const useAppStore = create<AppState>()(
       sttOutputStrategy: "raw",
       punctuationMode: "balanced",
       contextAwareTone: true,
+      preferredLanguage: "auto",
+      microphoneSource: "",
+      launchOnStartup: false,
       quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
       language: "zh-TW",
       vocabularyTerms: [],
@@ -137,6 +147,9 @@ export const useAppStore = create<AppState>()(
       setSttOutputStrategy: (strategy) => set({ sttOutputStrategy: strategy }),
       setPunctuationMode: (mode) => set({ punctuationMode: mode }),
       setContextAwareTone: (enabled) => set({ contextAwareTone: enabled }),
+      setPreferredLanguage: (preferredLanguage) => set({ preferredLanguage }),
+      setMicrophoneSource: (microphoneSource) => set({ microphoneSource }),
+      setLaunchOnStartup: (launchOnStartup) => set({ launchOnStartup }),
       setQuickActionCommands: (commands) => set({ quickActionCommands: commands }),
       setLanguage: (language) => set({ language }),
       setVocabularyTerms: (terms) => set({ vocabularyTerms: terms }),
@@ -181,6 +194,9 @@ export const useAppStore = create<AppState>()(
         sttOutputStrategy: state.sttOutputStrategy,
         punctuationMode: state.punctuationMode,
         contextAwareTone: state.contextAwareTone,
+        preferredLanguage: state.preferredLanguage,
+        microphoneSource: state.microphoneSource,
+        launchOnStartup: state.launchOnStartup,
         quickActionCommands: state.quickActionCommands,
         language: state.language,
         vocabularyTerms: state.vocabularyTerms,

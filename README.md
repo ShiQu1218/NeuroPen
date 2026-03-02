@@ -102,6 +102,9 @@ TalkFlow 依「是否有選字」與「語音內容」進行路由：
 - Gemini
 - Claude
 - Grok
+- Qwen
+- 豆包（Doubao）
+- DeepSeek
 - Ollama（本地，預設 `http://127.0.0.1:11434`）
 
 ### STT Engine
@@ -174,8 +177,8 @@ npm run tauri build -- --features local-stt,local-stt-cuda
 
 | 分類 | 內容 |
 |---|---|
-| 一般 | 顯示語言、全域熱鍵、喚醒詞 |
-| 語音與 STT | STT 引擎、本地模型管理（安裝/刪除/切換）、STT 輸出策略、智慧標點、詞彙庫匯入、情境感知 |
+| 一般 | 顯示語言、LLM 輸出偏好語言、全域熱鍵、喚醒詞、開機自動啟動 |
+| 語音與 STT | STT 引擎、本地模型管理（安裝/刪除/切換）、麥克風來源、STT 輸出策略、智慧標點、詞彙庫匯入、情境感知 |
 | 快捷指令 | Quick Action 指令新增/編輯/刪除 |
 | LLM | 輸出模式、Provider、Model、API Key |
 | 隱私 | 隱私模式（停用 LLM 呼叫） |
@@ -231,7 +234,7 @@ TalkFlow/
 
 - 前端：React 19、TypeScript、Vite、TailwindCSS、Zustand
 - 桌面：Tauri v2（Rust）
-- AI：OpenAI / Gemini / Claude / Grok / Ollama、Whisper（API / Local）
+- AI：OpenAI / Gemini / Claude / Grok / Qwen / Doubao / DeepSeek / Ollama、Whisper（API / Local）
 
 ---
 

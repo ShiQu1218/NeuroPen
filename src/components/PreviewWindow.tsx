@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { availableMonitors, getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
-import { useAppStore, type AppLanguage } from "../store/useAppStore";
+import { useAppStore, type AppLanguage, type PreferredLanguage } from "../store/useAppStore";
 
 const PREVIEW_WIDTH = 340;
 const PREVIEW_MIN_HEIGHT = 240;
@@ -25,10 +25,12 @@ export default function PreviewWindow() {
   const lastSelectedText = useAppStore((s) => s.lastSelectedText);
   const llmProvider = useAppStore((s) => s.llmProvider);
   const llmModel = useAppStore((s) => s.llmModel);
+  const preferredLanguage = useAppStore((s) => s.preferredLanguage);
   const setLlmOutput = useAppStore((s) => s.setLlmOutput);
   const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
   const setLlmError = useAppStore((s) => s.setLlmError);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const keepPreviewInBounds = async (width: number, height: number) => {
     try {
       const win = getCurrentWindow();
@@ -97,11 +99,14 @@ export default function PreviewWindow() {
           useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
         }
       );
-      await register<{ language?: AppLanguage }>(
+      await register<{ language?: AppLanguage; preferredLanguage?: PreferredLanguage }>(
         "talkflow://settings-saved",
         (event) => {
           if (event.payload.language) {
             setLanguage(event.payload.language);
+          }
+          if (event.payload.preferredLanguage) {
+            setPreferredLanguage(event.payload.preferredLanguage);
           }
         }
       );
@@ -111,7 +116,7 @@ export default function PreviewWindow() {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [setLanguage]);
+  }, [setLanguage, setPreferredLanguage]);
 
   // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {
@@ -204,6 +209,7 @@ export default function PreviewWindow() {
       outputMode: "PreviewStream",
       provider: llmProvider,
       model: llmModel,
+      preferredLanguage,
     });
   };
 

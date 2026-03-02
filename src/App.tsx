@@ -11,7 +11,7 @@ import QuickActionIcon from "./components/QuickActionIcon";
 import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
 import { useAppStore } from "./store/useAppStore";
-import type { AppLanguage, PunctuationMode } from "./store/useAppStore";
+import type { AppLanguage, LlmProvider, PreferredLanguage, PunctuationMode } from "./store/useAppStore";
 
 /**
  * Prevent a window from being destroyed on close — hide it instead.
@@ -143,6 +143,9 @@ function MainWindow() {
     setLlmModel,
     setQuickActionCommands,
     setLanguage,
+    setPreferredLanguage,
+    setMicrophoneSource,
+    setLaunchOnStartup,
     resetSession,
   } = useAppStore();
 
@@ -169,6 +172,11 @@ function MainWindow() {
         modelPath: initialStore.sttModelPath,
       }).catch((err) => {
         console.warn("[App] set_runtime_stt_config init failed:", err);
+      });
+      await invoke("set_audio_device", {
+        name: initialStore.microphoneSource ?? "",
+      }).catch((err) => {
+        console.warn("[App] set_audio_device init failed:", err);
       });
 
       // Helper: register a listener only if this effect hasn't been cancelled
@@ -242,9 +250,12 @@ function MainWindow() {
         punctuationMode?: "off" | "balanced" | "aggressive";
         contextAwareTone?: boolean;
         vocabularyTerms?: string[];
-        llmProvider: "openAi" | "gemini" | "claude" | "grok" | "ollama";
+        llmProvider: LlmProvider;
         llmModel: string;
         language?: AppLanguage;
+        preferredLanguage?: PreferredLanguage;
+        microphoneSource?: string;
+        launchOnStartup?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
         "talkflow://settings-saved",
@@ -293,6 +304,20 @@ function MainWindow() {
           }
           if (payload.language) {
             setLanguage(payload.language);
+          }
+          if (payload.preferredLanguage) {
+            setPreferredLanguage(payload.preferredLanguage);
+          }
+          if (typeof payload.microphoneSource === "string") {
+            setMicrophoneSource(payload.microphoneSource);
+            void invoke("set_audio_device", {
+              name: payload.microphoneSource,
+            }).catch((err) => {
+              console.warn("[App] set_audio_device sync failed:", err);
+            });
+          }
+          if (typeof payload.launchOnStartup === "boolean") {
+            setLaunchOnStartup(payload.launchOnStartup);
           }
           if (payload.quickActionCommands) {
             setQuickActionCommands(payload.quickActionCommands);
@@ -516,6 +541,7 @@ function MainWindow() {
                   instruction: `Only do light in-place polishing for this speech-to-text transcript (punctuation, formatting, and minor fluency fixes). Keep the exact same language and script as the original transcript, and never translate it. ${toneHint} ${vocabHint}`,
                   provider: store.llmProvider,
                   model: store.llmModel,
+                  preferredLanguage: store.preferredLanguage,
                 });
                 if (refined?.trim()) {
                   const candidate = refined.trim();
@@ -574,6 +600,7 @@ function MainWindow() {
               outputMode: store.outputMode,
               provider: store.llmProvider,
               model: store.llmModel,
+              preferredLanguage: store.preferredLanguage,
             });
             if (store.outputMode === "DirectInject") {
               await invoke("restore_clipboard");
@@ -610,6 +637,7 @@ function MainWindow() {
               outputMode: store.outputMode,
               provider: store.llmProvider,
               model: store.llmModel,
+              preferredLanguage: store.preferredLanguage,
             });
             if (store.outputMode === "DirectInject") {
               await invoke("restore_clipboard");

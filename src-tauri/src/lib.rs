@@ -10,6 +10,7 @@ mod undo;
 mod window_focus;
 
 use serde::Serialize;
+use std::io::ErrorKind;
 use std::sync::Mutex;
 use tauri::{Emitter, Listener, Manager};
 #[cfg(desktop)]
@@ -220,6 +221,78 @@ fn list_audio_devices() -> Vec<String> {
     audio_capture::list_input_devices()
 }
 
+#[tauri::command]
+fn set_audio_device(name: String) {
+    audio_capture::set_input_device(name);
+}
+
+const WINDOWS_RUN_KEY_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+const WINDOWS_RUN_VALUE_NAME: &str = "TalkFlow";
+
+#[cfg(target_os = "windows")]
+fn set_windows_launch_on_startup(enabled: bool) -> Result<(), String> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let (run_key, _) = hkcu
+        .create_subkey(WINDOWS_RUN_KEY_PATH)
+        .map_err(|e| format!("Failed to open Run key: {e}"))?;
+
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| format!("Failed to get current exe path: {e}"))?;
+        let value = format!("\"{}\"", exe.display());
+        run_key
+            .set_value(WINDOWS_RUN_VALUE_NAME, &value)
+            .map_err(|e| format!("Failed to set Run key value: {e}"))?;
+    } else if let Err(e) = run_key.delete_value(WINDOWS_RUN_VALUE_NAME) {
+        if e.kind() != ErrorKind::NotFound {
+            return Err(format!("Failed to delete Run key value: {e}"));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_windows_launch_on_startup(_enabled: bool) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_launch_on_startup() -> Result<bool, String> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run_key = match hkcu.open_subkey(WINDOWS_RUN_KEY_PATH) {
+        Ok(key) => key,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(format!("Failed to open Run key: {e}")),
+    };
+
+    match run_key.get_value::<String, _>(WINDOWS_RUN_VALUE_NAME) {
+        Ok(value) => Ok(!value.trim().is_empty()),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(format!("Failed to read Run key value: {e}")),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_windows_launch_on_startup() -> Result<bool, String> {
+    Ok(false)
+}
+
+#[tauri::command]
+fn set_launch_on_startup(enabled: bool) -> Result<(), String> {
+    set_windows_launch_on_startup(enabled)
+}
+
+#[tauri::command]
+fn get_launch_on_startup() -> Result<bool, String> {
+    get_windows_launch_on_startup()
+}
+
 /// Call the LLM with streaming and emit token events.
 #[tauri::command]
 async fn call_llm(
@@ -229,6 +302,7 @@ async fn call_llm(
     output_mode: llm::OutputMode,
     provider: llm::LlmProvider,
     model: String,
+    preferred_language: Option<String>,
 ) -> Result<(), String> {
     let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
         String::new()
@@ -242,6 +316,7 @@ async fn call_llm(
         output_mode,
         provider,
         &model,
+        preferred_language,
         app,
     )
     .await
@@ -254,13 +329,22 @@ async fn call_llm_text(
     instruction: String,
     provider: llm::LlmProvider,
     model: String,
+    preferred_language: Option<String>,
 ) -> Result<String, String> {
     let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
         String::new()
     } else {
         stt::get_api_key()?
     };
-    llm::call_llm_text(&api_key, &selected_text, &instruction, provider, &model).await
+    llm::call_llm_text(
+        &api_key,
+        &selected_text,
+        &instruction,
+        provider,
+        &model,
+        preferred_language,
+    )
+    .await
 }
 
 /// Route a completed STT transcript to determine the operating mode.
@@ -328,6 +412,9 @@ pub fn run() {
             delete_local_stt_model,
             select_local_stt_model,
             list_audio_devices,
+            set_audio_device,
+            set_launch_on_startup,
+            get_launch_on_startup,
             call_llm,
             call_llm_text,
             route_transcript,

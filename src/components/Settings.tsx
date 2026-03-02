@@ -20,6 +20,8 @@ import { useI18n, type TranslationKey } from "../i18n";
 import {
   useAppStore,
   type AppLanguage,
+  type LlmProvider,
+  type PreferredLanguage,
   type QuickActionCommand,
   type SttOutputStrategy,
   type PunctuationMode,
@@ -106,6 +108,9 @@ export default function Settings() {
     incognito, setIncognito,
     hotkey, setHotkey,
     sttEngine, setSttEngine,
+    preferredLanguage, setPreferredLanguage,
+    microphoneSource, setMicrophoneSource,
+    launchOnStartup, setLaunchOnStartup,
     quickActionCommands, setQuickActionCommands,
     language, setLanguage,
     localSttAvailable, setLocalSttAvailable,
@@ -173,8 +178,13 @@ export default function Settings() {
   const [draftVocabularyTerms, setDraftVocabularyTerms] = useState(vocabularyTerms.join("\n"));
   const [draftLlmProvider, setDraftLlmProvider] = useState(llmProvider);
   const [draftLlmModel, setDraftLlmModel] = useState(llmModel);
+  const [draftPreferredLanguage, setDraftPreferredLanguage] = useState<PreferredLanguage>(preferredLanguage);
+  const [draftMicrophoneSource, setDraftMicrophoneSource] = useState(microphoneSource);
+  const [draftLaunchOnStartup, setDraftLaunchOnStartup] = useState(launchOnStartup);
   const [draftQuickActionCommands, setDraftQuickActionCommands] = useState<QuickActionCommand[]>(quickActionCommands);
   const [draftLanguage, setDraftLanguage] = useState<AppLanguage>(language);
+  const [audioDevices, setAudioDevices] = useState<string[]>([]);
+  const [audioDevicesLoading, setAudioDevicesLoading] = useState(false);
   const [localModels, setLocalModels] = useState<LocalSttModel[]>([]);
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [localModelBusyId, setLocalModelBusyId] = useState("");
@@ -205,7 +215,20 @@ export default function Settings() {
     invoke<boolean>("has_stt_api_key")
       .then((has) => setSttApiKeySet(has))
       .catch(() => setSttApiKeySet(false));
-  }, []);
+
+    setAudioDevicesLoading(true);
+    invoke<string[]>("list_audio_devices")
+      .then((devices) => setAudioDevices(devices))
+      .catch(() => setAudioDevices([]))
+      .finally(() => setAudioDevicesLoading(false));
+
+    invoke<boolean>("get_launch_on_startup")
+      .then((enabled) => {
+        setLaunchOnStartup(enabled);
+        setDraftLaunchOnStartup(enabled);
+      })
+      .catch(() => {});
+  }, [setLaunchOnStartup]);
 
   // Sync all drafts from store (2a: merged 7 useEffects into 1)
   useEffect(() => {
@@ -226,6 +249,9 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
+    setDraftPreferredLanguage(preferredLanguage);
+    setDraftMicrophoneSource(microphoneSource);
+    setDraftLaunchOnStartup(launchOnStartup);
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
   }, [
@@ -239,6 +265,9 @@ export default function Settings() {
     vocabularyTerms,
     llmProvider,
     llmModel,
+    preferredLanguage,
+    microphoneSource,
+    launchOnStartup,
     quickActionCommands,
     language,
     localModels,
@@ -349,6 +378,10 @@ export default function Settings() {
       if (draftHotkey !== hotkey) {
         await invoke("change_hotkey", { hotkeyStr: draftHotkey });
       }
+      if (draftLaunchOnStartup !== launchOnStartup) {
+        await invoke("set_launch_on_startup", { enabled: draftLaunchOnStartup });
+      }
+      await invoke("set_audio_device", { name: draftMicrophoneSource });
 
       setWakeWord(nextWakeWord);
       setHotkey(draftHotkey);
@@ -361,6 +394,9 @@ export default function Settings() {
       setVocabularyTerms(nextVocabularyTerms);
       setLlmProvider(draftLlmProvider);
       setLlmModel(nextModel);
+      setPreferredLanguage(draftPreferredLanguage);
+      setMicrophoneSource(draftMicrophoneSource);
+      setLaunchOnStartup(draftLaunchOnStartup);
       setQuickActionCommands(nextQuickActionCommands);
       setLanguage(draftLanguage);
       await invoke("set_runtime_stt_config", {
@@ -379,6 +415,9 @@ export default function Settings() {
         vocabularyTerms: nextVocabularyTerms,
         llmProvider: draftLlmProvider,
         llmModel: nextModel,
+        preferredLanguage: draftPreferredLanguage,
+        microphoneSource: draftMicrophoneSource,
+        launchOnStartup: draftLaunchOnStartup,
         language: draftLanguage,
         quickActionCommands: nextQuickActionCommands,
       });
@@ -415,6 +454,9 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
+    setDraftPreferredLanguage(preferredLanguage);
+    setDraftMicrophoneSource(microphoneSource);
+    setDraftLaunchOnStartup(launchOnStartup);
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
     setHotkeyStatus("");
@@ -530,6 +572,9 @@ export default function Settings() {
               .filter(Boolean),
             llmProvider: draftLlmProvider,
             llmModel: draftLlmModel.trim() || llmModel,
+            preferredLanguage: draftPreferredLanguage,
+            microphoneSource: draftMicrophoneSource,
+            launchOnStartup: draftLaunchOnStartup,
             language: draftLanguage,
           });
         }
@@ -560,6 +605,9 @@ export default function Settings() {
       draftVocabularyTerms !== vocabularyTerms.join("\n") ||
       draftLlmProvider !== llmProvider ||
       draftLlmModel !== llmModel ||
+      draftPreferredLanguage !== preferredLanguage ||
+      draftMicrophoneSource !== microphoneSource ||
+      draftLaunchOnStartup !== launchOnStartup ||
       draftLanguage !== language ||
       JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands),
     [
@@ -585,6 +633,12 @@ export default function Settings() {
       llmProvider,
       draftLlmModel,
       llmModel,
+      draftPreferredLanguage,
+      preferredLanguage,
+      draftMicrophoneSource,
+      microphoneSource,
+      draftLaunchOnStartup,
+      launchOnStartup,
       draftLanguage,
       language,
       draftQuickActionCommands,
@@ -644,6 +698,40 @@ export default function Settings() {
                   <option value="ru-RU">{t("settings.language.ru-RU")}</option>
                 </select>
                 <p className="text-xs text-gray-400">{t("settings.language.hint")}</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">LLM 輸出偏好語言</label>
+                <select
+                  className="w-full input-field px-2 py-1"
+                  value={draftPreferredLanguage}
+                  onChange={(e) => setDraftPreferredLanguage(e.target.value as PreferredLanguage)}
+                >
+                  <option value="auto">跟隨輸入語言（自動）</option>
+                  <option value="zh-TW">繁體中文</option>
+                  <option value="zh-CN">简体中文</option>
+                  <option value="en-US">English</option>
+                  <option value="ja-JP">日本語</option>
+                  <option value="es-ES">Español</option>
+                  <option value="ko-KR">한국어</option>
+                  <option value="de-DE">Deutsch</option>
+                  <option value="fr-FR">Français</option>
+                  <option value="ar-SA">العربية</option>
+                  <option value="ru-RU">Русский</option>
+                </select>
+                <p className="text-xs text-gray-400">控制 LLM 回覆預設語言（除非指令明確要求翻譯）。</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">開機自動啟動</label>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={draftLaunchOnStartup}
+                    onChange={(e) => setDraftLaunchOnStartup(e.target.checked)}
+                  />
+                  登入 Windows 後自動啟動 TalkFlow
+                </label>
               </div>
 
               {/* Hotkey */}
@@ -748,6 +836,24 @@ export default function Settings() {
                     </p>
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">麥克風來源</label>
+                <select
+                  className="w-full input-field px-2 py-1"
+                  value={draftMicrophoneSource}
+                  onChange={(e) => setDraftMicrophoneSource(e.target.value)}
+                  disabled={audioDevicesLoading}
+                >
+                  <option value="">系統預設麥克風</option>
+                  {audioDevices.map((device) => (
+                    <option key={device} value={device}>
+                      {device}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500">可切換錄音輸入裝置，儲存後立即生效。</p>
               </div>
 
               {draftSttModelChoice === OPENAI_STT_MODEL && (
@@ -1039,12 +1145,15 @@ export default function Settings() {
                 <select
                   className="w-full input-field px-2 py-1"
                   value={draftLlmProvider}
-                  onChange={(e) => setDraftLlmProvider(e.target.value as "openAi" | "gemini" | "claude" | "grok" | "ollama")}
+                  onChange={(e) => setDraftLlmProvider(e.target.value as LlmProvider)}
                 >
                   <option value="openAi">OpenAI</option>
                   <option value="gemini">Gemini</option>
                   <option value="claude">Claude</option>
                   <option value="grok">Grok</option>
+                  <option value="qwen">Qwen</option>
+                  <option value="doubao">豆包 Doubao</option>
+                  <option value="deepseek">DeepSeek</option>
                   <option value="ollama">{t("settings.llm.ollamaLocal")}</option>
                 </select>
               </div>
@@ -1054,7 +1163,7 @@ export default function Settings() {
                   className="w-full input-field px-2 py-1 font-mono text-xs"
                   value={draftLlmModel}
                   onChange={(e) => setDraftLlmModel(e.target.value)}
-                  placeholder="e.g. gpt-4o-mini / gemini-1.5-pro / claude-3-5-sonnet-latest / grok-2-latest / llama3.2"
+                  placeholder="e.g. gpt-4o-mini / qwen-plus / doubao-seed-1-6-250615 / deepseek-chat / llama3.2"
                 />
               </div>
 

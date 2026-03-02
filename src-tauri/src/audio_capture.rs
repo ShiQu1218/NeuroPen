@@ -21,6 +21,7 @@ pub const TARGET_CHANNELS: u16 = 1;
 
 /// Ring buffer capacity — ~30 seconds of 16 kHz mono audio.
 const RING_BUFFER_CAPACITY: usize = TARGET_SAMPLE_RATE as usize * 30;
+static SELECTED_INPUT_DEVICE: Mutex<String> = Mutex::new(String::new());
 
 /// Type aliases for the ring buffer halves.
 type RbProd = ringbuf::HeapProd<f32>;
@@ -121,10 +122,21 @@ fn downmix_to_mono(input: &[f32], channels: u16) -> Vec<f32> {
 /// Returns a descriptive string if the audio device cannot be opened.
 pub fn start() -> Result<CaptureHandle, String> {
     let host = cpal::default_host();
-
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "No default audio input device found".to_string())?;
+    let selected_name = SELECTED_INPUT_DEVICE
+        .lock()
+        .map(|name| name.clone())
+        .unwrap_or_default();
+    let device = if selected_name.trim().is_empty() {
+        host.default_input_device()
+    } else {
+        host.input_devices()
+            .ok()
+            .and_then(|mut devices| {
+                devices.find(|d| d.name().map(|name| name == selected_name).unwrap_or(false))
+            })
+            .or_else(|| host.default_input_device())
+    }
+    .ok_or_else(|| "No audio input device found".to_string())?;
 
     let device_name = device.name().unwrap_or_else(|_| "unknown".into());
     println!("[audio_capture] Using input device: {device_name}");
@@ -250,4 +262,10 @@ pub fn list_input_devices() -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+pub fn set_input_device(name: String) {
+    if let Ok(mut selected) = SELECTED_INPUT_DEVICE.lock() {
+        *selected = name.trim().to_string();
+    }
 }

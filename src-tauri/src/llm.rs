@@ -31,6 +31,9 @@ pub enum LlmProvider {
     Gemini,
     Claude,
     Grok,
+    Qwen,
+    Doubao,
+    Deepseek,
     Ollama,
 }
 
@@ -81,19 +84,51 @@ fn default_model(provider: &LlmProvider) -> &'static str {
         LlmProvider::Gemini => "gemini-1.5-flash",
         LlmProvider::Claude => "claude-3-5-sonnet-latest",
         LlmProvider::Grok => "grok-2-latest",
+        LlmProvider::Qwen => "qwen-plus",
+        LlmProvider::Doubao => "doubao-seed-1-6-250615",
+        LlmProvider::Deepseek => "deepseek-chat",
         LlmProvider::Ollama => "llama3.2",
     }
 }
 
-fn build_prompt(selected_text: &str, instruction: &str) -> (&'static str, String) {
+fn preferred_language_hint(preferred_language: Option<&str>) -> Option<String> {
+    let code = preferred_language
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))?;
+    let name = match code {
+        "zh-TW" => "Traditional Chinese",
+        "zh-CN" => "Simplified Chinese",
+        "en-US" => "English",
+        "ja-JP" => "Japanese",
+        "es-ES" => "Spanish",
+        "ko-KR" => "Korean",
+        "de-DE" => "German",
+        "fr-FR" => "French",
+        "ar-SA" => "Arabic",
+        "ru-RU" => "Russian",
+        _ => code,
+    };
+    Some(format!(
+        "Always respond in {name} unless the user explicitly requests another language."
+    ))
+}
+
+fn build_prompt(selected_text: &str, instruction: &str, preferred_language: Option<&str>) -> (String, String) {
+    let language_hint = preferred_language_hint(preferred_language)
+        .map(|hint| format!(" {hint}"))
+        .unwrap_or_default();
     if selected_text.is_empty() {
         (
-            "You are a helpful assistant. Answer the user's question concisely in the same language they use.",
+            format!(
+                "You are a helpful assistant. Answer the user's question concisely in the same language they use.{language_hint}"
+            ),
             instruction.to_string(),
         )
     } else {
         (
-            "You are a helpful assistant. Process the user's selected text according to their instruction. Keep the output in the same language and writing system as the selected text by default, and never translate unless the instruction explicitly asks for translation. Reply with only the processed result, no explanation.",
+            format!(
+                "You are a helpful assistant. Process the user's selected text according to their instruction. Keep the output in the same language and writing system as the selected text by default, and never translate unless the instruction explicitly asks for translation.{language_hint} Reply with only the processed result, no explanation."
+            ),
             format!("Selected text:\n\n{selected_text}\n\nInstruction: {instruction}"),
         )
     }
@@ -322,6 +357,36 @@ async fn call_provider(
             )
             .await
         }
+        LlmProvider::Qwen => {
+            call_openai_compatible(
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                api_key,
+                chosen_model,
+                system_prompt,
+                user_message,
+            )
+            .await
+        }
+        LlmProvider::Doubao => {
+            call_openai_compatible(
+                "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+                api_key,
+                chosen_model,
+                system_prompt,
+                user_message,
+            )
+            .await
+        }
+        LlmProvider::Deepseek => {
+            call_openai_compatible(
+                "https://api.deepseek.com/v1/chat/completions",
+                api_key,
+                chosen_model,
+                system_prompt,
+                user_message,
+            )
+            .await
+        }
         LlmProvider::Gemini => call_gemini(api_key, chosen_model, system_prompt, user_message).await,
         LlmProvider::Claude => call_claude(api_key, chosen_model, system_prompt, user_message).await,
         LlmProvider::Ollama => call_ollama(chosen_model, system_prompt, user_message).await,
@@ -335,9 +400,10 @@ pub async fn call_llm(
     output_mode: OutputMode,
     provider: LlmProvider,
     model: &str,
+    preferred_language: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let (system_prompt, user_message) = build_prompt(selected_text, instruction);
+    let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
 
     let chosen_model = if model.trim().is_empty() {
         default_model(&provider).to_string()
@@ -345,7 +411,7 @@ pub async fn call_llm(
         model.trim().to_string()
     };
 
-    let full_output = call_provider(api_key, &provider, &chosen_model, system_prompt, &user_message)
+    let full_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message)
     .await
     .map_err(|e| {
         let _ = app.emit("llm://error", LlmError { message: e.clone() });
@@ -374,12 +440,13 @@ pub async fn call_llm_text(
     instruction: &str,
     provider: LlmProvider,
     model: &str,
+    preferred_language: Option<String>,
 ) -> Result<String, String> {
-    let (system_prompt, user_message) = build_prompt(selected_text, instruction);
+    let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
     let chosen_model = if model.trim().is_empty() {
         default_model(&provider).to_string()
     } else {
         model.trim().to_string()
     };
-    call_provider(api_key, &provider, &chosen_model, system_prompt, &user_message).await
+    call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await
 }
