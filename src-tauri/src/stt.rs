@@ -23,7 +23,10 @@ use tauri::Emitter;
 #[serde(rename_all = "camelCase")]
 pub enum SttEngine {
     OpenAi,
-    Local,
+    #[serde(alias = "local")]
+    LocalWhisper,
+    Parakeet,
+    Moonshine,
 }
 
 /// Runtime capabilities — which engines are compiled in.
@@ -32,6 +35,8 @@ pub enum SttEngine {
 pub struct SttCapabilities {
     pub openai_available: bool,
     pub local_available: bool,
+    pub parakeet_available: bool,
+    pub moonshine_available: bool,
 }
 
 pub fn get_capabilities() -> SttCapabilities {
@@ -41,6 +46,8 @@ pub fn get_capabilities() -> SttCapabilities {
         local_available: true,
         #[cfg(not(feature = "local-stt"))]
         local_available: false,
+        parakeet_available: has_external_engine_command("TALKFLOW_PARAKEET_CMD"),
+        moonshine_available: has_external_engine_command("TALKFLOW_MOONSHINE_CMD"),
     }
 }
 
@@ -132,6 +139,12 @@ fn talkflow_dir() -> Result<PathBuf, String> {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create .talkflow dir: {e}"))?;
     }
     Ok(dir)
+}
+
+fn has_external_engine_command(env_key: &str) -> bool {
+    std::env::var(env_key)
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
 }
 
 /// Get the path to the API key file (~/.talkflow/api_key).
@@ -401,7 +414,13 @@ pub fn stop_recording(
     tauri::async_runtime::spawn(async move {
         let result = match engine {
             SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples).await,
-            SttEngine::Local  => transcribe_local(&model_path, &samples).await,
+            SttEngine::LocalWhisper => transcribe_local(&model_path, &samples).await,
+            SttEngine::Parakeet => {
+                transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &samples).await
+            }
+            SttEngine::Moonshine => {
+                transcribe_external_command("Moonshine", "TALKFLOW_MOONSHINE_CMD", &model_path, &samples).await
+            }
         };
         match result {
             Ok(raw_text) => {
@@ -557,6 +576,83 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
         .await
         .map_err(|e| format!("Blocking task panicked: {e}"))?
     }
+}
+
+fn normalize_template_path(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+async fn transcribe_external_command(
+    engine_name: &str,
+    env_key: &str,
+    model_path: &str,
+    samples: &[f32],
+) -> Result<String, String> {
+    let template = std::env::var(env_key).map_err(|_| {
+        format!(
+            "{engine_name} 引擎尚未設定。請先設定環境變數 {env_key}，例如：python run_{engine_name}.py --audio {{audio_quoted}}"
+        )
+    })?;
+    if template.trim().is_empty() {
+        return Err(format!("{engine_name} 指令為空，請重新設定 {env_key}。"));
+    }
+
+    let temp_dir = talkflow_dir()?.join("temp");
+    if !temp_dir.exists() {
+        std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let wav_path = temp_dir.join(format!("{}_{}.wav", engine_name.to_lowercase(), ts));
+    let wav_data = encode_wav(samples);
+    std::fs::write(&wav_path, wav_data).map_err(|e| format!("Failed to write temp wav: {e}"))?;
+
+    let audio_raw = normalize_template_path(&wav_path);
+    let audio_quoted = format!("\"{audio_raw}\"");
+    let model_raw = model_path.trim().to_string();
+    let model_quoted = if model_raw.is_empty() {
+        String::new()
+    } else {
+        format!("\"{}\"", model_raw.replace('\\', "/"))
+    };
+    let cmdline = template
+        .replace("{audio_quoted}", &audio_quoted)
+        .replace("{audio}", &audio_raw)
+        .replace("{model_quoted}", &model_quoted)
+        .replace("{model}", &model_raw);
+
+    let output = tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            std::process::Command::new("cmd").args(["/C", &cmdline]).output()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            std::process::Command::new("sh").args(["-lc", &cmdline]).output()
+        }
+    })
+    .await
+    .map_err(|e| format!("{engine_name} command panicked: {e}"))?
+    .map_err(|e| format!("{engine_name} command failed: {e}"))?;
+
+    let _ = std::fs::remove_file(&wav_path);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("{engine_name} command exited with status {}", output.status)
+        } else {
+            format!("{engine_name} command error: {stderr}")
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        return Err(format!("{engine_name} command returned empty transcript."));
+    }
+    Ok(stdout)
 }
 
 /// Detect and remove Whisper hallucination where short text is repeated.

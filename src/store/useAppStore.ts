@@ -3,6 +3,8 @@ import { persist } from "zustand/middleware";
 
 export type OutputMode = "DirectInject" | "PreviewStream";
 export type LlmProvider = "openAi" | "gemini" | "claude" | "grok" | "ollama";
+export type SttOutputStrategy = "raw" | "llmRefine";
+export type PunctuationMode = "off" | "balanced" | "aggressive";
 export type AppLanguage =
   | "zh-TW"
   | "en-US"
@@ -15,7 +17,7 @@ export type AppLanguage =
   | "ar-SA"
   | "ru-RU";
 
-export type SttEngine = "openAi" | "local";
+export type SttEngine = "openAi" | "localWhisper";
 
 export type AppMode = "A" | "B1" | "B2" | "C" | null;
 export interface QuickActionCommand {
@@ -41,8 +43,12 @@ interface AppState {
   incognito: boolean;
   hotkey: string;
   sttEngine: SttEngine;
+  sttOutputStrategy: SttOutputStrategy;
+  punctuationMode: PunctuationMode;
+  contextAwareTone: boolean;
   quickActionCommands: QuickActionCommand[];
   language: AppLanguage;
+  vocabularyTerms: string[];
 
   // --- Runtime state (not persisted) ---
   isRecording: boolean;
@@ -67,8 +73,12 @@ interface AppState {
   setIncognito: (on: boolean) => void;
   setHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
+  setSttOutputStrategy: (strategy: SttOutputStrategy) => void;
+  setPunctuationMode: (mode: PunctuationMode) => void;
+  setContextAwareTone: (enabled: boolean) => void;
   setQuickActionCommands: (commands: QuickActionCommand[]) => void;
   setLanguage: (language: AppLanguage) => void;
+  setVocabularyTerms: (terms: string[]) => void;
   setIsRecording: (recording: boolean) => void;
   setSelectedText: (text: string) => void;
   setCurrentMode: (mode: AppMode) => void;
@@ -96,8 +106,12 @@ export const useAppStore = create<AppState>()(
       incognito: false,
       hotkey: "Alt+`",
       sttEngine: "openAi",
+      sttOutputStrategy: "raw",
+      punctuationMode: "balanced",
+      contextAwareTone: true,
       quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
       language: "zh-TW",
+      vocabularyTerms: [],
 
       isRecording: false,
       selectedText: "",
@@ -120,8 +134,12 @@ export const useAppStore = create<AppState>()(
       setIncognito: (on) => set({ incognito: on }),
       setHotkey: (hotkey) => set({ hotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
+      setSttOutputStrategy: (strategy) => set({ sttOutputStrategy: strategy }),
+      setPunctuationMode: (mode) => set({ punctuationMode: mode }),
+      setContextAwareTone: (enabled) => set({ contextAwareTone: enabled }),
       setQuickActionCommands: (commands) => set({ quickActionCommands: commands }),
       setLanguage: (language) => set({ language }),
+      setVocabularyTerms: (terms) => set({ vocabularyTerms: terms }),
       setIsRecording: (recording) => set({ isRecording: recording }),
       setSelectedText: (text) => set({ selectedText: text }),
       setCurrentMode: (mode) => set({ currentMode: mode }),
@@ -160,8 +178,12 @@ export const useAppStore = create<AppState>()(
         incognito: state.incognito,
         hotkey: state.hotkey,
         sttEngine: state.sttEngine,
+        sttOutputStrategy: state.sttOutputStrategy,
+        punctuationMode: state.punctuationMode,
+        contextAwareTone: state.contextAwareTone,
         quickActionCommands: state.quickActionCommands,
         language: state.language,
+        vocabularyTerms: state.vocabularyTerms,
       }),
     }
   )

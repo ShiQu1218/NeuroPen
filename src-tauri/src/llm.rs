@@ -85,6 +85,20 @@ fn default_model(provider: &LlmProvider) -> &'static str {
     }
 }
 
+fn build_prompt(selected_text: &str, instruction: &str) -> (&'static str, String) {
+    if selected_text.is_empty() {
+        (
+            "You are a helpful assistant. Answer the user's question concisely in the same language they use.",
+            instruction.to_string(),
+        )
+    } else {
+        (
+            "You are a helpful assistant. Process the user's selected text according to their instruction. Keep the output in the same language and writing system as the selected text by default, and never translate unless the instruction explicitly asks for translation. Reply with only the processed result, no explanation.",
+            format!("Selected text:\n\n{selected_text}\n\nInstruction: {instruction}"),
+        )
+    }
+}
+
 fn extract_openai_text(parsed: &serde_json::Value) -> Option<String> {
     if let Some(content) = parsed["choices"][0]["message"]["content"].as_str() {
         return Some(content.to_string());
@@ -280,6 +294,40 @@ async fn call_ollama(model: &str, system_prompt: &str, user_message: &str) -> Re
     Err(format!("Unexpected Ollama response: {body}"))
 }
 
+async fn call_provider(
+    api_key: &str,
+    provider: &LlmProvider,
+    chosen_model: &str,
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, String> {
+    match provider {
+        LlmProvider::OpenAi => {
+            call_openai_compatible(
+                "https://api.openai.com/v1/chat/completions",
+                api_key,
+                chosen_model,
+                system_prompt,
+                user_message,
+            )
+            .await
+        }
+        LlmProvider::Grok => {
+            call_openai_compatible(
+                "https://api.x.ai/v1/chat/completions",
+                api_key,
+                chosen_model,
+                system_prompt,
+                user_message,
+            )
+            .await
+        }
+        LlmProvider::Gemini => call_gemini(api_key, chosen_model, system_prompt, user_message).await,
+        LlmProvider::Claude => call_claude(api_key, chosen_model, system_prompt, user_message).await,
+        LlmProvider::Ollama => call_ollama(chosen_model, system_prompt, user_message).await,
+    }
+}
+
 pub async fn call_llm(
     api_key: &str,
     selected_text: &str,
@@ -289,17 +337,7 @@ pub async fn call_llm(
     model: &str,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let (system_prompt, user_message) = if selected_text.is_empty() {
-        (
-            "You are a helpful assistant. Answer the user's question concisely in the same language they use.",
-            instruction.to_string(),
-        )
-    } else {
-        (
-            "You are a helpful assistant. Process the user's selected text according to their instruction. Reply with only the processed result, no explanation.",
-            format!("Selected text:\n\n{selected_text}\n\nInstruction: {instruction}"),
-        )
-    };
+    let (system_prompt, user_message) = build_prompt(selected_text, instruction);
 
     let chosen_model = if model.trim().is_empty() {
         default_model(&provider).to_string()
@@ -307,35 +345,8 @@ pub async fn call_llm(
         model.trim().to_string()
     };
 
-    let full_output = match provider {
-        LlmProvider::OpenAi => {
-            call_openai_compatible(
-                "https://api.openai.com/v1/chat/completions",
-                api_key,
-                &chosen_model,
-                system_prompt,
-                &user_message,
-            )
-            .await
-        }
-        LlmProvider::Grok => {
-            call_openai_compatible(
-                "https://api.x.ai/v1/chat/completions",
-                api_key,
-                &chosen_model,
-                system_prompt,
-                &user_message,
-            )
-            .await
-        }
-        LlmProvider::Gemini => {
-            call_gemini(api_key, &chosen_model, system_prompt, &user_message).await
-        }
-        LlmProvider::Claude => {
-            call_claude(api_key, &chosen_model, system_prompt, &user_message).await
-        }
-        LlmProvider::Ollama => call_ollama(&chosen_model, system_prompt, &user_message).await,
-    }
+    let full_output = call_provider(api_key, &provider, &chosen_model, system_prompt, &user_message)
+    .await
     .map_err(|e| {
         let _ = app.emit("llm://error", LlmError { message: e.clone() });
         e
@@ -355,4 +366,20 @@ pub async fn call_llm(
     }
 
     Ok(())
+}
+
+pub async fn call_llm_text(
+    api_key: &str,
+    selected_text: &str,
+    instruction: &str,
+    provider: LlmProvider,
+    model: &str,
+) -> Result<String, String> {
+    let (system_prompt, user_message) = build_prompt(selected_text, instruction);
+    let chosen_model = if model.trim().is_empty() {
+        default_model(&provider).to_string()
+    } else {
+        model.trim().to_string()
+    };
+    call_provider(api_key, &provider, &chosen_model, system_prompt, &user_message).await
 }

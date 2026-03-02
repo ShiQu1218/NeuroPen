@@ -11,7 +11,7 @@ import QuickActionIcon from "./components/QuickActionIcon";
 import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
 import { useAppStore } from "./store/useAppStore";
-import type { AppLanguage } from "./store/useAppStore";
+import type { AppLanguage, PunctuationMode } from "./store/useAppStore";
 
 /**
  * Prevent a window from being destroyed on close — hide it instead.
@@ -24,6 +24,51 @@ const preventCloseDestroy = async (label: string) => {
       await win.hide();
     });
   }
+};
+
+const inferAppToneHint = (windowTitle: string) => {
+  const lower = windowTitle.toLowerCase();
+  if (/(word|excel|powerpoint|notion|docs|outlook)/.test(lower)) {
+    return "Use formal and concise business writing style.";
+  }
+  if (/(discord|slack|line|wechat|telegram)/.test(lower)) {
+    return "Use casual chat-friendly style.";
+  }
+  if (/(code|visual studio|github|terminal|powershell)/.test(lower)) {
+    return "Keep technical terms and code symbols unchanged.";
+  }
+  return "Keep neutral and clear style.";
+};
+
+const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
+  const base = text.trim();
+  if (!base || mode === "off") return base;
+  let normalized = base.replace(/\s+/g, " ");
+  if (mode === "aggressive") {
+    normalized = normalized
+      .replace(/([，,;；])\s*/g, "$1 ")
+      .replace(/([。.!?！？])\s*/g, "$1\n");
+  }
+  if (!/[。.!?！？]$/.test(normalized)) {
+    normalized += "。";
+  }
+  return normalized;
+};
+
+const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" =>
+  engine === "localWhisper" ? "localWhisper" : "openAi";
+
+const containsNonLatinScript = (text: string) =>
+  /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF\u0400-\u04FF\u0600-\u06FF]/.test(text);
+
+const isLikelyUnexpectedEnglishTranslation = (original: string, refined: string) => {
+  if (!containsNonLatinScript(original) || containsNonLatinScript(refined)) {
+    return false;
+  }
+  const condensed = refined.replace(/\s+/g, "");
+  if (!condensed) return false;
+  const latinCount = (condensed.match(/[A-Za-z]/g) ?? []).length;
+  return latinCount / condensed.length > 0.6;
 };
 
 function App() {
@@ -65,6 +110,10 @@ function MainWindow() {
     setWakeWord,
     setHotkey,
     setOutputMode,
+    setSttOutputStrategy,
+    setPunctuationMode,
+    setContextAwareTone,
+    setVocabularyTerms,
     setLlmProvider,
     setLlmModel,
     setQuickActionCommands,
@@ -116,8 +165,9 @@ function MainWindow() {
         const store = useAppStore.getState();
         if (!store.isRecording) return;
         try {
+          const normalizedSttEngine = normalizeSttEngine(String(store.sttEngine));
           await invoke("stop_recording", {
-            engine: store.sttEngine,
+            engine: normalizedSttEngine,
             modelPath: store.sttModelPath,
           });
           store.setIsRecording(false);
@@ -152,9 +202,13 @@ function MainWindow() {
       await safeRegister<{
         wakeWord: string;
         hotkey: string;
-        sttEngine: "openAi" | "local";
+        sttEngine: "openAi" | "localWhisper";
         sttModelPath?: string;
         outputMode: "DirectInject" | "PreviewStream";
+        sttOutputStrategy?: "raw" | "llmRefine";
+        punctuationMode?: "off" | "balanced" | "aggressive";
+        contextAwareTone?: boolean;
+        vocabularyTerms?: string[];
         llmProvider: "openAi" | "gemini" | "claude" | "grok" | "ollama";
         llmModel: string;
         language?: AppLanguage;
@@ -170,13 +224,25 @@ function MainWindow() {
             setHotkey(payload.hotkey);
           }
           if (payload.sttEngine) {
-            setSttEngine(payload.sttEngine);
+            setSttEngine(normalizeSttEngine(payload.sttEngine));
           }
           if (typeof payload.sttModelPath === "string") {
             setSttModelPath(payload.sttModelPath);
           }
           if (payload.outputMode) {
             setOutputMode(payload.outputMode);
+          }
+          if (payload.sttOutputStrategy) {
+            setSttOutputStrategy(payload.sttOutputStrategy);
+          }
+          if (payload.punctuationMode) {
+            setPunctuationMode(payload.punctuationMode);
+          }
+          if (typeof payload.contextAwareTone === "boolean") {
+            setContextAwareTone(payload.contextAwareTone);
+          }
+          if (payload.vocabularyTerms) {
+            setVocabularyTerms(payload.vocabularyTerms);
           }
           if (payload.llmProvider) {
             setLlmProvider(payload.llmProvider);
@@ -295,7 +361,7 @@ function MainWindow() {
           }
 
           // Check API key before starting (for OpenAI engine)
-          const sttEngine = store.sttEngine;
+          const sttEngine = normalizeSttEngine(String(store.sttEngine));
           if (sttEngine === "openAi") {
             const hasKey = await invoke<boolean>("has_api_key");
             if (!hasKey) {
@@ -321,7 +387,7 @@ function MainWindow() {
         } else {
           // ── Mode A or C ── start recording
           // Check API key before starting (for OpenAI engine)
-          const sttEngine = store.sttEngine;
+          const sttEngine = normalizeSttEngine(String(store.sttEngine));
           if (sttEngine === "openAi") {
             const hasKey = await invoke<boolean>("has_api_key");
             if (!hasKey) {
@@ -383,6 +449,33 @@ function MainWindow() {
 
           if (mode === "A") {
             // ── Mode A — inject STT text directly ──
+            let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
+            if (store.sttOutputStrategy === "llmRefine" && !store.incognito) {
+              try {
+                setStatusMsg("LLM 潤飾中…");
+                const title = store.contextAwareTone
+                  ? await invoke<string>("get_foreground_window_title")
+                  : "";
+                const toneHint = store.contextAwareTone ? inferAppToneHint(title) : "Keep original style.";
+                const vocabHint = store.vocabularyTerms.length
+                  ? `Prefer these domain terms exactly when relevant: ${store.vocabularyTerms.join(", ")}.`
+                  : "";
+                const refined = await invoke<string>("call_llm_text", {
+                  selectedText: finalText,
+                  instruction: `Only do light in-place polishing for this speech-to-text transcript (punctuation, formatting, and minor fluency fixes). Keep the exact same language and script as the original transcript, and never translate it. ${toneHint} ${vocabHint}`,
+                  provider: store.llmProvider,
+                  model: store.llmModel,
+                });
+                if (refined?.trim()) {
+                  const candidate = refined.trim();
+                  if (!isLikelyUnexpectedEnglishTranslation(finalText, candidate)) {
+                    finalText = candidate;
+                  }
+                }
+              } catch (err) {
+                console.warn("[App] call_llm_text failed, fallback to STT output:", err);
+              }
+            }
             setStatusMsg("注入文字中…");
             const ok = await invoke<boolean>("verify_focus");
             if (!ok) {
@@ -391,7 +484,7 @@ function MainWindow() {
               return;
             }
             await invoke("inject_text", {
-              text: result.transcript,
+              text: finalText,
               recordForUndo: true,
             });
             // Wait for target app to process the paste

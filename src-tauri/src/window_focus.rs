@@ -10,6 +10,8 @@ use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
 
 /// Stores the HWND (as isize) captured at hotkey trigger time.
 static LOCKED_HWND: Mutex<isize> = Mutex::new(0);
@@ -76,5 +78,26 @@ pub fn verify_focus_unchanged() -> bool {
     #[cfg(not(target_os = "windows"))]
     {
         true
+    }
+}
+
+/// Returns foreground window title (best-effort), empty when unavailable.
+pub fn get_foreground_window_title() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let hwnd = unsafe { GetForegroundWindow() };
+        if hwnd.0.is_null() {
+            return String::new();
+        }
+        let mut buf = vec![0u16; 512];
+        let len = unsafe { GetWindowTextW(hwnd, &mut buf) };
+        if len <= 0 {
+            return String::new();
+        }
+        String::from_utf16_lossy(&buf[..len as usize]).trim().to_string()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        String::new()
     }
 }

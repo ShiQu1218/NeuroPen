@@ -92,6 +92,12 @@ fn restore_focus() -> bool {
     window_focus::restore_focus()
 }
 
+/// Get current foreground window title.
+#[tauri::command]
+fn get_foreground_window_title() -> String {
+    window_focus::get_foreground_window_title()
+}
+
 /// Write text to clipboard (for "Copy" button in Preview Window).
 #[tauri::command]
 fn copy_to_clipboard(text: String) -> Result<(), String> {
@@ -201,6 +207,22 @@ async fn call_llm(
     .await
 }
 
+/// Call the LLM and return final text (non-streaming helper for STT refinement).
+#[tauri::command]
+async fn call_llm_text(
+    selected_text: String,
+    instruction: String,
+    provider: llm::LlmProvider,
+    model: String,
+) -> Result<String, String> {
+    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
+        String::new()
+    } else {
+        stt::get_api_key()?
+    };
+    llm::call_llm_text(&api_key, &selected_text, &instruction, provider, &model).await
+}
+
 /// Route a completed STT transcript to determine the operating mode.
 #[tauri::command]
 fn route_transcript(
@@ -249,6 +271,7 @@ pub fn run() {
             undo_injection,
             verify_focus,
             restore_focus,
+            get_foreground_window_title,
             copy_to_clipboard,
             restore_clipboard,
             start_recording,
@@ -263,6 +286,7 @@ pub fn run() {
             select_local_stt_model,
             list_audio_devices,
             call_llm,
+            call_llm_text,
             route_transcript,
             route_on_trigger,
             change_hotkey,

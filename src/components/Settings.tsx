@@ -17,7 +17,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { useI18n, type TranslationKey } from "../i18n";
-import { useAppStore, type AppLanguage, type QuickActionCommand } from "../store/useAppStore";
+import {
+  useAppStore,
+  type AppLanguage,
+  type QuickActionCommand,
+  type SttOutputStrategy,
+  type PunctuationMode,
+} from "../store/useAppStore";
 
 interface LocalSttModel {
   id: string;
@@ -36,6 +42,7 @@ type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "privacy";
 
 const STATUS_RESET_MS = 2000;
 const RATING_INDICES = [0, 1, 2, 3, 4];
+const OPENAI_STT_MODEL = "openai-whisper-api";
 
 const NAV_ITEMS: { id: SettingsSection; icon: React.ReactNode }[] = [
   {
@@ -90,6 +97,10 @@ export default function Settings() {
     wakeWord, setWakeWord,
     sttModelPath, setSttModelPath,
     outputMode, setOutputMode,
+    sttOutputStrategy, setSttOutputStrategy,
+    punctuationMode, setPunctuationMode,
+    contextAwareTone, setContextAwareTone,
+    vocabularyTerms, setVocabularyTerms,
     llmProvider, setLlmProvider,
     llmModel, setLlmModel,
     incognito, setIncognito,
@@ -124,6 +135,21 @@ export default function Settings() {
     sttModelNameKey[model.id] ? t(sttModelNameKey[model.id]!) : model.name;
   const getLocalizedModelDescription = (model: LocalSttModel) =>
     sttModelDescriptionKey[model.id] ? t(sttModelDescriptionKey[model.id]!) : model.description;
+  const resolveEngineAndPathByModel = (modelChoice: string): { engine: "openAi" | "localWhisper"; modelPath: string } => {
+    if (modelChoice === OPENAI_STT_MODEL) {
+      return { engine: "openAi", modelPath: "" };
+    }
+    const matchedLocalModel = localModels.find((model) => model.id === modelChoice && model.installed);
+    if (matchedLocalModel) {
+      return { engine: "localWhisper", modelPath: matchedLocalModel.modelPath };
+    }
+    const fallbackLocal = localModels.find((model) => model.installed && model.modelPath === sttModelPath)
+      ?? localModels.find((model) => model.installed && model.active);
+    if (fallbackLocal) {
+      return { engine: "localWhisper", modelPath: fallbackLocal.modelPath };
+    }
+    return { engine: "openAi", modelPath: "" };
+  };
 
   // Local input state
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -134,7 +160,14 @@ export default function Settings() {
   const [draftWakeWord, setDraftWakeWord] = useState(wakeWord);
   const [draftHotkey, setDraftHotkey] = useState(hotkey);
   const [draftSttEngine, setDraftSttEngine] = useState(sttEngine);
+  const [draftSttModelChoice, setDraftSttModelChoice] = useState<string>(
+    sttEngine === "openAi" ? OPENAI_STT_MODEL : sttEngine
+  );
   const [draftOutputMode, setDraftOutputMode] = useState(outputMode);
+  const [draftSttOutputStrategy, setDraftSttOutputStrategy] = useState<SttOutputStrategy>(sttOutputStrategy);
+  const [draftPunctuationMode, setDraftPunctuationMode] = useState<PunctuationMode>(punctuationMode);
+  const [draftContextAwareTone, setDraftContextAwareTone] = useState(contextAwareTone);
+  const [draftVocabularyTerms, setDraftVocabularyTerms] = useState(vocabularyTerms.join("\n"));
   const [draftLlmProvider, setDraftLlmProvider] = useState(llmProvider);
   const [draftLlmModel, setDraftLlmModel] = useState(llmModel);
   const [draftQuickActionCommands, setDraftQuickActionCommands] = useState<QuickActionCommand[]>(quickActionCommands);
@@ -151,9 +184,16 @@ export default function Settings() {
 
   // Query backend once on mount
   useEffect(() => {
-    invoke<{ openAiAvailable: boolean; localAvailable: boolean }>("get_stt_capabilities")
-      .then((caps) => setLocalSttAvailable(caps.localAvailable))
-      .catch(() => setLocalSttAvailable(false));
+    invoke<{
+      openAiAvailable: boolean;
+      localAvailable: boolean;
+    }>("get_stt_capabilities")
+      .then((caps) => {
+        setLocalSttAvailable(caps.localAvailable);
+      })
+      .catch(() => {
+        setLocalSttAvailable(false);
+      });
 
     invoke<boolean>("has_api_key")
       .then((has) => setApiKeySet(has))
@@ -162,21 +202,41 @@ export default function Settings() {
 
   // Sync all drafts from store (2a: merged 7 useEffects into 1)
   useEffect(() => {
+    const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
+      ?? localModels.find((model) => model.active);
+    const nextSttModelChoice =
+      sttEngine === "openAi"
+        ? OPENAI_STT_MODEL
+        : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
     setDraftWakeWord(wakeWord);
     setDraftHotkey(hotkey);
     setDraftSttEngine(sttEngine);
+    setDraftSttModelChoice(nextSttModelChoice);
     setDraftOutputMode(outputMode);
+    setDraftSttOutputStrategy(sttOutputStrategy);
+    setDraftPunctuationMode(punctuationMode);
+    setDraftContextAwareTone(contextAwareTone);
+    setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
-  }, [wakeWord, hotkey, sttEngine, outputMode, llmProvider, llmModel, quickActionCommands, language]);
-
-  useEffect(() => {
-    if (draftLlmProvider !== "openAi" && draftSttEngine === "openAi") {
-      setDraftSttEngine("local");
-    }
-  }, [draftLlmProvider, draftSttEngine]);
+  }, [
+    wakeWord,
+    hotkey,
+    sttEngine,
+    outputMode,
+    sttOutputStrategy,
+    punctuationMode,
+    contextAwareTone,
+    vocabularyTerms,
+    llmProvider,
+    llmModel,
+    quickActionCommands,
+    language,
+    localModels,
+    sttModelPath,
+  ]);
 
   const loadLocalModels = useCallback(async () => {
     setLocalModelsLoading(true);
@@ -237,6 +297,18 @@ export default function Settings() {
   const handleSaveSettings = async () => {
     const nextWakeWord = draftWakeWord.trim();
     const nextModel = draftLlmModel.trim();
+    const isExternalModelChoice = draftSttModelChoice === OPENAI_STT_MODEL;
+    if (!isExternalModelChoice && !localModels.some((model) => model.id === draftSttModelChoice && model.installed)) {
+      setSettingsSaveStatus("error");
+      setLocalModelStatus({ type: "error", message: "請先安裝本地模型，或改選 OpenAI Whisper API。" });
+      setTimeout(() => setSettingsSaveStatus(""), STATUS_RESET_MS);
+      return;
+    }
+    const { engine: nextSttEngine, modelPath: nextSttModelPath } = resolveEngineAndPathByModel(draftSttModelChoice);
+    const nextVocabularyTerms = draftVocabularyTerms
+      .split(/\r?\n|,/)
+      .map((term) => term.trim())
+      .filter(Boolean);
     const nextQuickActionCommands = draftQuickActionCommands
       .map((command) => ({
         ...command,
@@ -258,8 +330,13 @@ export default function Settings() {
 
       setWakeWord(nextWakeWord);
       setHotkey(draftHotkey);
-      setSttEngine(draftSttEngine);
+      setSttEngine(nextSttEngine);
+      setSttModelPath(nextSttModelPath);
       setOutputMode(draftOutputMode);
+      setSttOutputStrategy(draftSttOutputStrategy);
+      setPunctuationMode(draftPunctuationMode);
+      setContextAwareTone(draftContextAwareTone);
+      setVocabularyTerms(nextVocabularyTerms);
       setLlmProvider(draftLlmProvider);
       setLlmModel(nextModel);
       setQuickActionCommands(nextQuickActionCommands);
@@ -267,9 +344,13 @@ export default function Settings() {
       await emit("talkflow://settings-saved", {
         wakeWord: nextWakeWord,
         hotkey: draftHotkey,
-        sttEngine: draftSttEngine,
-        sttModelPath,
+        sttEngine: nextSttEngine,
+        sttModelPath: nextSttModelPath,
         outputMode: draftOutputMode,
+        sttOutputStrategy: draftSttOutputStrategy,
+        punctuationMode: draftPunctuationMode,
+        contextAwareTone: draftContextAwareTone,
+        vocabularyTerms: nextVocabularyTerms,
         llmProvider: draftLlmProvider,
         llmModel: nextModel,
         language: draftLanguage,
@@ -291,10 +372,21 @@ export default function Settings() {
   };
 
   const handleCancelSettings = () => {
+    const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
+      ?? localModels.find((model) => model.active);
+    const nextSttModelChoice =
+      sttEngine === "openAi"
+        ? OPENAI_STT_MODEL
+        : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
     setDraftWakeWord(wakeWord);
     setDraftHotkey(hotkey);
     setDraftSttEngine(sttEngine);
+    setDraftSttModelChoice(nextSttModelChoice);
     setDraftOutputMode(outputMode);
+    setDraftSttOutputStrategy(sttOutputStrategy);
+    setDraftPunctuationMode(punctuationMode);
+    setDraftContextAwareTone(contextAwareTone);
+    setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
     setDraftQuickActionCommands(quickActionCommands);
@@ -335,6 +427,27 @@ export default function Settings() {
     );
   };
 
+  const handleImportVocabularyFile = async (file: File | null) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const imported = text
+        .split(/\r?\n|,/)
+        .map((term) => term.trim())
+        .filter(Boolean);
+      const merged = Array.from(
+        new Set(
+          [...draftVocabularyTerms.split(/\r?\n|,/).map((term) => term.trim()).filter(Boolean), ...imported]
+        )
+      );
+      setDraftVocabularyTerms(merged.join("\n"));
+      setLocalModelStatus({ type: "success", message: "詞彙庫已匯入，可按儲存套用。" });
+    } catch (err) {
+      console.error("[Settings] import vocabulary failed:", err);
+      setLocalModelStatus({ type: "error", message: "詞彙庫匯入失敗，請確認檔案格式。" });
+    }
+  };
+
   const handleInstallLocalModel = (modelId: string) =>
     withModelBusy(
       modelId,
@@ -351,14 +464,23 @@ export default function Settings() {
       async () => {
         const deleting = localModels.find((model) => model.id === modelId);
         await invoke("delete_local_stt_model", { modelId });
-        if (deleting && deleting.modelPath === sttModelPath) {
+        if (deleting && (deleting.modelPath === sttModelPath || draftSttModelChoice === modelId)) {
+          setDraftSttModelChoice(OPENAI_STT_MODEL);
+          setDraftSttEngine("openAi");
           setSttModelPath("");
           await emit("talkflow://settings-saved", {
             wakeWord: draftWakeWord.trim() || wakeWord,
             hotkey: draftHotkey,
-            sttEngine: draftSttEngine,
+            sttEngine: "openAi",
             sttModelPath: "",
             outputMode: draftOutputMode,
+            sttOutputStrategy: draftSttOutputStrategy,
+            punctuationMode: draftPunctuationMode,
+            contextAwareTone: draftContextAwareTone,
+            vocabularyTerms: draftVocabularyTerms
+              .split(/\r?\n|,/)
+              .map((term) => term.trim())
+              .filter(Boolean),
             llmProvider: draftLlmProvider,
             llmModel: draftLlmModel.trim() || llmModel,
             language: draftLanguage,
@@ -375,13 +497,22 @@ export default function Settings() {
       "select",
       async () => {
         const selectedPath = await invoke<string>("select_local_stt_model", { modelId });
+        setDraftSttEngine("localWhisper");
+        setDraftSttModelChoice(modelId);
         setSttModelPath(selectedPath);
         await emit("talkflow://settings-saved", {
           wakeWord: draftWakeWord.trim() || wakeWord,
           hotkey: draftHotkey,
-          sttEngine: draftSttEngine,
+          sttEngine: "localWhisper",
           sttModelPath: selectedPath,
           outputMode: draftOutputMode,
+          sttOutputStrategy: draftSttOutputStrategy,
+          punctuationMode: draftPunctuationMode,
+          contextAwareTone: draftContextAwareTone,
+          vocabularyTerms: draftVocabularyTerms
+            .split(/\r?\n|,/)
+            .map((term) => term.trim())
+            .filter(Boolean),
           llmProvider: draftLlmProvider,
           llmModel: draftLlmModel.trim() || llmModel,
           language: draftLanguage,
@@ -391,18 +522,58 @@ export default function Settings() {
       t("settings.status.modelSelectFailed"),
     );
 
+  const currentSttModelChoice = useMemo(() => {
+    const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
+      ?? localModels.find((model) => model.active);
+    return sttEngine === "openAi"
+      ? OPENAI_STT_MODEL
+      : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
+  }, [localModels, sttEngine, sttModelPath]);
+
   // 2e: useMemo for hasSettingsChanges
   const hasSettingsChanges = useMemo(
     () =>
       draftWakeWord !== wakeWord ||
       draftHotkey !== hotkey ||
       draftSttEngine !== sttEngine ||
+      draftSttModelChoice !== currentSttModelChoice ||
       draftOutputMode !== outputMode ||
+      draftSttOutputStrategy !== sttOutputStrategy ||
+      draftPunctuationMode !== punctuationMode ||
+      draftContextAwareTone !== contextAwareTone ||
+      draftVocabularyTerms !== vocabularyTerms.join("\n") ||
       draftLlmProvider !== llmProvider ||
       draftLlmModel !== llmModel ||
       draftLanguage !== language ||
       JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands),
-    [draftWakeWord, wakeWord, draftHotkey, hotkey, draftSttEngine, sttEngine, draftOutputMode, outputMode, draftLlmProvider, llmProvider, draftLlmModel, llmModel, draftLanguage, language, draftQuickActionCommands, quickActionCommands],
+    [
+      draftWakeWord,
+      wakeWord,
+      draftHotkey,
+      hotkey,
+      draftSttEngine,
+      sttEngine,
+      draftSttModelChoice,
+      currentSttModelChoice,
+      draftOutputMode,
+      outputMode,
+      draftSttOutputStrategy,
+      sttOutputStrategy,
+      draftPunctuationMode,
+      punctuationMode,
+      draftContextAwareTone,
+      contextAwareTone,
+      draftVocabularyTerms,
+      vocabularyTerms,
+      draftLlmProvider,
+      llmProvider,
+      draftLlmModel,
+      llmModel,
+      draftLanguage,
+      language,
+      draftQuickActionCommands,
+      quickActionCommands,
+    ],
   );
 
   return (
@@ -528,44 +699,29 @@ export default function Settings() {
 
           {activeSection === "stt" && (
             <>
-              {/* STT Engine selector */}
+              {/* STT model selector */}
               <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.engine")}</label>
-                {draftLlmProvider === "openAi" && (
-                  <label className="flex items-center gap-2 text-xs text-gray-600">
-                    <input
-                      type="checkbox"
-                      checked={draftSttEngine === "openAi"}
-                      onChange={(e) => setDraftSttEngine(e.target.checked ? "openAi" : "local")}
-                    />
-                    {t("settings.stt.useWhisperApi")}
-                  </label>
-                )}
-                <div className="flex gap-4">
-                  {draftLlmProvider === "openAi" && (
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="sttEngine"
-                        value="openAi"
-                        checked={draftSttEngine === "openAi"}
-                        onChange={() => setDraftSttEngine("openAi")}
-                      />
-                      OpenAI Whisper API
-                    </label>
-                  )}
-                  <label className={`flex items-center gap-1.5 ${localSttAvailable ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}>
-                    <input
-                      type="radio"
-                      name="sttEngine"
-                      value="local"
-                      checked={draftSttEngine === "local"}
-                      onChange={() => localSttAvailable && setDraftSttEngine("local")}
-                      disabled={!localSttAvailable}
-                    />
-                    {t("settings.stt.localWhisper")}
-                  </label>
-                </div>
+                <label className="font-medium">STT 模型</label>
+                <select
+                  className="w-full input-field px-2 py-1"
+                  value={draftSttModelChoice}
+                  onChange={(e) => {
+                    const nextChoice = e.target.value;
+                    setDraftSttModelChoice(nextChoice);
+                    const { engine } = resolveEngineAndPathByModel(nextChoice);
+                    setDraftSttEngine(engine);
+                  }}
+                >
+                  <option value={OPENAI_STT_MODEL}>OpenAI Whisper API（雲端）</option>
+                  {localModels
+                    .filter((model) => model.installed)
+                    .map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {getLocalizedModelName(model)}（本地）
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-gray-500">下載選項已集中在下方「模型下載與管理」。</p>
                 {!localSttAvailable && (
                   <div className="mt-1.5 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     <p className="font-medium">{t("settings.stt.localDisabledTitle")}</p>
@@ -578,10 +734,80 @@ export default function Settings() {
                 )}
               </div>
 
+              <div className="space-y-1">
+                <label className="font-medium">STT 輸出策略</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sttOutputStrategy"
+                      value="raw"
+                      checked={draftSttOutputStrategy === "raw"}
+                      onChange={() => setDraftSttOutputStrategy("raw")}
+                    />
+                    純 STT 直出
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="sttOutputStrategy"
+                      value="llmRefine"
+                      checked={draftSttOutputStrategy === "llmRefine"}
+                      onChange={() => setDraftSttOutputStrategy("llmRefine")}
+                    />
+                    先經 LLM 潤飾
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">智慧標點 / 排版</label>
+                <select
+                  className="w-full input-field px-2 py-1"
+                  value={draftPunctuationMode}
+                  onChange={(e) => setDraftPunctuationMode(e.target.value as PunctuationMode)}
+                >
+                  <option value="off">關閉</option>
+                  <option value="balanced">平衡</option>
+                  <option value="aggressive">積極</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">應用程式情境感知</label>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={draftContextAwareTone}
+                    onChange={(e) => setDraftContextAwareTone(e.target.checked)}
+                  />
+                  根據目前前景應用程式調整潤飾語氣
+                </label>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">專業詞彙庫</label>
+                <textarea
+                  className="w-full min-h-[96px] input-field px-2 py-1 text-xs font-mono"
+                  value={draftVocabularyTerms}
+                  onChange={(e) => setDraftVocabularyTerms(e.target.value)}
+                  placeholder="每行一個詞彙，或用逗號分隔"
+                />
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept=".txt,.csv"
+                    onChange={(e) => void handleImportVocabularyFile(e.target.files?.[0] ?? null)}
+                    className="text-xs"
+                  />
+                  <span className="text-xs text-gray-500">支援 .txt / .csv</span>
+                </div>
+              </div>
+
               {/* Local STT model manager */}
               <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.modelManager")}</label>
-                <p className="text-xs text-gray-400">{t("settings.stt.modelManagerHint")}</p>
+                <label className="font-medium">模型下載與管理</label>
+                <p className="text-xs text-gray-400">所有可下載模型統一在此管理（安裝 / 刪除 / 使用）。</p>
                 {!localSttAvailable && (
                   <p className="text-xs text-amber-700">{t("settings.stt.localNotEnabledHint")}</p>
                 )}
