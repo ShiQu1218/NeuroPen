@@ -152,6 +152,9 @@ export default function Settings() {
   };
 
   // Local input state
+  const [sttApiKeyInput, setSttApiKeyInput] = useState("");
+  const [sttApiKeySet, setSttApiKeySet] = useState(false);
+  const [sttApiKeySaveStatus, setSttApiKeySaveStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKeySaveStatus, setApiKeySaveStatus] = useState<"" | "saving" | "saved" | "error">("");
   const [hotkeyStatus, setHotkeyStatus] = useState<"" | "error">("");
@@ -175,7 +178,7 @@ export default function Settings() {
   const [localModels, setLocalModels] = useState<LocalSttModel[]>([]);
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [localModelBusyId, setLocalModelBusyId] = useState("");
-  const [localModelBusyAction, setLocalModelBusyAction] = useState<"" | "install" | "delete" | "select">("");
+  const [localModelBusyAction, setLocalModelBusyAction] = useState<"" | "install" | "delete">("");
   const [localModelStatus, setLocalModelStatus] = useState<{ type: "" | "success" | "error"; message: string }>({
     type: "",
     message: "",
@@ -198,6 +201,10 @@ export default function Settings() {
     invoke<boolean>("has_api_key")
       .then((has) => setApiKeySet(has))
       .catch(() => setApiKeySet(false));
+
+    invoke<boolean>("has_stt_api_key")
+      .then((has) => setSttApiKeySet(has))
+      .catch(() => setSttApiKeySet(false));
   }, []);
 
   // Sync all drafts from store (2a: merged 7 useEffects into 1)
@@ -270,10 +277,25 @@ export default function Settings() {
       });
   };
 
+  const handleSaveSttApiKey = () => {
+    setSttApiKeySaveStatus("saving");
+    invoke("set_stt_api_key", { key: sttApiKeyInput })
+      .then(() => {
+        setSttApiKeySet(sttApiKeyInput.length > 0);
+        setSttApiKeyInput("");
+        setSttApiKeySaveStatus("saved");
+        setTimeout(() => setSttApiKeySaveStatus(""), STATUS_RESET_MS);
+      })
+      .catch(() => {
+        setSttApiKeySaveStatus("error");
+        setTimeout(() => setSttApiKeySaveStatus(""), STATUS_RESET_MS);
+      });
+  };
+
   // 2d: shared helper for model busy operations
   const withModelBusy = async (
     modelId: string,
-    action: "install" | "delete" | "select",
+    action: "install" | "delete",
     fn: () => Promise<void>,
     successMsg: string,
     errorMsg: string,
@@ -341,6 +363,10 @@ export default function Settings() {
       setLlmModel(nextModel);
       setQuickActionCommands(nextQuickActionCommands);
       setLanguage(draftLanguage);
+      await invoke("set_runtime_stt_config", {
+        engine: nextSttEngine,
+        modelPath: nextSttModelPath,
+      });
       await emit("talkflow://settings-saved", {
         wakeWord: nextWakeWord,
         hotkey: draftHotkey,
@@ -468,6 +494,10 @@ export default function Settings() {
           setDraftSttModelChoice(OPENAI_STT_MODEL);
           setDraftSttEngine("openAi");
           setSttModelPath("");
+          await invoke("set_runtime_stt_config", {
+            engine: "openAi",
+            modelPath: "",
+          });
           await emit("talkflow://settings-saved", {
             wakeWord: draftWakeWord.trim() || wakeWord,
             hotkey: draftHotkey,
@@ -489,37 +519,6 @@ export default function Settings() {
       },
       t("settings.status.modelDeleted"),
       t("settings.status.modelDeleteFailed"),
-    );
-
-  const handleSelectLocalModel = (modelId: string) =>
-    withModelBusy(
-      modelId,
-      "select",
-      async () => {
-        const selectedPath = await invoke<string>("select_local_stt_model", { modelId });
-        setDraftSttEngine("localWhisper");
-        setDraftSttModelChoice(modelId);
-        setSttModelPath(selectedPath);
-        await emit("talkflow://settings-saved", {
-          wakeWord: draftWakeWord.trim() || wakeWord,
-          hotkey: draftHotkey,
-          sttEngine: "localWhisper",
-          sttModelPath: selectedPath,
-          outputMode: draftOutputMode,
-          sttOutputStrategy: draftSttOutputStrategy,
-          punctuationMode: draftPunctuationMode,
-          contextAwareTone: draftContextAwareTone,
-          vocabularyTerms: draftVocabularyTerms
-            .split(/\r?\n|,/)
-            .map((term) => term.trim())
-            .filter(Boolean),
-          llmProvider: draftLlmProvider,
-          llmModel: draftLlmModel.trim() || llmModel,
-          language: draftLanguage,
-        });
-      },
-      t("settings.status.modelSelected"),
-      t("settings.status.modelSelectFailed"),
     );
 
   const currentSttModelChoice = useMemo(() => {
@@ -734,6 +733,40 @@ export default function Settings() {
                 )}
               </div>
 
+              {draftSttModelChoice === OPENAI_STT_MODEL && (
+                <div className="space-y-1">
+                  <label className="font-medium">Whisper API Key（STT）</label>
+                  {sttApiKeySet && (
+                    <p className="text-xs text-green-600">已設定 Whisper STT API Key</p>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      className="flex-1 input-field px-2 py-1 font-mono text-xs"
+                      value={sttApiKeyInput}
+                      onChange={(e) => setSttApiKeyInput(e.target.value)}
+                      placeholder={sttApiKeySet ? "••••••••" : "輸入 Whisper STT API Key"}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && sttApiKeyInput) handleSaveSttApiKey();
+                      }}
+                    />
+                    <button
+                      onClick={handleSaveSttApiKey}
+                      disabled={!sttApiKeyInput || sttApiKeySaveStatus === "saving"}
+                      className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {sttApiKeySaveStatus === "saving" ? "儲存中..." : "儲存"}
+                    </button>
+                  </div>
+                  {sttApiKeySaveStatus === "saved" && (
+                    <p className="text-xs text-green-600">Whisper STT API Key 已更新</p>
+                  )}
+                  {sttApiKeySaveStatus === "error" && (
+                    <p className="text-xs text-red-600">Whisper STT API Key 儲存失敗</p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="font-medium">STT 輸出策略</label>
                 <div className="flex gap-4">
@@ -807,7 +840,7 @@ export default function Settings() {
               {/* Local STT model manager */}
               <div className="space-y-1">
                 <label className="font-medium">模型下載與管理</label>
-                <p className="text-xs text-gray-400">所有可下載模型統一在此管理（安裝 / 刪除 / 使用）。</p>
+                <p className="text-xs text-gray-400">所有可下載模型統一在此管理（安裝 / 刪除）。</p>
                 {!localSttAvailable && (
                   <p className="text-xs text-amber-700">{t("settings.stt.localNotEnabledHint")}</p>
                 )}
@@ -869,22 +902,13 @@ export default function Settings() {
                               {isBusy && localModelBusyAction === "install" ? t("settings.stt.installing") : t("settings.stt.install")}
                             </button>
                           ) : (
-                            <>
-                              <button
-                                onClick={() => handleSelectLocalModel(model.id)}
-                                disabled={!!localModelBusyId || model.active}
-                                className="px-2.5 py-1 rounded text-xs font-medium text-white bg-indigo-500 hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                              >
-                                {isBusy && localModelBusyAction === "select" ? t("settings.stt.switching") : model.active ? t("settings.stt.activeNow") : t("settings.stt.setActive")}
-                              </button>
-                              <button
-                                onClick={() => handleDeleteLocalModel(model.id)}
-                                disabled={!!localModelBusyId}
-                                className="btn-danger px-2.5 py-1 rounded text-xs"
-                              >
-                                {isBusy && localModelBusyAction === "delete" ? t("settings.stt.deleting") : t("settings.stt.delete")}
-                              </button>
-                            </>
+                            <button
+                              onClick={() => handleDeleteLocalModel(model.id)}
+                              disabled={!!localModelBusyId}
+                              className="btn-danger px-2.5 py-1 rounded text-xs"
+                            >
+                              {isBusy && localModelBusyAction === "delete" ? t("settings.stt.deleting") : t("settings.stt.delete")}
+                            </button>
                           )}
                         </div>
                       </div>

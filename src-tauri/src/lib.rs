@@ -10,6 +10,7 @@ mod undo;
 mod window_focus;
 
 use serde::Serialize;
+use std::sync::Mutex;
 use tauri::{Emitter, Listener, Manager};
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
@@ -28,6 +29,14 @@ pub struct SelectionInfo {
 pub struct FocusInfo {
     pub hwnd: isize,
 }
+
+#[derive(Debug, Clone)]
+struct RuntimeSttConfig {
+    engine: stt::SttEngine,
+    model_path: String,
+}
+
+static RUNTIME_STT_CONFIG: Mutex<Option<RuntimeSttConfig>> = Mutex::new(None);
 
 // ── Tauri commands exposed to the frontend ──────────────────────────────
 
@@ -123,7 +132,28 @@ fn stop_recording(
     engine: stt::SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    stt::stop_recording(app, engine, model_path)
+    let (_effective_engine, effective_model_path) = RUNTIME_STT_CONFIG
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard.as_ref().map(|cfg| (cfg.engine.clone(), cfg.model_path.clone()))
+        })
+        .unwrap_or((engine, model_path));
+    let derived_engine = if effective_model_path.trim().is_empty() {
+        stt::SttEngine::OpenAi
+    } else {
+        stt::SttEngine::LocalWhisper
+    };
+    stt::stop_recording(app, derived_engine, effective_model_path)
+}
+
+#[tauri::command]
+fn set_runtime_stt_config(engine: stt::SttEngine, model_path: String) -> Result<(), String> {
+    let mut guard = RUNTIME_STT_CONFIG
+        .lock()
+        .map_err(|e| format!("Failed to lock STT runtime config: {e}"))?;
+    *guard = Some(RuntimeSttConfig { engine, model_path });
+    Ok(())
 }
 
 /// Store the OpenAI API key (in OS credential store + in-process cache).
@@ -136,6 +166,16 @@ fn set_api_key(key: String) -> Result<(), String> {
 #[tauri::command]
 fn has_api_key() -> bool {
     stt::has_api_key()
+}
+
+#[tauri::command]
+fn set_stt_api_key(key: String) -> Result<(), String> {
+    stt::set_stt_api_key(key)
+}
+
+#[tauri::command]
+fn has_stt_api_key() -> bool {
+    stt::has_stt_api_key()
 }
 
 /// Return which STT engines are compiled into this binary.
@@ -276,9 +316,12 @@ pub fn run() {
             restore_clipboard,
             start_recording,
             stop_recording,
+            set_runtime_stt_config,
             is_recording,
             set_api_key,
             has_api_key,
+            set_stt_api_key,
+            has_stt_api_key,
             get_stt_capabilities,
             list_local_stt_models,
             install_local_stt_model,

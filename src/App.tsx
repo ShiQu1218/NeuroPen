@@ -155,13 +155,21 @@ function MainWindow() {
     const unlisten: Array<() => void> = [];
     let qaInteracting = false;
     let lastSelectionFingerprint = "";
-    let pendingHotkeyRelease = false;
+    let pendingHotkeyReleaseAt = 0;
 
     (async () => {
       // ── 0. Prevent sub-windows from being destroyed on close ──
       for (const label of ["settings", "preview", "quick-action", "recording-indicator"]) {
         preventCloseDestroy(label);
       }
+
+      const initialStore = useAppStore.getState();
+      await invoke("set_runtime_stt_config", {
+        engine: normalizeSttEngine(String(initialStore.sttEngine)),
+        modelPath: initialStore.sttModelPath,
+      }).catch((err) => {
+        console.warn("[App] set_runtime_stt_config init failed:", err);
+      });
 
       // Helper: register a listener only if this effect hasn't been cancelled
       async function safeRegister<T>(
@@ -190,19 +198,19 @@ function MainWindow() {
         const store = useAppStore.getState();
         if (!store.isRecording) return;
         try {
-          const normalizedSttEngine = normalizeSttEngine(String(store.sttEngine));
+          const normalizedSttEngine = store.sttModelPath ? "localWhisper" : "openAi";
           await invoke("stop_recording", {
             engine: normalizedSttEngine,
             modelPath: store.sttModelPath,
           });
           store.setIsRecording(false);
-          pendingHotkeyRelease = false;
+          pendingHotkeyReleaseAt = 0;
           setStatusMsg("辨識中…");
         } catch (err) {
           console.error("[App] stop_recording failed:", err);
           store.setSttError(String(err));
           store.setIsRecording(false);
-          pendingHotkeyRelease = false;
+          pendingHotkeyReleaseAt = 0;
           setStatusMsg("停止錄音失敗");
         }
       };
@@ -253,6 +261,14 @@ function MainWindow() {
           }
           if (typeof payload.sttModelPath === "string") {
             setSttModelPath(payload.sttModelPath);
+          }
+          if (payload.sttEngine || typeof payload.sttModelPath === "string") {
+            void invoke("set_runtime_stt_config", {
+              engine: normalizeSttEngine(payload.sttEngine ?? "openAi"),
+              modelPath: typeof payload.sttModelPath === "string" ? payload.sttModelPath : "",
+            }).catch((err) => {
+              console.warn("[App] set_runtime_stt_config sync failed:", err);
+            });
           }
           if (payload.outputMode) {
             setOutputMode(payload.outputMode);
@@ -392,13 +408,13 @@ function MainWindow() {
           }
 
           // Check API key before starting (for OpenAI engine)
-          const sttEngine = normalizeSttEngine(String(store.sttEngine));
+          const sttEngine = store.sttModelPath ? "localWhisper" : "openAi";
           if (sttEngine === "openAi") {
-            const hasKey = await invoke<boolean>("has_api_key");
+            const hasKey = await invoke<boolean>("has_stt_api_key");
             if (!hasKey) {
-              pendingHotkeyRelease = false;
-              setSttError("請先在設定中輸入 OpenAI API Key");
-              setStatusMsg("請先設定 API Key");
+              pendingHotkeyReleaseAt = 0;
+              setSttError("請先在設定中輸入 Whisper STT API Key");
+              setStatusMsg("請先設定 STT API Key");
               return;
             }
           }
@@ -406,25 +422,27 @@ function MainWindow() {
           try {
             await invoke("start_recording");
             setIsRecording(true);
-            if (pendingHotkeyRelease) {
+            if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
               await stopRecordingNow();
+            } else {
+              pendingHotkeyReleaseAt = 0;
             }
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
             setStatusMsg("錄音啟動失敗");
-            pendingHotkeyRelease = false;
+            pendingHotkeyReleaseAt = 0;
           }
         } else {
           // ── Mode A or C ── start recording
           // Check API key before starting (for OpenAI engine)
-          const sttEngine = normalizeSttEngine(String(store.sttEngine));
+          const sttEngine = store.sttModelPath ? "localWhisper" : "openAi";
           if (sttEngine === "openAi") {
-            const hasKey = await invoke<boolean>("has_api_key");
+            const hasKey = await invoke<boolean>("has_stt_api_key");
             if (!hasKey) {
-              pendingHotkeyRelease = false;
-              setSttError("請先在設定中輸入 OpenAI API Key");
-              setStatusMsg("請先設定 API Key");
+              pendingHotkeyReleaseAt = 0;
+              setSttError("請先在設定中輸入 Whisper STT API Key");
+              setStatusMsg("請先設定 STT API Key");
               return;
             }
           }
@@ -434,21 +452,23 @@ function MainWindow() {
           try {
             await invoke("start_recording");
             setIsRecording(true);
-            if (pendingHotkeyRelease) {
+            if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
               await stopRecordingNow();
+            } else {
+              pendingHotkeyReleaseAt = 0;
             }
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
             setStatusMsg("錄音啟動失敗");
-            pendingHotkeyRelease = false;
+            pendingHotkeyReleaseAt = 0;
           }
         }
       });
 
       // ── 2. hotkey RELEASE → stop recording ──
       await safeRegister("talkflow://hotkey-release", async () => {
-        pendingHotkeyRelease = true;
+        pendingHotkeyReleaseAt = Date.now();
         console.log("[App] hotkey released → stopping recording");
         await stopRecordingNow();
       });

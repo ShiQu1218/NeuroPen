@@ -121,6 +121,7 @@ static CAPTURE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
 
 /// In-process cache so we don't read from file on every call.
 static API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
+static STT_API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
 #[cfg(feature = "local-stt")]
 struct LocalWhisperContextCache {
@@ -150,6 +151,11 @@ fn has_external_engine_command(env_key: &str) -> bool {
 /// Get the path to the API key file (~/.talkflow/api_key).
 fn api_key_file_path() -> Result<PathBuf, String> {
     Ok(talkflow_dir()?.join("api_key"))
+}
+
+/// Get the path to the STT API key file (~/.talkflow/stt_api_key).
+fn stt_api_key_file_path() -> Result<PathBuf, String> {
+    Ok(talkflow_dir()?.join("stt_api_key"))
 }
 
 fn local_models_dir() -> Result<PathBuf, String> {
@@ -304,6 +310,52 @@ pub fn has_api_key() -> bool {
     get_api_key().is_ok()
 }
 
+pub fn set_stt_api_key(key: String) -> Result<(), String> {
+    let path = stt_api_key_file_path()?;
+    if key.is_empty() {
+        let _ = std::fs::remove_file(&path);
+        let mut cache = STT_API_KEY_CACHE
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+        *cache = None;
+    } else {
+        std::fs::write(&path, &key).map_err(|e| format!("Failed to save STT API key: {e}"))?;
+        let mut cache = STT_API_KEY_CACHE
+            .lock()
+            .map_err(|e| format!("Lock poisoned: {e}"))?;
+        *cache = Some(key);
+    }
+    Ok(())
+}
+
+pub fn has_stt_api_key() -> bool {
+    if let Ok(guard) = STT_API_KEY_CACHE.lock() {
+        if guard.is_some() {
+            return true;
+        }
+    }
+    get_stt_api_key().is_ok()
+}
+
+pub(crate) fn get_stt_api_key() -> Result<String, String> {
+    if let Ok(guard) = STT_API_KEY_CACHE.lock() {
+        if let Some(ref key) = *guard {
+            return Ok(key.clone());
+        }
+    }
+    let path = stt_api_key_file_path()?;
+    let key = std::fs::read_to_string(&path)
+        .map_err(|_| "未設定 Whisper STT API Key。請在設定中填入 STT API Key。".to_string())?;
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err("未設定 Whisper STT API Key。請在設定中填入 STT API Key。".to_string());
+    }
+    if let Ok(mut cache) = STT_API_KEY_CACHE.lock() {
+        *cache = Some(key.clone());
+    }
+    Ok(key)
+}
+
 /// Read the API key — checks in-process cache first, then file.
 /// Never exposed to frontend.
 pub(crate) fn get_api_key() -> Result<String, String> {
@@ -395,7 +447,7 @@ pub fn stop_recording(
 
     // Check API key after stopping — recording is already stopped at this point
     let api_key = if engine == SttEngine::OpenAi {
-        match get_api_key() {
+        match get_stt_api_key() {
             Ok(k) => Some(k),
             Err(e) => {
                 let _ = app.emit("stt://error", SttError { message: e });
