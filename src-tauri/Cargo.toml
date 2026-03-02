@@ -10,6 +10,7 @@ edition = "2021"
 [features]
 default = []
 local-stt = ["dep:whisper-rs"]
+local-stt-cuda = ["local-stt", "whisper-rs/cuda"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -34,7 +35,7 @@ ringbuf = "0.4"
 dirs = "5"
 futures-util = "0.3"
 
-whisper-rs = { version = "0.11", optional = true }
+whisper-rs = { version = "0.15", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [

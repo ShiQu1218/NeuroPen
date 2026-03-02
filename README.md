@@ -41,6 +41,13 @@ npm run tauri build -- --features local-stt
 
 > 若只執行 `cargo build`，前端 `dist` 不會同步重建；若執行的是舊的 `talkflow.exe`，仍會看到「本地 Whisper 未編譯」訊息。
 
+### 本地 Whisper CUDA（GPU）建置（NVIDIA）
+
+```bash
+# 需先安裝 CUDA Toolkit，並確保 CUDA_PATH 可用
+npm run tauri build -- --features local-stt,local-stt-cuda
+```
+
 ### 專案架構概覽
 
 *   `src/`：前端 React 與 TypeScript 原始碼 (UI/UX 實作、選單設計)

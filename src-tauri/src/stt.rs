@@ -490,6 +490,20 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
         let samples: Vec<f32> = samples.to_vec();
 
         tokio::task::spawn_blocking(move || {
+            let build_context = |path: &str| -> Result<Arc<WhisperContext>, String> {
+                #[cfg(feature = "local-stt-cuda")]
+                let mut context_params = WhisperContextParameters::default();
+                #[cfg(not(feature = "local-stt-cuda"))]
+                let context_params = WhisperContextParameters::default();
+                #[cfg(feature = "local-stt-cuda")]
+                {
+                    context_params.use_gpu(true);
+                }
+                let ctx = WhisperContext::new_with_params(path, context_params)
+                    .map_err(|e| format!("Failed to load model: {e}"))?;
+                Ok(Arc::new(ctx))
+            };
+
             let ctx = {
                 let mut cache = LOCAL_WHISPER_CONTEXT
                     .lock()
@@ -498,13 +512,7 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
                     if cached.model_path == model_path {
                         cached.context.clone()
                     } else {
-                        let loaded = Arc::new(
-                            WhisperContext::new_with_params(
-                                &model_path,
-                                WhisperContextParameters::default(),
-                            )
-                            .map_err(|e| format!("Failed to load model: {e}"))?,
-                        );
+                        let loaded = build_context(&model_path)?;
                         *cache = Some(LocalWhisperContextCache {
                             model_path: model_path.clone(),
                             context: loaded.clone(),
@@ -512,13 +520,7 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
                         loaded
                     }
                 } else {
-                    let loaded = Arc::new(
-                        WhisperContext::new_with_params(
-                            &model_path,
-                            WhisperContextParameters::default(),
-                        )
-                        .map_err(|e| format!("Failed to load model: {e}"))?,
-                    );
+                    let loaded = build_context(&model_path)?;
                     *cache = Some(LocalWhisperContextCache {
                         model_path: model_path.clone(),
                         context: loaded.clone(),
@@ -541,13 +543,13 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
                 .full(params, &samples)
                 .map_err(|e| format!("Transcription failed: {e}"))?;
 
-            let n = state
-                .full_n_segments()
-                .map_err(|e| format!("Segment error: {e}"))?;
+            let n = state.full_n_segments();
             let mut result = String::new();
             for i in 0..n {
-                if let Ok(seg) = state.full_get_segment_text(i) {
-                    result.push_str(&seg);
+                if let Some(seg) = state.get_segment(i) {
+                    if let Ok(text) = seg.to_str_lossy() {
+                        result.push_str(&text);
+                    }
                 }
             }
             Ok(result.trim().to_string())
