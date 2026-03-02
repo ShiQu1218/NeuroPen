@@ -30,4 +30,5 @@ env/
 
 # Ignore all markdown files except README
 *.md
+!CLAUDE.md
 !README.md

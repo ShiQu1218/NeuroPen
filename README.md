@@ -158,6 +158,20 @@ npm run tauri dev
 npm run tauri build
 ```
 
+### 自動化發佈 (GitHub Actions)
+
+本專案已設定 GitHub Actions。當你推送到符合 `v*` 格式的標籤時，系統會自動啟動建置流程：
+
+1. **打標籤並推送：**
+   ```bash
+   git tag v0.1.1
+   git push origin v0.1.1
+   ```
+2. **產出結果：** GitHub 會自動在 Actions 頁面開始編譯，完成後會在 **Releases** 頁面建立一個包含安裝檔的草稿 (Draft Release)。
+
+> [!NOTE]
+> 雲端自動編譯版本預設啟用 `local-stt` (CPU)。若需 CUDA 支援，請在本機手動編譯後上傳。
+
 輸出通常位於：
 
 - 可執行檔：`src-tauri\target\release\talkflow.exe`
