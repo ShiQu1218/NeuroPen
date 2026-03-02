@@ -143,6 +143,13 @@ function MainWindow() {
       }
 
       const initialStore = useAppStore.getState();
+      // Sync persisted hotkey to Rust backend (setup() defaults to Alt+`)
+      if (initialStore.hotkey && initialStore.hotkey !== "Alt+`") {
+        await invoke("change_hotkey", { hotkeyStr: initialStore.hotkey }).catch((err) => {
+          console.warn("[App] change_hotkey init failed, reverting to default:", err);
+          useAppStore.getState().setHotkey("Alt+`");
+        });
+      }
       await invoke("set_runtime_stt_config", {
         engine: normalizeSttEngine(String(initialStore.sttEngine)),
         modelPath: initialStore.sttModelPath,
