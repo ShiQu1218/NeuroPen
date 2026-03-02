@@ -19,9 +19,9 @@
   .input-field { @apply border border-zinc-200 rounded-xl bg-white outline-none focus:border-zinc-400 transition-colors; }
 
   /* 側邊欄導航按鈕 */
-  .nav-tab { @apply w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-colors; }
-  .nav-tab-active { @apply nav-tab bg-white text-zinc-900 shadow-sm ring-1 ring-black/5; }
-  .nav-tab-inactive { @apply nav-tab text-zinc-600 hover:bg-white/70; }
+  .nav-tab { @apply w-full rounded-xl px-3 py-2 text-left text-xs font-medium transition-all duration-150; }
+  .nav-tab-active { @apply nav-tab bg-white text-zinc-900 shadow-sm ring-1 ring-black/10; }
+  .nav-tab-inactive { @apply nav-tab text-zinc-600 hover:bg-white hover:text-zinc-900 hover:shadow-sm hover:ring-1 hover:ring-black/10; }
 }
 
 :root {
