@@ -3,6 +3,17 @@ import { persist } from "zustand/middleware";
 
 export type OutputMode = "DirectInject" | "PreviewStream";
 export type LlmProvider = "openAi" | "gemini" | "claude" | "grok" | "ollama";
+export type AppLanguage =
+  | "zh-TW"
+  | "en-US"
+  | "ja-JP"
+  | "es-ES"
+  | "ko-KR"
+  | "zh-CN"
+  | "de-DE"
+  | "fr-FR"
+  | "ar-SA"
+  | "ru-RU";
 
 export type SttEngine = "openAi" | "local";
 
@@ -31,6 +42,7 @@ interface AppState {
   hotkey: string;
   sttEngine: SttEngine;
   quickActionCommands: QuickActionCommand[];
+  language: AppLanguage;
 
   // --- Runtime state (not persisted) ---
   isRecording: boolean;
@@ -56,6 +68,7 @@ interface AppState {
   setHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
   setQuickActionCommands: (commands: QuickActionCommand[]) => void;
+  setLanguage: (language: AppLanguage) => void;
   setIsRecording: (recording: boolean) => void;
   setSelectedText: (text: string) => void;
   setCurrentMode: (mode: AppMode) => void;
@@ -84,6 +97,7 @@ export const useAppStore = create<AppState>()(
       hotkey: "Alt+`",
       sttEngine: "openAi",
       quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
+      language: "zh-TW",
 
       isRecording: false,
       selectedText: "",
@@ -107,6 +121,7 @@ export const useAppStore = create<AppState>()(
       setHotkey: (hotkey) => set({ hotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
       setQuickActionCommands: (commands) => set({ quickActionCommands: commands }),
+      setLanguage: (language) => set({ language }),
       setIsRecording: (recording) => set({ isRecording: recording }),
       setSelectedText: (text) => set({ selectedText: text }),
       setCurrentMode: (mode) => set({ currentMode: mode }),
@@ -146,6 +161,7 @@ export const useAppStore = create<AppState>()(
         hotkey: state.hotkey,
         sttEngine: state.sttEngine,
         quickActionCommands: state.quickActionCommands,
+        language: state.language,
       }),
     }
   )

@@ -11,10 +11,14 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
+import { useI18n } from "../i18n";
+import { useAppStore, type AppLanguage } from "../store/useAppStore";
 
 export default function RecordingIndicator() {
   const [isRecording, setIsRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const setLanguage = useAppStore((s) => s.setLanguage);
+  const { t } = useI18n();
 
   useEffect(() => {
     let cancelled = false;
@@ -47,13 +51,23 @@ export default function RecordingIndicator() {
         setTimeout(() => { getCurrentWindow().hide(); }, 300);
       });
       if (cancelled) { u2(); } else { unlisten.push(u2); }
+
+      const u3 = await listen<{ language?: AppLanguage }>(
+        "talkflow://settings-saved",
+        (event) => {
+          if (event.payload.language) {
+            setLanguage(event.payload.language);
+          }
+        }
+      );
+      if (cancelled) { u3(); } else { unlisten.push(u3); }
     })();
 
     return () => {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, []);
+  }, [setLanguage]);
 
   // Elapsed timer
   useEffect(() => {
@@ -80,7 +94,7 @@ export default function RecordingIndicator() {
               : "bg-gray-400"
           }`}
         />
-        <span>{isRecording ? "錄音中" : "處理中…"}</span>
+        <span>{isRecording ? t("recording.recording") : t("recording.processing")}</span>
         {isRecording && (
           <span className="text-white/60 text-xs ml-1">
             {formatTime(elapsed)}

@@ -3,7 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { useAppStore } from "../store/useAppStore";
+import { useI18n } from "../i18n";
+import { useAppStore, type AppLanguage } from "../store/useAppStore";
 
 const PREVIEW_WIDTH = 340;
 const PREVIEW_MIN_HEIGHT = 240;
@@ -13,6 +14,7 @@ const PREVIEW_CHROME_HEIGHT = 180;
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
 
   const llmOutput = useAppStore((s) => s.llmOutput);
   const isLlmLoading = useAppStore((s) => s.isLlmLoading);
@@ -23,6 +25,7 @@ export default function PreviewWindow() {
   const setLlmOutput = useAppStore((s) => s.setLlmOutput);
   const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
   const setLlmError = useAppStore((s) => s.setLlmError);
+  const setLanguage = useAppStore((s) => s.setLanguage);
 
   // Listen to LLM streaming events
   useEffect(() => {
@@ -60,13 +63,21 @@ export default function PreviewWindow() {
           useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
         }
       );
+      await register<{ language?: AppLanguage }>(
+        "talkflow://settings-saved",
+        (event) => {
+          if (event.payload.language) {
+            setLanguage(event.payload.language);
+          }
+        }
+      );
     })();
 
     return () => {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, []);
+  }, [setLanguage]);
 
   // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {
@@ -94,13 +105,13 @@ export default function PreviewWindow() {
   const handleReplace = async () => {
     const restored = await invoke<boolean>("restore_focus");
     if (!restored) {
-      setLlmError("找不到原始目標視窗，無法取代");
+      setLlmError(t("preview.replaceNoTarget"));
       return;
     }
     await new Promise((r) => setTimeout(r, 100));
     const focusOk = await invoke<boolean>("verify_focus");
     if (!focusOk) {
-      setLlmError("焦點已變更，取消取代");
+      setLlmError(t("preview.replaceFocusChanged"));
       await invoke("restore_clipboard");
       return;
     }
@@ -161,13 +172,13 @@ export default function PreviewWindow() {
         }}
       >
         <div className="pointer-events-none select-none">
-          <span className="text-xs font-semibold text-zinc-700">TalkFlow Preview</span>
-          <p className="text-[10px] text-zinc-400 leading-tight">可拖曳、複製或直接取代原文</p>
+          <span className="text-xs font-semibold text-zinc-700">{t("preview.title")}</span>
+          <p className="text-[10px] text-zinc-400 leading-tight">{t("preview.subtitle")}</p>
         </div>
         <button
           className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
           onClick={handleClose}
-          title="關閉"
+          title={t("preview.close")}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="18" y1="6" x2="6" y2="18" />
@@ -184,11 +195,11 @@ export default function PreviewWindow() {
         {llmError ? (
           <span className="text-red-500">{llmError}</span>
         ) : isLlmLoading && !hasOutput ? (
-          <span className="text-gray-400">處理中…</span>
+          <span className="text-gray-400">{t("preview.loading")}</span>
         ) : hasOutput ? (
           llmOutput
         ) : (
-          <span className="text-gray-400">輸出將在此顯示…</span>
+          <span className="text-gray-400">{t("preview.empty")}</span>
         )}
       </div>
 
@@ -196,7 +207,7 @@ export default function PreviewWindow() {
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
         <input
           className="flex-1 input-field px-2.5 py-1.5 text-sm"
-          placeholder="輸入補充指令…"
+          placeholder={t("preview.refinementPlaceholder")}
           value={refinementInput}
           onChange={(e) => setRefinementInput(e.target.value)}
           onKeyDown={(e) => {
@@ -220,20 +231,20 @@ export default function PreviewWindow() {
           disabled={!hasOutput}
           onClick={handleCopy}
         >
-          複製
+          {t("preview.copy")}
         </button>
         <button
           className="btn-primary px-4 py-1.5 text-sm"
           disabled={!hasOutput || isLlmLoading}
           onClick={handleReplace}
         >
-          取代
+          {t("preview.replace")}
         </button>
         <button
           className="btn-secondary px-4 py-1.5 text-sm"
           onClick={handleClose}
         >
-          關閉
+          {t("preview.close")}
         </button>
       </div>
     </div>

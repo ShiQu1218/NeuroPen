@@ -4,7 +4,8 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
-import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
+import { useI18n } from "../i18n";
+import { useAppStore, type AppLanguage, type QuickActionCommand } from "../store/useAppStore";
 
 const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 260 };
@@ -14,6 +15,8 @@ export default function QuickActionIcon() {
   const llmProvider = useAppStore((s) => s.llmProvider);
   const llmModel = useAppStore((s) => s.llmModel);
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
+  const setLanguage = useAppStore((s) => s.setLanguage);
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
   const [customInput, setCustomInput] = useState("");
@@ -29,6 +32,7 @@ export default function QuickActionIcon() {
   useEffect(() => {
     let unlistenSelection: (() => void) | null = null;
     let unlistenQaShow: (() => void) | null = null;
+    let unlistenSettings: (() => void) | null = null;
     void (async () => {
       unlistenSelection = await listen<{ text: string }>(
         "talkflow://stable-selection",
@@ -46,6 +50,14 @@ export default function QuickActionIcon() {
           fadeRaf.current = null;
         });
       });
+      unlistenSettings = await listen<{ language?: AppLanguage }>(
+        "talkflow://settings-saved",
+        (event) => {
+          if (event.payload.language) {
+            setLanguage(event.payload.language);
+          }
+        }
+      );
     })();
     return () => {
       if (collapseTimer.current) {
@@ -56,9 +68,10 @@ export default function QuickActionIcon() {
       }
       unlistenSelection?.();
       unlistenQaShow?.();
+      unlistenSettings?.();
       void setQaInteracting(false);
     };
-  }, [setQaInteracting]);
+  }, [setLanguage, setQaInteracting]);
 
   const expand = useCallback(() => {
     if (collapseTimer.current) {
@@ -188,9 +201,9 @@ export default function QuickActionIcon() {
       onMouseEnter={expand}
       onMouseLeave={() => collapse()}
     >
-      <p className="px-1 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">快速操作</p>
+      <p className="px-1 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide">{t("quickAction.title")}</p>
       {quickActionCommands.length === 0 ? (
-        <p className="px-2 py-1 text-xs text-slate-400">請到設定新增快捷指令</p>
+        <p className="px-2 py-1 text-xs text-slate-400">{t("quickAction.empty")}</p>
       ) : (
         <div className="max-h-[170px] overflow-y-auto space-y-1">
           {quickActionCommands.map((command) => (
@@ -209,7 +222,7 @@ export default function QuickActionIcon() {
       <div className="flex items-center gap-1.5 mt-1 border-t border-slate-100 pt-2">
         <input
           className="flex-1 input-field px-2.5 py-1.5 text-xs bg-white/90"
-          placeholder="自訂指令…"
+          placeholder={t("quickAction.customPlaceholder")}
           value={customInput}
           onChange={(e) => setCustomInput(e.target.value)}
           onFocus={() => {

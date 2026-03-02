@@ -11,6 +11,7 @@ import QuickActionIcon from "./components/QuickActionIcon";
 import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
 import { useAppStore } from "./store/useAppStore";
+import type { AppLanguage } from "./store/useAppStore";
 
 /**
  * Prevent a window from being destroyed on close — hide it instead.
@@ -67,6 +68,7 @@ function MainWindow() {
     setLlmProvider,
     setLlmModel,
     setQuickActionCommands,
+    setLanguage,
     resetSession,
   } = useAppStore();
 
@@ -155,6 +157,7 @@ function MainWindow() {
         outputMode: "DirectInject" | "PreviewStream";
         llmProvider: "openAi" | "gemini" | "claude" | "grok" | "ollama";
         llmModel: string;
+        language?: AppLanguage;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
         "talkflow://settings-saved",
@@ -180,6 +183,9 @@ function MainWindow() {
           }
           if (payload.llmModel) {
             setLlmModel(payload.llmModel);
+          }
+          if (payload.language) {
+            setLanguage(payload.language);
           }
           if (payload.quickActionCommands) {
             setQuickActionCommands(payload.quickActionCommands);
