@@ -421,14 +421,33 @@ TalkFlow/
 
 ---
 
+## Versioning / 版本管理
+
+版本號集中由 `npm version` 管理，自動同步到所有設定檔：
+
+```bash
+npm version patch   # 0.1.1 → 0.1.2
+npm version minor   # 0.1.1 → 0.2.0
+npm version major   # 0.1.1 → 1.0.0
+```
+
+執行後會自動：
+1. 更新 `package.json` 版本號
+2. 同步到 `src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml`
+3. 建立 git commit 與 git tag（如 `v0.1.2`）
+
+> **同步腳本**：`scripts/sync-version.js`，由 `package.json` 的 `"version"` hook 自動觸發。
+
+---
+
 ## CI/CD & Release / 自動化發佈
 
 本專案使用 GitHub Actions 自動建置。推送 `v*` 標籤即觸發：
 
 ```bash
-# Tag and push to trigger auto-build
-git tag v0.1.0
-git push origin v0.1.0
+# Bump version and push tag to trigger auto-build
+npm version patch
+git push origin main --tags
 ```
 
 CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
