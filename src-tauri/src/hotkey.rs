@@ -1,104 +1,95 @@
 //! Global hotkey listener.
 //!
-//! - `Alt+Backquote` pressed  → emit `hotkey://press`
-//! - `Alt+Backquote` released → emit `hotkey://release`
-//! - `Alt+Z`    pressed   → emit `hotkey://undo`
+//! - Trigger hotkey (configurable) pressed  → emit `hotkey://press`
+//! - Trigger hotkey released                → emit `hotkey://release`
+//! - `Alt+Z` pressed                       → emit `hotkey://undo`
 //!
-//! Uses `tauri-plugin-global-shortcut`.
+//! Uses `tauri-plugin-global-shortcut` with a **single global handler**
+//! instead of per-shortcut `on_shortcut()` calls. This avoids the ghost-
+//! shortcut bug where `unregister()` / `unregister_all()` fail to fully
+//! remove handlers that were set via `on_shortcut()`.
 
 use std::sync::Mutex;
-use tauri::Emitter;
+use tauri::{Emitter, Runtime, plugin::TauriPlugin};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// The currently registered trigger shortcut (so we can unregister + re-register).
-static CURRENT_SHORTCUT: Mutex<Option<(Option<Modifiers>, Code)>> = Mutex::new(None);
+static CURRENT_TRIGGER: Mutex<Option<Shortcut>> = Mutex::new(None);
 
-/// Register all global hotkeys. Call once during app setup.
-/// Safe to call multiple times — unregisters existing shortcuts first.
-pub fn setup(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    // Unregister any existing shortcuts first (idempotent)
-    let alt_space = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-    let alt_backquote = Shortcut::new(Some(Modifiers::ALT), Code::Backquote);
-    let alt_z = Shortcut::new(Some(Modifiers::ALT), Code::KeyZ);
-    let _ = app.global_shortcut().unregister(alt_space);
-    let _ = app.global_shortcut().unregister(alt_backquote);
-    let _ = app.global_shortcut().unregister(alt_z);
-
-    register_trigger(app, Some(Modifiers::ALT), Code::Backquote)?;
-    register_undo(app)?;
-    Ok(())
+/// The fixed undo shortcut.
+fn undo_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::ALT), Code::KeyZ)
 }
 
-/// Register the main trigger hotkey (Alt+` by default).
-fn register_trigger(
-    app: &tauri::AppHandle,
-    modifiers: Option<Modifiers>,
-    code: Code,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let shortcut = Shortcut::new(modifiers, code);
-    let app_handle = app.clone();
+/// Build the plugin with a single global handler that dispatches events
+/// based on the current trigger shortcut. Call this once during app setup
+/// (in `tauri::Builder::default().plugin(...)`).
+pub fn build_plugin<R: Runtime>() -> TauriPlugin<R> {
+    tauri_plugin_global_shortcut::Builder::new()
+        .with_handler(|app, shortcut, event| {
+            let is_trigger = CURRENT_TRIGGER
+                .lock()
+                .ok()
+                .and_then(|guard| *guard)
+                .map(|t| t == *shortcut)
+                .unwrap_or(false);
 
-    app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
-        match event.state {
-            ShortcutState::Pressed => {
-                let _ = app_handle.emit("hotkey://press", ());
-                println!("[hotkey] Trigger pressed");
+            if is_trigger {
+                match event.state {
+                    ShortcutState::Pressed => {
+                        let _ = app.emit("hotkey://press", ());
+                        println!("[hotkey] Trigger pressed");
+                    }
+                    ShortcutState::Released => {
+                        let _ = app.emit("hotkey://release", ());
+                        println!("[hotkey] Trigger released");
+                    }
+                }
+            } else if *shortcut == undo_shortcut() && event.state == ShortcutState::Pressed {
+                let _ = app.emit("hotkey://undo", ());
+                println!("[hotkey] Alt+Z triggered (undo)");
             }
-            ShortcutState::Released => {
-                let _ = app_handle.emit("hotkey://release", ());
-                println!("[hotkey] Trigger released");
-            }
-        }
-    })?;
+        })
+        .build()
+}
 
-    // Store current shortcut for later unregister
-    if let Ok(mut guard) = CURRENT_SHORTCUT.lock() {
-        *guard = Some((modifiers, code));
+/// Register the undo hotkey (Alt+Z). Call once after the app handle is ready.
+pub fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let sc = undo_shortcut();
+    if !app.global_shortcut().is_registered(sc) {
+        app.global_shortcut().register(sc)?;
+        println!("[hotkey] Registered undo shortcut (Alt+Z)");
     }
-
-    println!("[hotkey] Registered trigger shortcut");
     Ok(())
 }
 
-/// Register the undo hotkey (Alt+Z, always fixed).
-fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let alt_z = Shortcut::new(Some(Modifiers::ALT), Code::KeyZ);
-    let app_handle = app.clone();
-
-    app.global_shortcut().on_shortcut(alt_z, move |_app, _shortcut, event| {
-        if event.state == ShortcutState::Pressed {
-            let _ = app_handle.emit("hotkey://undo", ());
-            println!("[hotkey] Alt+Z triggered (undo)");
-        }
-    })?;
-
-    Ok(())
-}
-
-/// Re-register the trigger hotkey with a new key combination.
-/// Called from the frontend when the user changes the hotkey setting.
+/// Register (or change) the trigger hotkey.
+/// - First call: just registers the given shortcut.
+/// - Subsequent calls: unregisters the previous trigger, then registers the new one.
 pub fn change_trigger(app: &tauri::AppHandle, modifiers: Option<Modifiers>, code: Code) -> Result<(), String> {
-    let previous = CURRENT_SHORTCUT.lock().ok().and_then(|guard| *guard);
+    let new_shortcut = Shortcut::new(modifiers, code);
 
-    // Unregister known trigger candidates (do not touch undo Alt+Z).
-    if let Some((old_mods, old_code)) = previous {
-        let _ = app.global_shortcut().unregister(Shortcut::new(old_mods, old_code));
-    }
-    let _ = app
-        .global_shortcut()
-        .unregister(Shortcut::new(Some(Modifiers::ALT), Code::Space));
-    let _ = app
-        .global_shortcut()
-        .unregister(Shortcut::new(Some(Modifiers::ALT), Code::Backquote));
-
-    if let Err(e) = register_trigger(app, modifiers, code) {
-        // Best-effort rollback so the app keeps a usable trigger.
-        if let Some((old_mods, old_code)) = previous {
-            let _ = register_trigger(app, old_mods, old_code);
+    // Unregister the previous trigger (if any)
+    if let Some(old) = CURRENT_TRIGGER.lock().ok().and_then(|guard| *guard) {
+        if app.global_shortcut().is_registered(old) {
+            app.global_shortcut()
+                .unregister(old)
+                .map_err(|e| format!("Failed to unregister old hotkey: {e}"))?;
+            println!("[hotkey] Unregistered old trigger");
         }
-        return Err(format!("Failed to register new hotkey: {e}"));
     }
 
+    // Register the new trigger
+    app.global_shortcut()
+        .register(new_shortcut)
+        .map_err(|e| format!("Failed to register new hotkey: {e}"))?;
+
+    // Update stored shortcut
+    if let Ok(mut guard) = CURRENT_TRIGGER.lock() {
+        *guard = Some(new_shortcut);
+    }
+
+    println!("[hotkey] Registered trigger shortcut: {modifiers:?}+{code:?}");
     Ok(())
 }
 

@@ -142,14 +142,20 @@ function MainWindow() {
         preventCloseDestroy(label);
       }
 
-      const initialStore = useAppStore.getState();
-      // Sync persisted hotkey to Rust backend (setup() defaults to Alt+`)
-      if (initialStore.hotkey && initialStore.hotkey !== "Alt+`") {
-        await invoke("change_hotkey", { hotkeyStr: initialStore.hotkey }).catch((err) => {
-          console.warn("[App] change_hotkey init failed, reverting to default:", err);
-          useAppStore.getState().setHotkey("Alt+`");
+      // Wait for Zustand persist hydration so we read the real saved values
+      if (!useAppStore.persist.hasHydrated()) {
+        await new Promise<void>((resolve) => {
+          useAppStore.persist.onFinishHydration(() => resolve());
         });
       }
+
+      const initialStore = useAppStore.getState();
+      // Register the trigger hotkey in Rust backend.
+      // Rust only registers the undo hotkey (Alt+Z) at startup; the trigger
+      // hotkey is set here from the user's persisted setting.
+      await invoke("change_hotkey", { hotkeyStr: initialStore.hotkey }).catch((err) => {
+        console.warn("[App] change_hotkey init failed, keeping stored value:", err);
+      });
       await invoke("set_runtime_stt_config", {
         engine: normalizeSttEngine(String(initialStore.sttEngine)),
         modelPath: initialStore.sttModelPath,

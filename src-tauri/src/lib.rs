@@ -394,7 +394,7 @@ fn show_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(hotkey::build_plugin())
         .invoke_handler(tauri::generate_handler![
             trigger_hotkey,
             get_selection,
@@ -475,10 +475,12 @@ pub fn run() {
             // Start selection watcher (background polling)
             selection::start_selection_watcher(app.handle().clone());
 
-            // Register global hotkeys
+            // Register only the undo hotkey (Alt+Z) at startup.
+            // The trigger hotkey is registered later when the frontend calls
+            // change_hotkey with the user's persisted setting.
             let handle = app.handle().clone();
-            if let Err(e) = hotkey::setup(&handle) {
-                eprintln!("[setup] Failed to register hotkeys: {e}");
+            if let Err(e) = hotkey::register_undo(&handle) {
+                eprintln!("[setup] Failed to register undo hotkey: {e}");
             }
 
             // ── hotkey://press → start recording (press-and-hold) ──
