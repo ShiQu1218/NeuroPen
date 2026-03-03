@@ -455,7 +455,7 @@ CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
 - **焦點驗證**：注入前確認目標視窗未改變，防止輸入到非預期位置
 - **剪貼簿保護**：操作前暫存、操作後還原，不污染使用者剪貼簿內容
 - **隱私模式**：一鍵關閉所有雲端 LLM 呼叫，僅執行本地 STT
-- **安全儲存**：API Key 使用 Windows Credential Manager (keyring) 加密儲存
+- **安全儲存**：API Key 使用 Windows Credential Manaer (keyring) 加密儲存
 - **無後台上傳**：所有 AI 呼叫僅在使用者主動觸發時發生
 
 
