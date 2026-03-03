@@ -619,11 +619,11 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
 
         tokio::task::spawn_blocking(move || {
             let build_context = |path: &str| -> Result<Arc<WhisperContext>, String> {
-                #[cfg(feature = "local-stt-cuda")]
+                #[cfg(feature = "local-stt-gpu")]
                 let mut context_params = WhisperContextParameters::default();
-                #[cfg(not(feature = "local-stt-cuda"))]
+                #[cfg(not(feature = "local-stt-gpu"))]
                 let context_params = WhisperContextParameters::default();
-                #[cfg(feature = "local-stt-cuda")]
+                #[cfg(feature = "local-stt-gpu")]
                 {
                     context_params.use_gpu(true);
                 }

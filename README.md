@@ -260,7 +260,7 @@ TalkFlow 根據「是否有選取文字」與「語音是否包含喚醒詞」�
 | Engine | Type | Notes |
 |--------|------|-------|
 | OpenAI Whisper API | Cloud | 需要 API Key |
-| Local Whisper | Local | 透過 whisper-rs / whisper.cpp，支援 CPU 與 CUDA |
+| Local Whisper | Local | 透過 whisper-rs / whisper.cpp，支援 CPU 與 GPU (Vulkan) |
 
 ### Local Whisper Models
 
@@ -280,7 +280,7 @@ TalkFlow 根據「是否有選取文字」與「語音是否包含喚醒詞」�
 - Windows 10 / 11
 - 麥克風
 - （雲端模式）網路連線 + API Key
-- （本地 STT）建議 8 GB+ RAM；CUDA GPU 可加速
+- （本地 STT）建議 8 GB+ RAM；支援 Vulkan 的 GPU 可加速（NVIDIA / AMD / Intel）
 
 ### Installation / 安裝
 
@@ -316,6 +316,7 @@ TalkFlow 根據「是否有選取文字」與「語音是否包含喚醒詞」�
 - [Rust](https://www.rust-lang.org/) toolchain (stable)
 - Windows 10/11
 - [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)
+- （GPU 加速建置）[Vulkan SDK](https://vulkan.lunarg.com/sdk/home) — 僅編譯 `local-stt-gpu` 時需要
 
 ### Install & Run / 安裝與啟動
 
@@ -340,8 +341,8 @@ npm run tauri build
 # Build with local STT (CPU)
 npm run tauri build -- --features local-stt
 
-# Build with local STT + CUDA acceleration
-npm run tauri build -- --features local-stt,local-stt-cuda
+# Build with local STT + GPU acceleration (Vulkan, supports NVIDIA/AMD/Intel)
+npm run tauri build -- --features local-stt-gpu
 ```
 
 Build output:
@@ -452,7 +453,7 @@ git push origin main --tags
 
 CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
 
-> **Note**: 雲端 CI 預設啟用 `local-stt` (CPU)。若需 CUDA 支援，請本機手動編譯後上傳。
+> **Note**: 雲端 CI 預設啟用 `local-stt` (CPU)。若需 GPU 加速，請使用 `local-stt-gpu` feature（Vulkan 後端，自動 fallback CPU）。
 
 ---
 
@@ -461,7 +462,7 @@ CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
 | Problem | Solution |
 |---------|----------|
 | 更新後 UI 沒變 | 確認執行的是 `src-tauri/target/release/talkflow.exe`，或重新安裝 NSIS 包覆蓋舊版 |
-| 本地 Whisper 顯示未啟用 | 需以 `--features local-stt` 或 `--features local-stt,local-stt-cuda` 重新建置 |
+| 本地 Whisper 顯示未啟用 | 需以 `--features local-stt` 或 `--features local-stt-gpu` 重新建置 |
 | Ollama 無法連線 | 確認 Ollama 正在執行且 `localhost:11434` 可存取，模型名稱與已安裝模型一致 |
 | 取代失敗 / 焦點錯誤 | TalkFlow 僅對快捷鍵觸發時的焦點視窗注入；若焦點在處理期間改變，會取消並警告 |
 | Quick Action 圖示未出現 | 部分應用（遊戲、自繪介面）不支援 UI Automation API，改用 Mode B2 語音路徑 |

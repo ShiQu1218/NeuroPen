@@ -14,7 +14,17 @@
       "Bash(cargo build:*)",
       "Bash(npm run:*)",
       "Bash(CMAKE_CUDA_ARCHITECTURES=120 npm run:*)",
-      "Bash(CMAKE_CUDA_ARCHITECTURES=120 cargo build:*)"
+      "Bash(CMAKE_CUDA_ARCHITECTURES=120 cargo build:*)",
+      "WebSearch",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:docs.rs)",
+      "Bash(curl:*)",
+      "WebFetch(domain:vulkan.lunarg.com)",
+      "Bash(dir:*)",
+      "Bash(export:*)",
+      "Bash(powershell:*)",
+      "Bash(rm:*)",
+      "Bash(subst T::*)"
     ]
   }
 }

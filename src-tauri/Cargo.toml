@@ -10,7 +10,7 @@ edition = "2021"
 [features]
 default = []
 local-stt = ["dep:whisper-rs"]
-local-stt-cuda = ["local-stt", "whisper-rs/cuda"]
+local-stt-gpu = ["local-stt", "whisper-rs/vulkan"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
