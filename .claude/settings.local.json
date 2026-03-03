@@ -10,7 +10,11 @@
       "Bash(npm audit:*)",
       "Bash(python3:*)",
       "Bash(grep:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(cargo build:*)",
+      "Bash(npm run:*)",
+      "Bash(CMAKE_CUDA_ARCHITECTURES=120 npm run:*)",
+      "Bash(CMAKE_CUDA_ARCHITECTURES=120 cargo build:*)"
     ]
   }
 }
