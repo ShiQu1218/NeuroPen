@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="public/talkflow-icon.png" alt="TalkFlow Logo" width="120" />
-</p>
-
 <h1 align="center">TalkFlow</h1>
 
 <p align="center">
@@ -277,10 +273,22 @@ TalkFlow 根據「是否有選取文字」與「語音是否包含喚醒詞」�
 
 ### System Requirements / 系統需求
 
-- Windows 10 / 11
+- **OS**：Windows 10 (1809+) / Windows 11
 - 麥克風
 - （雲端模式）網路連線 + API Key
-- （本地 STT）建議 8 GB+ RAM；支援 Vulkan 的 GPU 可加速（NVIDIA / AMD / Intel）
+- （本地 STT）建議 8 GB+ RAM；支援 Vulkan 的 GPU 可加速（見下方相容列表），無 GPU 則自動使用 CPU
+
+### GPU Acceleration / GPU 加速支援
+
+本地 Whisper STT 透過 [Vulkan](https://www.vulkan.org/) 後端進行 GPU 加速，**不需要安裝任何額外驅動或 DLL** — 只要你的 GPU 驅動支援 Vulkan 即可。若偵測不到 Vulkan，會自動 fallback 至 CPU。
+
+| GPU 廠商 | 支援的顯卡 | 備註 |
+|----------|-----------|------|
+| **NVIDIA** | GeForce GTX 600 系列以上（Kepler+） | 驅動 496.76+ 建議 |
+| **AMD** | Radeon HD 7700 系列以上（GCN 1.0+） | Radeon Software Adrenalin 驅動 |
+| **Intel** | HD Graphics 500 以上（Skylake+）/ Arc 系列 | 內顯也支援 |
+
+> **沒有獨立顯卡？** 大部分 2016 年後的 Intel 內顯都支援 Vulkan，仍可加速。完全不支援時自動退回 CPU，不會報錯。
 
 ### Installation / 安裝
 
@@ -334,16 +342,50 @@ npm run tauri dev
 
 ### Build / 建置
 
-```bash
-# Standard build
-npm run tauri build
+有三種建置模式：
 
-# Build with local STT (CPU)
-npm run tauri build -- --features local-stt
+| 模式 | 指令 | 說明 |
+|------|------|------|
+| 不含本地 STT | `npm run tauri build` | 最小包，僅支援雲端 STT |
+| 本地 STT (CPU) | `npm run tauri build -- --features local-stt` | 支援本地 Whisper，純 CPU |
+| 本地 STT + GPU | `npm run tauri build -- --features local-stt-gpu` | 支援本地 Whisper + Vulkan GPU 加速（推薦） |
 
-# Build with local STT + GPU acceleration (Vulkan, supports NVIDIA/AMD/Intel)
-npm run tauri build -- --features local-stt-gpu
-```
+#### GPU 建置步驟（`local-stt-gpu`）
+
+1. **安裝 Vulkan SDK**
+
+   從 [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home) 下載並安裝。
+
+2. **設定環境變數**
+
+   ```powershell
+   # PowerShell（永久設定，需管理員）
+   setx VULKAN_SDK "C:\VulkanSDK\1.4.341.1" /M
+   ```
+
+   設定後**重開終端機**讓變數生效。
+
+3. **建置**
+
+   ```powershell
+   npm run tauri build -- --features local-stt-gpu
+   ```
+
+4. **（選用）如果遇到路徑過長錯誤**
+
+   Windows 預設有 260 字元路徑限制。兩種解法：
+
+   - **方法 A**：啟用長路徑支援（需管理員 + 重開機）
+     ```powershell
+     reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
+     ```
+
+   - **方法 B**：用 `subst` 映射短路徑（不需重開機）
+     ```powershell
+     subst T: "C:\Users\你的使用者名稱\Desktop\TalkFlow"
+     cd T:\
+     npm run tauri build -- --features local-stt-gpu
+     ```
 
 Build output:
 - Executable: `src-tauri/target/release/talkflow.exe`
