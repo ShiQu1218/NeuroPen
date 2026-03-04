@@ -125,6 +125,27 @@ fn preferred_language_hint(preferred_language: Option<&str>) -> Option<String> {
     ))
 }
 
+fn is_question_like_instruction(instruction: &str) -> bool {
+    let trimmed = instruction.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    if trimmed.contains('?') || trimmed.contains('？') {
+        return true;
+    }
+    if trimmed.chars().count() > 16 {
+        return false;
+    }
+    let lower = trimmed.to_lowercase();
+    const QUESTION_KEYWORDS: &[&str] = &[
+        "why", "what", "how", "explain", "meaning",
+        "為什麼", "為甚麼", "為何", "为什么", "为何",
+        "什麼", "什么", "怎麼", "怎么",
+        "解釋", "解释", "說明", "说明", "點解",
+    ];
+    QUESTION_KEYWORDS.iter().any(|keyword| lower.contains(keyword))
+}
+
 fn build_prompt(selected_text: &str, instruction: &str, preferred_language: Option<&str>) -> (String, String) {
     let language_hint = preferred_language_hint(preferred_language)
         .map(|hint| format!(" {hint}"))
@@ -137,11 +158,20 @@ fn build_prompt(selected_text: &str, instruction: &str, preferred_language: Opti
             instruction.to_string(),
         )
     } else {
+        let question_like = is_question_like_instruction(instruction);
         (
             format!(
-                "You are a helpful assistant. Process the user's selected text according to their instruction. Keep the output in the same language and writing system as the selected text by default, and never translate unless the instruction explicitly asks for translation.{language_hint} Reply with only the processed result, no explanation."
+                "You are a helpful assistant. The user has highlighted text and typed an instruction.\
+                \nRules:\
+                \n1. If the instruction is question-like (including short prompts like \"why\", \"為甚麼\", \"what does this mean\", \"explain\"), treat it as a question about the highlighted text and answer directly.\
+                \n2. In question mode, do NOT continue, complete, or rewrite the highlighted text unless explicitly asked.\
+                \n3. If the instruction is a transformation request (e.g. translate/summarize/fix grammar/rewrite), output ONLY the transformed text with no explanation.\
+                \nRespond in the same language the user types in.{language_hint}"
             ),
-            format!("Selected text:\n\n{selected_text}\n\nInstruction: {instruction}"),
+            format!(
+                "Highlighted text: \u{300C}{selected_text}\u{300D}\n\nUser instruction: {instruction}\nQuestion-like: {}",
+                if question_like { "yes" } else { "no" }
+            ),
         )
     }
 }
@@ -422,4 +452,20 @@ pub async fn call_llm_text(
     let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
     let chosen_model = resolve_model(model, &provider);
     call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_short_question_like_instruction() {
+        assert!(is_question_like_instruction("為甚麼"));
+        assert!(is_question_like_instruction("why"));
+    }
+
+    #[test]
+    fn keeps_transform_instruction_non_question_like() {
+        assert!(!is_question_like_instruction("Translate the selected text to English."));
+    }
 }
