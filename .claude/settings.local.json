@@ -24,7 +24,10 @@
       "Bash(export:*)",
       "Bash(powershell:*)",
       "Bash(rm:*)",
-      "Bash(subst T::*)"
+      "Bash(subst T::*)",
+      "Bash(subst:*)",
+      "Bash(tasklist:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }
