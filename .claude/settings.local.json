@@ -13,8 +13,6 @@
       "Bash(cargo check:*)",
       "Bash(cargo build:*)",
       "Bash(npm run:*)",
-      "Bash(CMAKE_CUDA_ARCHITECTURES=120 npm run:*)",
-      "Bash(CMAKE_CUDA_ARCHITECTURES=120 cargo build:*)",
       "WebSearch",
       "WebFetch(domain:crates.io)",
       "WebFetch(domain:docs.rs)",
@@ -27,7 +25,9 @@
       "Bash(subst T::*)",
       "Bash(subst:*)",
       "Bash(tasklist:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(cargo metadata:*)",
+      "Bash(cp:*)"
     ]
   }
 }

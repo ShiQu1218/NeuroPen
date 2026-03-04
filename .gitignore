@@ -35,3 +35,4 @@ env/
 *.md
 !CLAUDE.md
 !README.md
+!README.zh-TW.md

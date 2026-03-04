@@ -1,8 +1,10 @@
+> English | **[繁體中文](./README.zh-TW.md)**
+
 <h1 align="center">TalkFlow</h1>
 
 <p align="center">
-  <strong>Windows 桌面 AI 語音全能助手</strong><br/>
-  在任何應用程式中，按一個快捷鍵就能語音輸入、翻譯、摘要、改寫、問答 — 不需要切換視窗。
+  <strong>Windows Desktop AI Voice Assistant</strong><br/>
+  Voice input, translate, summarize, rewrite, and ask AI — in any app, with a single hotkey. No window switching needed.
 </p>
 
 <p align="center">
@@ -15,248 +17,247 @@
 
 ---
 
-## Table of Contents / 目錄
+## Table of Contents
 
-- [Features / 功能特色](#features--功能特色)
-- [How It Works / 運作方式](#how-it-works--運作方式)
-- [Architecture / 系統架構](#architecture--系統架構)
-- [UI Components / 介面元件](#ui-components--介面元件)
-- [Supported Models / 支援模型](#supported-models--支援模型)
-- [Getting Started (Users) / 使用者快速開始](#getting-started-users--使用者快速開始)
-- [Getting Started (Developers) / 開發者指南](#getting-started-developers--開發者指南)
-- [Project Structure / 專案結構](#project-structure--專案結構)
-- [Configuration / 設定說明](#configuration--設定說明)
-- [CI/CD & Release / 自動化發佈](#cicd--release--自動化發佈)
-- [Troubleshooting / 疑難排解](#troubleshooting--疑難排解)
-- [Security & Privacy / 安全與隱私](#security--privacy--安全與隱私)
-- [Roadmap / 開發藍圖](#roadmap--開發藍圖)
-- [License / 授權](#license--授權)
-
----
-
-## Features / 功能特色
-
-| 功能 | 說明 |
-|------|------|
-| **全域語音輸入** | 在任何應用程式中按 `Alt + 反引號` 即時語音轉文字，直接輸入到游標位置 |
-| **Quick Action 劃詞工具** | 選取文字後自動跳出浮動圖示，一鍵翻譯、摘要、改寫、修正語法 |
-| **語音指令操作選取文字** | 選取文字 + 快捷鍵 + 語音說明需求，AI 自動處理 |
-| **LLM 通用問答** | 不選字時呼喊喚醒詞（預設「助理」），直接向 AI 提問 |
-| **串流預覽視窗** | LLM 回應逐字串流顯示，可追問、複製、取代或關閉 |
-| **直接注入模式** | 可選擇跳過預覽，LLM 結果直接貼入輸入框 |
-| **一鍵復原** | `Alt + Z` 還原上一次文字注入 |
-| **本地 STT 支援** | 內建 Whisper (small/medium/large/turbo)，可完全離線語音辨識 |
-| **多 LLM 提供商** | 支援 OpenAI、Gemini、Claude、Grok、Qwen、豆包、DeepSeek、Ollama |
-| **10 國語言介面** | 繁中、簡中、English、日本語、Deutsch、Francais、العربية、Русский、Espanol、한국어 |
-| **隱私模式** | 一鍵停用所有 LLM 呼叫，僅執行本地 STT |
-| **系統匣常駐** | 啟動後隱藏於系統匣，右鍵開啟設定或退出 |
+- [Features](#features)
+- [How It Works](#how-it-works)
+- [Architecture](#architecture)
+- [UI Components](#ui-components)
+- [Supported Models](#supported-models)
+- [Getting Started (Users)](#getting-started-users)
+- [Getting Started (Developers)](#getting-started-developers)
+- [Project Structure](#project-structure)
+- [Configuration](#configuration)
+- [CI/CD & Release](#cicd--release)
+- [Troubleshooting](#troubleshooting)
+- [Security & Privacy](#security--privacy)
+- [License](#license)
 
 ---
 
-## How It Works / 運作方式
+## Features
 
-TalkFlow 根據「是否有選取文字」與「語音是否包含喚醒詞」自動分流到四種模式：
-
-```
-                         ┌──────────────┐
-                         │  Alt + 反引號  │
-                         │  (全域快捷鍵)  │
-                         └──────┬───────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │                       │
-              有選取文字？              無選取文字
-                    │                       │
-            ┌───────┴───────┐       ┌───────┴───────┐
-            │               │       │               │
-       透過滑鼠          透過語音    偵測到           未偵測到
-      Quick Action       快捷鍵     喚醒詞            喚醒詞
-            │               │       │               │
-            ▼               ▼       ▼               ▼
-     ┌──────────┐   ┌──────────┐ ┌──────────┐ ┌──────────┐
-     │ Mode B1  │   │ Mode B2  │ │ Mode C   │ │ Mode A   │
-     │ 劃詞快速 │   │ 語音指令 │ │ LLM 問答 │ │ 語音輸入 │
-     │ 操作     │   │ 操作選字 │ │          │ │ (純 STT) │
-     └────┬─────┘   └────┬─────┘ └────┬─────┘ └────┬─────┘
-          │              │            │             │
-          ▼              ▼            ▼             ▼
-     ┌─────────────────────────┐  ┌─────────────────┐
-     │   Output Preview Window │  │  直接注入到      │
-     │   (串流預覽 / 複製 /    │  │  焦點輸入框      │
-     │    取代 / 追問)         │  │                  │
-     └─────────────────────────┘  └─────────────────┘
-```
-
-### Mode A — 直接語音輸入
-> **場景**：你正在打字，想用語音代替鍵盤。
-> **操作**：按住快捷鍵 → 說話 → 放開，文字即出現在游標位置。
-
-### Mode B1 — Quick Action 劃詞操作
-> **場景**：你選了一段英文，想翻譯成中文。
-> **操作**：選字 → 點浮動圖示上的「翻譯」 → 預覽視窗顯示翻譯結果 → 點「取代」直接替換原文。
-
-### Mode B2 — 語音指令操作選字
-> **場景**：你選了一段文字，想用語音告訴 AI 怎麼改。
-> **操作**：選字 → 按快捷鍵 → 說「幫我改成正式語氣」 → 預覽視窗顯示結果。
-
-### Mode C — LLM 通用問答
-> **場景**：你想問 AI 一個問題。
-> **操作**：按快捷鍵 → 說「助理，明天台北天氣如何」 → 預覽視窗顯示回答。
+| Feature | Description |
+|---------|-------------|
+| **Global Voice Input** | Press `Alt + Backtick` in any app to convert speech to text, inserted directly at the cursor |
+| **Quick Action on Selection** | Select text and a floating icon appears — one-click translate, summarize, rewrite, or fix grammar |
+| **Voice Command on Selection** | Select text + hotkey + speak your instruction — AI processes it automatically |
+| **LLM Q&A** | Say the wake word (default: "assistant") without selecting text to ask AI anything |
+| **Streaming Preview Window** | LLM responses stream token-by-token; follow up, copy, replace, or dismiss |
+| **Direct Injection Mode** | Optionally skip preview — LLM results paste directly into the input field |
+| **One-Key Undo** | `Alt + Z` reverts the last text injection |
+| **Local STT** | Built-in Whisper (small/medium/large/turbo) for fully offline speech recognition |
+| **Multi-LLM Providers** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, Ollama |
+| **10 UI Languages** | zh-TW, zh-CN, English, Japanese, German, French, Arabic, Russian, Spanish, Korean |
+| **Incognito Mode** | Disable all LLM calls with one click — local STT only |
+| **System Tray** | Runs in the background; right-click tray icon to open settings or exit |
 
 ---
 
-## Architecture / 系統架構
+## How It Works
+
+TalkFlow automatically routes to one of four modes based on whether text is selected and whether a wake word is spoken:
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        TalkFlow Application                         │
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │                    Frontend (React + TypeScript)                 │ │
-│  │                                                                  │ │
-│  │  ┌──────────┐  ┌───────────────┐  ┌──────────┐  ┌───────────┐  │ │
-│  │  │ Settings │  │ Quick Action  │  │ Preview  │  │ Recording │  │ │
-│  │  │ Window   │  │ Icon + Panel  │  │ Window   │  │ Indicator │  │ │
-│  │  └──────────┘  └───────────────┘  └──────────┘  └───────────┘  │ │
-│  │                                                                  │ │
-│  │  ┌──────────────────────┐  ┌──────────────────────────────────┐ │ │
-│  │  │ Zustand State Store  │  │ i18n (10 Languages)              │ │ │
-│  │  └──────────────────────┘  └──────────────────────────────────┘ │ │
-│  └────────────────────────────┬────────────────────────────────────┘ │
-│                               │ Tauri IPC (invoke / event)           │
-│  ┌────────────────────────────┴────────────────────────────────────┐ │
-│  │                      Backend (Rust / Tauri v2)                   │ │
-│  │                                                                  │ │
-│  │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────────┐ │ │
-│  │  │ hotkey.rs   │  │ mode_router  │  │ selection.rs           │ │ │
-│  │  │ 全域快捷鍵  │──▶│ 模式分流     │◀─│ UI Automation 選字偵測 │ │ │
-│  │  └─────────────┘  └──────┬───────┘  └────────────────────────┘ │ │
-│  │                          │                                       │ │
-│  │           ┌──────────────┼──────────────┐                       │ │
-│  │           ▼              ▼              ▼                       │ │
-│  │  ┌──────────────┐ ┌───────────┐ ┌──────────────┐              │ │
-│  │  │ audio_capture│ │ stt.rs    │ │ llm.rs       │              │ │
-│  │  │ 麥克風錄音   │─▶│ 語音轉文字│─▶│ LLM API 呼叫│              │ │
-│  │  └──────────────┘ └───────────┘ └──────┬───────┘              │ │
-│  │                                        │                       │ │
-│  │           ┌────────────────────────────┤                       │ │
-│  │           ▼                            ▼                       │ │
-│  │  ┌──────────────────┐  ┌──────────────────────────────┐       │ │
-│  │  │ clipboard.rs     │  │ injection.rs                 │       │ │
-│  │  │ 剪貼簿暫存/還原  │──▶│ 文字注入 (Ctrl+V 模擬)      │       │ │
-│  │  └──────────────────┘  └──────────────────────────────┘       │ │
-│  │                                                                │ │
-│  │  ┌──────────────────┐  ┌──────────────────────────────┐       │ │
-│  │  │ window_focus.rs  │  │ undo.rs                      │       │ │
-│  │  │ 焦點視窗鎖定     │  │ 復原上一次注入 (Alt+Z)       │       │ │
-│  │  └──────────────────┘  └──────────────────────────────┘       │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              ▼                ▼                ▼
-     ┌────────────────┐ ┌───────────┐ ┌─────────────────┐
-     │ Windows APIs   │ │ Cloud AI  │ │ Local Models    │
-     │                │ │           │ │                 │
-     │ • UI Automation│ │ • OpenAI  │ │ • Whisper.cpp   │
-     │ • GetForeground│ │ • Gemini  │ │   (small/medium/│
-     │   Window       │ │ • Claude  │ │    large/turbo) │
-     │ • Clipboard    │ │ • Grok    │ │ • Ollama        │
-     │ • SendInput    │ │ • Qwen    │ │                 │
-     │                │ │ • Doubao  │ │                 │
-     │                │ │ • DeepSeek│ │                 │
-     └────────────────┘ └───────────┘ └─────────────────┘
+                         +----------------+
+                         | Alt + Backtick |
+                         |  (Global Key)  |
+                         +-------+--------+
+                                 |
+                    +------------+------------+
+                    |                         |
+              Text selected?            No selection
+                    |                         |
+            +-------+-------+       +---------+---------+
+            |               |       |                   |
+        Via mouse       Via voice   Wake word         No wake word
+       Quick Action      hotkey     detected           detected
+            |               |       |                   |
+            v               v       v                   v
+     +----------+   +----------+ +----------+   +----------+
+     | Mode B1  |   | Mode B2  | | Mode C   |   | Mode A   |
+     | Quick    |   | Voice    | | LLM Q&A  |   | Voice    |
+     | Action   |   | Command  | |          |   | Input    |
+     +----+-----+   +----+-----+ +----+-----+   +----+-----+
+          |              |            |               |
+          v              v            v               v
+     +-------------------------+  +-----------------+
+     |   Output Preview Window |  |  Direct inject  |
+     |   (stream / copy /      |  |  into focused   |
+     |    replace / follow-up) |  |  input field    |
+     +-------------------------+  +-----------------+
 ```
 
-### Text Injection Flow / 文字注入流程
+### Mode A — Direct Voice Input
+> **Scenario**: You're typing and want to use voice instead of the keyboard.
+> **Usage**: Hold the hotkey, speak, release — text appears at the cursor.
+
+### Mode B1 — Quick Action on Selection
+> **Scenario**: You selected some English text and want to translate it.
+> **Usage**: Select text, click "Translate" on the floating icon, preview window shows the result, click "Replace" to swap the original text.
+
+### Mode B2 — Voice Command on Selection
+> **Scenario**: You selected some text and want to tell AI how to modify it.
+> **Usage**: Select text, press hotkey, say "make this more formal" — preview window shows the result.
+
+### Mode C — LLM Q&A
+> **Scenario**: You want to ask AI a question.
+> **Usage**: Press hotkey, say "assistant, what's the weather in Taipei tomorrow" — preview window shows the answer.
+
+---
+
+## Architecture
 
 ```
- ① 快捷鍵觸發
-    │
-    ▼
- ② 暫存剪貼簿內容 ──────────────────────────────────────┐
-    │                                                     │
-    ▼                                                     │
- ③ 鎖定焦點視窗 (GetForegroundWindow)                    │
-    │                                                     │
-    ▼                                                     │
- ④ [Mode B] 模擬 Ctrl+C 讀取選字                         │
-    │                                                     │
-    ▼                                                     │
- ⑤ STT 語音辨識 / LLM 處理                               │
-    │                                                     │
-    ▼                                                     │
- ⑥ 確認焦點視窗未改變                                     │
-    │     │                                               │
-    │    焦點已變 → 取消注入，顯示警告                      │
-    │                                                     │
-    ▼                                                     │
- ⑦ 寫入結果到剪貼簿 → 模擬 Ctrl+V 貼上                    │
-    │                                                     │
-    ▼                                                     │
- ⑧ 還原原始剪貼簿內容 ◀──────────────────────────────────┘
++----------------------------------------------------------------------+
+|                        TalkFlow Application                           |
+|                                                                       |
+|  +------------------------------------------------------------------+|
+|  |                    Frontend (React + TypeScript)                   ||
+|  |                                                                    ||
+|  |  +----------+  +---------------+  +----------+  +-----------+    ||
+|  |  | Settings |  | Quick Action  |  | Preview  |  | Recording |    ||
+|  |  | Window   |  | Icon + Panel  |  | Window   |  | Indicator |    ||
+|  |  +----------+  +---------------+  +----------+  +-----------+    ||
+|  |                                                                    ||
+|  |  +----------------------+  +----------------------------------+  ||
+|  |  | Zustand State Store  |  | i18n (10 Languages)              |  ||
+|  |  +----------------------+  +----------------------------------+  ||
+|  +----------------------------+--------------------------------------+|
+|                               | Tauri IPC (invoke / event)            |
+|  +----------------------------+--------------------------------------+|
+|  |                      Backend (Rust / Tauri v2)                     ||
+|  |                                                                    ||
+|  |  +-------------+  +--------------+  +------------------------+   ||
+|  |  | hotkey.rs   |  | mode_router  |  | selection.rs           |   ||
+|  |  | Global Key  |->| Mode Router  |<-| UI Automation detect   |   ||
+|  |  +-------------+  +------+-------+  +------------------------+   ||
+|  |                          |                                         ||
+|  |           +--------------+--------------+                         ||
+|  |           v              v              v                         ||
+|  |  +--------------+ +-----------+ +--------------+                  ||
+|  |  | audio_capture| | stt.rs    | | llm.rs       |                  ||
+|  |  | Mic capture  |->| STT      |->| LLM API call|                  ||
+|  |  +--------------+ +-----------+ +------+-------+                  ||
+|  |                                        |                           ||
+|  |           +----------------------------+                           ||
+|  |           v                            v                           ||
+|  |  +------------------+  +------------------------------+           ||
+|  |  | clipboard.rs     |  | injection.rs                 |           ||
+|  |  | Cache / restore  |->| Text inject (Ctrl+V sim)     |           ||
+|  |  +------------------+  +------------------------------+           ||
+|  |                                                                    ||
+|  |  +------------------+  +------------------------------+           ||
+|  |  | window_focus.rs  |  | undo.rs                      |           ||
+|  |  | Focus lock       |  | Undo last injection (Alt+Z)  |           ||
+|  |  +------------------+  +------------------------------+           ||
+|  +--------------------------------------------------------------------+|
+|                                                                       |
++-----------------------------------------------------------------------+
+                               |
+              +----------------+----------------+
+              v                v                v
+     +----------------+ +-----------+ +-----------------+
+     | Windows APIs   | | Cloud AI  | | Local Models    |
+     |                | |           | |                 |
+     | - UI Automation| | - OpenAI  | | - Whisper.cpp   |
+     | - GetForeground| | - Gemini  | |   (small/medium/|
+     |   Window       | | - Claude  | |    large/turbo) |
+     | - Clipboard    | | - Grok    | | - Ollama        |
+     | - SendInput    | | - Qwen    | |                 |
+     |                | | - Doubao  | |                 |
+     |                | | - DeepSeek| |                 |
+     +----------------+ +-----------+ +-----------------+
+```
+
+### Text Injection Flow
+
+```
+ 1. Hotkey triggered
+    |
+    v
+ 2. Cache clipboard contents ---------------------------------+
+    |                                                          |
+    v                                                          |
+ 3. Lock foreground window (GetForegroundWindow)               |
+    |                                                          |
+    v                                                          |
+ 4. [Mode B] Simulate Ctrl+C to read selection                 |
+    |                                                          |
+    v                                                          |
+ 5. STT recognition / LLM processing                          |
+    |                                                          |
+    v                                                          |
+ 6. Verify focus window unchanged                              |
+    |     |                                                    |
+    |    Focus changed -> Cancel injection, show warning        |
+    |                                                          |
+    v                                                          |
+ 7. Write result to clipboard -> Simulate Ctrl+V               |
+    |                                                          |
+    v                                                          |
+ 8. Restore original clipboard <-------------------------------+
 ```
 
 ---
 
-## UI Components / 介面元件
+## UI Components
 
-### Settings Window / 設定視窗
-左側分類導覽（一般、語音與 STT、快捷指令、LLM、隱私），右側內容可捲動，底部固定「取消 / 儲存」按鈕。
+### Settings Window
+Left sidebar with category navigation (General, Voice & STT, Quick Actions, LLM, Privacy). Right side scrollable content area. Fixed "Cancel / Save" buttons at the bottom.
 
-### Quick Action Icon / 劃詞快速操作
-選取文字後自動淡入的浮動圖示。懸停展開面板，包含：
-- 預設指令（翻譯成英文、翻譯成日文、摘要、修正語法、改為正式語氣）
-- 自訂輸入框（輸入任意指令後送出）
-- 使用者可在設定中自訂指令列表
+### Quick Action Icon
+A floating icon that fades in when text is selected. Hover to expand the panel:
+- Preset commands (Translate to English, Translate to Japanese, Summarize, Fix grammar, Formalize)
+- Custom input field (type any instruction and submit)
+- Users can customize the command list in settings
 
-### Output Preview Window / 預覽視窗
+### Output Preview Window
 
 ```
-┌─────────────────────────────────────────┐
-│  LLM 輸出內容（逐字串流 / 可捲動）       │
-│                                          │
-│  The quick brown fox jumps over the...   │
-│                                          │
-├──────────────────────────────────────────┤
-│  [追問輸入框：再幫我改短一點...]  [送出]  │
-├──────────────────────────────────────────┤
-│        [複製]    [取代]    [關閉]         │
-└──────────────────────────────────────────┘
++------------------------------------------+
+|  LLM output (streaming / scrollable)      |
+|                                           |
+|  The quick brown fox jumps over the...    |
+|                                           |
++-------------------------------------------+
+|  [Follow-up: make it shorter...]  [Send]  |
++-------------------------------------------+
+|        [Copy]    [Replace]    [Close]      |
++-------------------------------------------+
 ```
 
-- **複製**：將結果複製到剪貼簿
-- **取代**：以結果取代原本選取的文字（Mode B）或注入游標位置（Mode C）
-- **關閉**：放棄結果，原文不變
-- **追問**：對當前結果追加指令，LLM 帶上下文重新回應
+- **Copy**: Copy result to clipboard
+- **Replace**: Replace original selected text (Mode B) or inject at cursor (Mode C)
+- **Close**: Discard result, original text unchanged
+- **Follow-up**: Add instructions on current result, LLM responds with context
 
-### Recording Indicator / 錄音指示器
-螢幕下方中央的浮動指示器，顯示錄音狀態與秒數。
+### Recording Indicator
+A floating indicator at the bottom center of the screen showing recording status and elapsed time.
 
 ---
 
-## Supported Models / 支援模型
+## Supported Models
 
 ### LLM Providers
 
 | Provider | Type | Notes |
 |----------|------|-------|
-| OpenAI | Cloud | GPT-4o, GPT-4, GPT-3.5 等 |
-| Gemini | Cloud | Google Gemini 系列 |
-| Claude | Cloud | Anthropic Claude 系列 |
-| Grok | Cloud | xAI Grok 系列 |
-| Qwen | Cloud | 阿里通義千問 |
-| 豆包 (Doubao) | Cloud | 字節跳動豆包 |
-| DeepSeek | Cloud | DeepSeek 系列 |
-| Ollama | Local | 本地執行，預設 `http://127.0.0.1:11434` |
+| OpenAI | Cloud | GPT-4o, GPT-4, GPT-3.5, etc. |
+| Gemini | Cloud | Google Gemini series |
+| Claude | Cloud | Anthropic Claude series |
+| Grok | Cloud | xAI Grok series |
+| Qwen | Cloud | Alibaba Tongyi Qianwen |
+| Doubao | Cloud | ByteDance Doubao |
+| DeepSeek | Cloud | DeepSeek series |
+| Ollama | Local | Self-hosted, default `http://127.0.0.1:11434` |
 
 ### STT Engines
 
 | Engine | Type | Notes |
 |--------|------|-------|
-| OpenAI Whisper API | Cloud | 需要 API Key |
-| Local Whisper | Local | 透過 whisper-rs / whisper.cpp，支援 CPU 與 GPU (Vulkan) |
+| OpenAI Whisper API | Cloud | Requires API Key |
+| Local Whisper | Local | Via whisper-rs / whisper.cpp, supports CPU and GPU (Vulkan) |
 
 ### Local Whisper Models
 
@@ -269,64 +270,64 @@ TalkFlow 根據「是否有選取文字」與「語音是否包含喚醒詞」�
 
 ---
 
-## Getting Started (Users) / 使用者快速開始
+## Getting Started (Users)
 
-### System Requirements / 系統需求
+### System Requirements
 
-- **OS**：Windows 10 (1809+) / Windows 11
-- 麥克風
-- （雲端模式）網路連線 + API Key
-- （本地 STT）建議 8 GB+ RAM；支援 Vulkan 的 GPU 可加速（見下方相容列表），無 GPU 則自動使用 CPU
+- **OS**: Windows 10 (1809+) / Windows 11
+- Microphone
+- (Cloud mode) Internet connection + API Key
+- (Local STT) 8 GB+ RAM recommended; Vulkan-capable GPU for acceleration (see compatibility table below), falls back to CPU otherwise
 
-### GPU Acceleration / GPU 加速支援
+### GPU Acceleration
 
-本地 Whisper STT 透過 [Vulkan](https://www.vulkan.org/) 後端進行 GPU 加速，**不需要安裝任何額外驅動或 DLL** — 只要你的 GPU 驅動支援 Vulkan 即可。若偵測不到 Vulkan，會自動 fallback 至 CPU。
+Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration — **no additional drivers or DLLs required**. As long as your GPU driver supports Vulkan, it works. If GPU initialization fails, it typically falls back to CPU automatically.
 
-| GPU 廠商 | 支援的顯卡 | 備註 |
-|----------|-----------|------|
-| **NVIDIA** | GeForce GTX 600 系列以上（Kepler+） | 驅動 496.76+ 建議 |
-| **AMD** | Radeon HD 7700 系列以上（GCN 1.0+） | Radeon Software Adrenalin 驅動 |
-| **Intel** | HD Graphics 500 以上（Skylake+）/ Arc 系列 | 內顯也支援 |
+| GPU Vendor | Supported GPUs | Notes |
+|------------|---------------|-------|
+| **NVIDIA** | GeForce GTX 600 series and above (Kepler+) | Driver 496.76+ recommended |
+| **AMD** | Radeon HD 7700 series and above (GCN 1.0+) | Radeon Software Adrenalin driver |
+| **Intel** | HD Graphics 520/530 and above (Skylake Gen9+) / Arc series | Integrated GPUs supported |
 
-> **沒有獨立顯卡？** 大部分 2016 年後的 Intel 內顯都支援 Vulkan，仍可加速。完全不支援時自動退回 CPU，不會報錯。
+> **No dedicated GPU?** Most Intel integrated GPUs from 2016 onwards support Vulkan and can still accelerate STT. If Vulkan is completely unsupported, it typically falls back to CPU.
 
-### Installation / 安裝
+### Installation
 
-1. 前往 [Releases](../../releases) 頁面下載最新 `.exe` 安裝檔
-2. 執行安裝程式（NSIS installer）
-3. 啟動 TalkFlow — 程式會常駐在系統匣
+1. Go to the [Releases](../../releases) page and download the latest `.exe` installer
+2. Run the installer (NSIS)
+3. Launch TalkFlow — it will reside in the system tray
 
-### First-Time Setup / 首次設定
+### First-Time Setup
 
-1. 右鍵點擊系統匣圖示 → **設定**
-2. **一般**：設定顯示語言、全域快捷鍵、喚醒詞
-3. **LLM**：選擇 Provider，輸入 API Key（如 OpenAI）
-4. **語音與 STT**：選擇 STT 引擎（雲端 or 本地），安裝本地模型（可選）
-5. 點「儲存」，即可開始使用
+1. Right-click the system tray icon -> **Settings**
+2. **General**: Set display language, global hotkey, wake word
+3. **LLM**: Choose a provider, enter your API Key (e.g., OpenAI)
+4. **Voice & STT**: Choose STT engine (cloud or local), install a local model (optional)
+5. Click "Save" and you're ready to go
 
-### Quick Usage / 快速上手
+### Quick Usage
 
-| 想做什麼 | 怎麼做 |
-|----------|--------|
-| 語音打字 | 在任何輸入框按 `Alt + 反引號` → 說話 → 放開 |
-| 翻譯選字 | 選取文字 → 點浮動圖示 → 選「翻譯成英文」 |
-| 語音改寫 | 選取文字 → 按快捷鍵 → 說「幫我改成正式語氣」 |
-| 問 AI | 按快捷鍵 → 說「助理，幫我列出三個寫報告的技巧」 |
-| 復原 | `Alt + Z` 還原上一次文字注入 |
+| What you want to do | How to do it |
+|---------------------|--------------|
+| Voice typing | Press `Alt + Backtick` in any input field, speak, release |
+| Translate selection | Select text, click floating icon, choose "Translate to English" |
+| Voice rewrite | Select text, press hotkey, say "make this more formal" |
+| Ask AI | Press hotkey, say "assistant, list 3 tips for writing reports" |
+| Undo | `Alt + Z` to revert the last text injection |
 
 ---
 
-## Getting Started (Developers) / 開發者指南
+## Getting Started (Developers)
 
-### Prerequisites / 環境需求
+### Prerequisites
 
 - [Node.js](https://nodejs.org/) 18+
 - [Rust](https://www.rust-lang.org/) toolchain (stable)
 - Windows 10/11
 - [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)
-- （GPU 加速建置）[Vulkan SDK](https://vulkan.lunarg.com/sdk/home) — 僅編譯 `local-stt-gpu` 時需要
+- (GPU build) [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) — only required when building with `local-stt-gpu`
 
-### Install & Run / 安裝與啟動
+### Install & Run
 
 ```bash
 # Clone the repository
@@ -340,49 +341,51 @@ npm install
 npm run tauri dev
 ```
 
-### Build / 建置
+### Build
 
-有三種建置模式：
+Three build modes are available:
 
-| 模式 | 指令 | 說明 |
-|------|------|------|
-| 不含本地 STT | `npm run tauri build` | 最小包，僅支援雲端 STT |
-| 本地 STT (CPU) | `npm run tauri build -- --features local-stt` | 支援本地 Whisper，純 CPU |
-| 本地 STT + GPU | `npm run tauri build -- --features local-stt-gpu` | 支援本地 Whisper + Vulkan GPU 加速（推薦） |
+| Mode | Command | Description |
+|------|---------|-------------|
+| No local STT | `npm run tauri build` | Smallest package, cloud STT only |
+| Local STT (CPU) | `npm run tauri build -- --features local-stt` | Local Whisper, CPU only |
+| Local STT + GPU | `npm run tauri build -- --features local-stt-gpu` | Local Whisper + Vulkan GPU acceleration (recommended, includes `local-stt`) |
 
-#### GPU 建置步驟（`local-stt-gpu`）
+#### GPU Build Steps (`local-stt-gpu`)
 
-1. **安裝 Vulkan SDK**
+1. **Install Vulkan SDK**
 
-   從 [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home) 下載並安裝。
+   Download and install from [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home).
 
-2. **設定環境變數**
+2. **Set environment variable**
 
    ```powershell
-   # PowerShell（永久設定，需管理員）
-   setx VULKAN_SDK "C:\VulkanSDK\1.4.341.1" /M
+   # PowerShell (permanent, requires admin)
+   # Replace the version number with your installed version (e.g., 1.4.341.1)
+   setx VULKAN_SDK "C:\VulkanSDK\<YOUR_VERSION>" /M
    ```
 
-   設定後**重開終端機**讓變數生效。
+   **Restart your terminal** after setting the variable.
 
-3. **建置**
+3. **Build**
 
    ```powershell
    npm run tauri build -- --features local-stt-gpu
    ```
 
-4. **（選用）如果遇到路徑過長錯誤**
+4. **(Optional) If you encounter a path-too-long error**
 
-   Windows 預設有 260 字元路徑限制。兩種解法：
+   Windows has a default 260-character path limit. Two solutions:
 
-   - **方法 A**：啟用長路徑支援（需管理員 + 重開機）
+   - **Option A**: Enable long path support (requires admin + reboot)
      ```powershell
      reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
      ```
 
-   - **方法 B**：用 `subst` 映射短路徑（不需重開機）
+   - **Option B**: Use `subst` to map a shorter path (no reboot needed)
      ```powershell
-     subst T: "C:\Users\你的使用者名稱\Desktop\TalkFlow"
+     # Replace with your actual project path (must be ASCII)
+     subst T: "C:\Users\YourUsername\path\to\TalkFlow"
      cd T:\
      npm run tauri build -- --features local-stt-gpu
      ```
@@ -391,7 +394,7 @@ Build output:
 - Executable: `src-tauri/target/release/talkflow.exe`
 - Installer (NSIS): `src-tauri/target/release/bundle/nsis/`
 
-### Key Technologies / 關鍵技術
+### Key Technologies
 
 | Layer | Technology |
 |-------|-----------|
@@ -406,7 +409,7 @@ Build output:
 
 ---
 
-## Project Structure / 專案結構
+## Project Structure
 
 ```
 TalkFlow/
@@ -452,40 +455,40 @@ TalkFlow/
 
 ---
 
-## Configuration / 設定說明
+## Configuration
 
 | Category | Options |
 |----------|---------|
-| **一般 (General)** | 顯示語言、LLM 輸出偏好語言、全域快捷鍵、喚醒詞、開機自動啟動 |
-| **語音與 STT (Voice & STT)** | STT 引擎選擇、本地模型管理（安裝/刪除/切換）、麥克風來源、STT 輸出策略（純 STT / LLM 潤飾）、智慧標點、詞彙庫匯入、前景 App 情境感知 |
-| **快捷指令 (Quick Actions)** | 新增、編輯、刪除 Quick Action 指令 |
-| **LLM** | 輸出模式（預覽串流 / 直接注入）、Provider、Model、API Key、多模態開關 |
-| **隱私 (Privacy)** | 隱私模式（停用所有 LLM 呼叫，僅本地 STT） |
+| **General** | Display language, LLM output language, global hotkey, wake word, launch at startup |
+| **Voice & STT** | STT engine selection, local model management (install/delete/switch), microphone source, STT output strategy (pure STT / LLM polish), smart punctuation, vocabulary import, foreground app context awareness |
+| **Quick Actions** | Add, edit, delete Quick Action commands |
+| **LLM** | Output mode (streaming preview / direct injection), Provider, Model, API Key, multimodal toggle |
+| **Privacy** | Incognito mode (disable all LLM calls, local STT only) |
 
 ---
 
-## Versioning / 版本管理
+## Versioning
 
-版本號集中由 `npm version` 管理，自動同步到所有設定檔：
+Version numbers are managed centrally via `npm version`, auto-synced to all config files:
 
 ```bash
-npm version patch   # 0.1.1 → 0.1.2
-npm version minor   # 0.1.1 → 0.2.0
-npm version major   # 0.1.1 → 1.0.0
+npm version patch   # 0.1.1 -> 0.1.2
+npm version minor   # 0.1.1 -> 0.2.0
+npm version major   # 0.1.1 -> 1.0.0
 ```
 
-執行後會自動：
-1. 更新 `package.json` 版本號
-2. 同步到 `src-tauri/tauri.conf.json` 和 `src-tauri/Cargo.toml`
-3. 建立 git commit 與 git tag（如 `v0.1.2`）
+This automatically:
+1. Updates `package.json` version
+2. Syncs to `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`
+3. Creates a git commit and git tag (e.g., `v0.1.2`)
 
-> **同步腳本**：`scripts/sync-version.js`，由 `package.json` 的 `"version"` hook 自動觸發。
+> **Sync script**: `scripts/sync-version.js`, triggered automatically by the `"version"` hook in `package.json`.
 
 ---
 
-## CI/CD & Release / 自動化發佈
+## CI/CD & Release
 
-本專案使用 GitHub Actions 自動建置。推送 `v*` 標籤即觸發：
+This project uses GitHub Actions for automated builds. Pushing a `v*` tag triggers the workflow:
 
 ```bash
 # Bump version and push tag to trigger auto-build
@@ -493,36 +496,35 @@ npm version patch
 git push origin main --tags
 ```
 
-CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
+After CI completes, a Draft Release with the installer will appear on the **Releases** page.
 
-> **Note**: 雲端 CI 預設啟用 `local-stt` (CPU)。若需 GPU 加速，請使用 `local-stt-gpu` feature（Vulkan 後端，自動 fallback CPU）。
+> **Note**: Cloud CI builds with `local-stt` (CPU only) by default. For GPU acceleration, use the `local-stt-gpu` feature (Vulkan backend, typically falls back to CPU when GPU is unavailable).
 
 ---
 
-## Troubleshooting / 疑難排解
+## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| 更新後 UI 沒變 | 確認執行的是 `src-tauri/target/release/talkflow.exe`，或重新安裝 NSIS 包覆蓋舊版 |
-| 本地 Whisper 顯示未啟用 | 需以 `--features local-stt` 或 `--features local-stt-gpu` 重新建置 |
-| Ollama 無法連線 | 確認 Ollama 正在執行且 `localhost:11434` 可存取，模型名稱與已安裝模型一致 |
-| 取代失敗 / 焦點錯誤 | TalkFlow 僅對快捷鍵觸發時的焦點視窗注入；若焦點在處理期間改變，會取消並警告 |
-| Quick Action 圖示未出現 | 部分應用（遊戲、自繪介面）不支援 UI Automation API，改用 Mode B2 語音路徑 |
-| 模擬輸入被封鎖 | 部分 Electron app / 遊戲封鎖 Ctrl+V 模擬，請手動貼上 |
+| UI unchanged after update | Make sure you're running `src-tauri/target/release/talkflow.exe`, or reinstall via the NSIS package |
+| Local Whisper shows as disabled | Rebuild with `--features local-stt` or `--features local-stt-gpu` |
+| Ollama won't connect | Ensure Ollama is running and `localhost:11434` is accessible; model name must match an installed model |
+| Replace failed / focus error | TalkFlow only injects into the window that was focused at hotkey trigger time; if focus changes during processing, it cancels and warns |
+| Quick Action icon not appearing | Some apps (games, custom-drawn UIs) don't support UI Automation API — use Mode B2 voice path instead |
+| Simulated input blocked | Some Electron apps / games block Ctrl+V simulation — paste manually |
 
 ---
 
-## Security & Privacy / 安全與隱私
+## Security & Privacy
 
-- **焦點驗證**：注入前確認目標視窗未改變，防止輸入到非預期位置
-- **剪貼簿保護**：操作前暫存、操作後還原，不污染使用者剪貼簿內容
-- **隱私模式**：一鍵關閉所有雲端 LLM 呼叫，僅執行本地 STT
-- **安全儲存**：API Key 使用 Windows Credential Manaer (keyring) 加密儲存
-- **無後台上傳**：所有 AI 呼叫僅在使用者主動觸發時發生
-
+- **Focus verification**: Confirms the target window hasn't changed before injection, preventing input to unintended locations
+- **Clipboard protection**: Caches before operations and restores after — users never lose clipboard content
+- **Incognito mode**: Disable all cloud LLM calls with one click, local STT only
+- **Secure storage**: API Keys stored encrypted via Windows Credential Manager (keyring)
+- **No background uploads**: All AI calls only happen when explicitly triggered by the user
 
 ---
 
-## License / 授權
+## License
 
 This project is licensed under the [MIT License](./LICENSE).
