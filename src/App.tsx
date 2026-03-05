@@ -541,7 +541,12 @@ function MainWindow() {
           const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
           const monitor = await currentMonitor();
           if (overlayWin && monitor) {
-            await overlayWin.setSize(new LogicalSize(monitor.size.width, monitor.size.height));
+            const scale = monitor.scaleFactor;
+            // monitor.size returns physical pixels; LogicalSize needs logical pixels.
+            await overlayWin.setSize(new LogicalSize(
+              monitor.size.width / scale,
+              monitor.size.height / scale
+            ));
             await overlayWin.setPosition(
               new PhysicalPosition(monitor.position.x, monitor.position.y)
             );
@@ -563,7 +568,7 @@ function MainWindow() {
         async (event) => {
           const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
           if (overlayWin) {
-            await overlayWin.hide().catch(() => {});
+            await overlayWin.hide().catch(() => { });
           }
           const store = useAppStore.getState();
           if (event.payload.cancelled) {
@@ -600,32 +605,24 @@ function MainWindow() {
               setStatusMsg("截圖失敗：無可用影像");
               return;
             }
-            const instruction = "請描述這張截圖的重點，並用條列給出下一步建議。";
-            const screenshotOutputMode = "PreviewStream";
+            // Store the screenshot as a pending attachment instead of sending immediately.
+            // NOTE: We must pass the image via a Tauri event because each window
+            // has its own Zustand store instance — store state is not shared.
             store.setCurrentMode("C");
             store.setLlmOutput("");
-            store.setIsLlmLoading(true);
+            store.setIsLlmLoading(false);
             store.setLlmError("");
             store.setLastSelectedText("");
-            store.setLastInstruction(instruction);
-            await emit("talkflow://preview-session", {
-              selectedText: "",
-              instruction,
-            });
+            store.setLastInstruction("");
+            void invoke("clear_conversation");
             const previewWin = await WebviewWindow.getByLabel("preview");
             if (previewWin) {
               await previewWin.show();
               await previewWin.setFocus();
             }
-            await invoke("call_llm_with_image", {
-              imageBase64,
-              instruction,
-              outputMode: screenshotOutputMode,
-              provider: store.llmProvider,
-              model: store.llmModel,
-              preferredLanguage: store.preferredLanguage,
-            });
-            setStatusMsg("截圖分析中…");
+            // Send the screenshot to the preview window via event
+            await emit("talkflow://screenshot-attached", { imageBase64 });
+            setStatusMsg("截圖已附加，請輸入問題");
           } catch (err) {
             console.error("[App] screenshot flow failed:", err);
             setStatusMsg("截圖問 AI 失敗");

@@ -79,6 +79,7 @@ interface AppState {
   partialTranscript: string;
   sttDurationMs: number;
   llmDurationMs: number;
+  pendingScreenshot: string;
 
   // --- Actions ---
   setWakeWord: (word: string) => void;
@@ -121,6 +122,7 @@ interface AppState {
   setPartialTranscript: (text: string) => void;
   setSttDurationMs: (ms: number) => void;
   setLlmDurationMs: (ms: number) => void;
+  setPendingScreenshot: (base64: string) => void;
   resetSession: () => void;
 }
 
@@ -169,6 +171,7 @@ export const useAppStore = create<AppState>()(
       partialTranscript: "",
       sttDurationMs: 0,
       llmDurationMs: 0,
+      pendingScreenshot: "",
 
       setWakeWord: (word) => set({ wakeWord: word }),
       setSttModelPath: (path) => set({ sttModelPath: path }),
@@ -210,6 +213,7 @@ export const useAppStore = create<AppState>()(
       setPartialTranscript: (text) => set({ partialTranscript: text }),
       setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
       setLlmDurationMs: (ms) => set({ llmDurationMs: ms }),
+      setPendingScreenshot: (base64) => set({ pendingScreenshot: base64 }),
       resetSession: () =>
         set({
           isRecording: false,
@@ -222,6 +226,7 @@ export const useAppStore = create<AppState>()(
           llmError: "",
           lastSelectedText: "",
           lastInstruction: "",
+          pendingScreenshot: "",
         }),
     }),
     {

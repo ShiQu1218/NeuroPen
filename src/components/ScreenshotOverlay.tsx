@@ -97,11 +97,14 @@ export default function ScreenshotOverlay() {
     const winPos = await getCurrentWindow()
       .outerPosition()
       .catch(() => ({ x: 0, y: 0 }));
+    // clientX/Y are CSS (logical) pixels; outerPosition() is physical pixels.
+    // Multiply by devicePixelRatio to convert logical → physical.
+    const scale = window.devicePixelRatio || 1;
     await closeWithPayload({
-      x: Math.round(winPos.x + nextRect.x),
-      y: Math.round(winPos.y + nextRect.y),
-      w: Math.round(nextRect.w),
-      h: Math.round(nextRect.h),
+      x: Math.round(winPos.x + nextRect.x * scale),
+      y: Math.round(winPos.y + nextRect.y * scale),
+      w: Math.round(nextRect.w * scale),
+      h: Math.round(nextRect.h * scale),
       cancelled: false,
     });
   };

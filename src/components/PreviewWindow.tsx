@@ -16,6 +16,7 @@ const PREVIEW_CHROME_HEIGHT = 180;
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
+  const [screenshotBase64, setScreenshotBase64] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fallbackUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -210,6 +211,17 @@ export default function PreviewWindow() {
         fallbackTtsActiveRef.current = false;
         useAppStore.getState().setIsTtsPlaying(false);
       });
+
+      // Listen for screenshot attachment from main window
+      await register<{ imageBase64: string }>(
+        "talkflow://screenshot-attached",
+        (event) => {
+          setScreenshotBase64(event.payload.imageBase64 || "");
+          useAppStore.getState().setLlmOutput("");
+          useAppStore.getState().setIsLlmLoading(false);
+          useAppStore.getState().setLlmError("");
+        }
+      );
     })();
 
     return () => {
@@ -276,7 +288,7 @@ export default function PreviewWindow() {
 
   const handleClose = async () => {
     stopFallbackTts();
-    await invoke("tts_stop").catch(() => {});
+    await invoke("tts_stop").catch(() => { });
     await invoke("clear_conversation");
     await invoke("restore_clipboard");
     await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT));
@@ -284,6 +296,7 @@ export default function PreviewWindow() {
     setLlmOutput("");
     setIsLlmLoading(false);
     setLlmError("");
+    setScreenshotBase64("");
   };
 
   const handleStartDrag = async () => {
@@ -293,19 +306,36 @@ export default function PreviewWindow() {
   const handleRefinement = async () => {
     const input = refinementInput.trim();
     if (!input) return;
-    // Backend CONVERSATION_HISTORY tracks multi-turn context automatically
+    const screenshotToSend = screenshotBase64;
+    // Clear the attachment before sending
+    if (screenshotToSend) {
+      setScreenshotBase64("");
+    }
     setLlmOutput("");
     setIsLlmLoading(true);
     setLlmError("");
     setRefinementInput("");
-    await invoke("call_llm", {
-      selectedText: lastSelectedText,
-      instruction: input,
-      outputMode: "PreviewStream",
-      provider: llmProvider,
-      model: llmModel,
-      preferredLanguage,
-    });
+    if (screenshotToSend) {
+      // Send screenshot + user instruction to LLM
+      await invoke("call_llm_with_image", {
+        imageBase64: screenshotToSend,
+        instruction: input,
+        outputMode: "PreviewStream",
+        provider: llmProvider,
+        model: llmModel,
+        preferredLanguage,
+      });
+    } else {
+      // Backend CONVERSATION_HISTORY tracks multi-turn context automatically
+      await invoke("call_llm", {
+        selectedText: lastSelectedText,
+        instruction: input,
+        outputMode: "PreviewStream",
+        provider: llmProvider,
+        model: llmModel,
+        preferredLanguage,
+      });
+    }
   };
 
   const handleTtsToggle = async () => {
@@ -313,7 +343,7 @@ export default function PreviewWindow() {
       if (fallbackTtsActiveRef.current) {
         stopFallbackTts();
       } else {
-        await invoke("tts_stop").catch(() => {});
+        await invoke("tts_stop").catch(() => { });
       }
     } else if (llmOutput.trim()) {
       const state = useAppStore.getState();
@@ -398,11 +428,10 @@ export default function PreviewWindow() {
           {/* TTS button */}
           {hasOutput && (
             <button
-              className={`w-6 h-6 flex items-center justify-center rounded-lg transition-colors ${
-                isTtsPlaying
-                  ? "bg-blue-100 text-blue-600"
-                  : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
-              }`}
+              className={`w-6 h-6 flex items-center justify-center rounded-lg transition-colors ${isTtsPlaying
+                ? "bg-blue-100 text-blue-600"
+                : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
+                }`}
               onClick={handleTtsToggle}
               title={isTtsPlaying ? t("preview.ttsStop") : t("preview.ttsPlay")}
             >
@@ -451,12 +480,34 @@ export default function PreviewWindow() {
         )}
       </div>
 
+      {/* Screenshot attachment preview */}
+      {screenshotBase64 && (
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80">
+          <img
+            src={`data:image/png;base64,${screenshotBase64}`}
+            alt="截圖"
+            className="h-12 w-auto rounded border border-zinc-300 object-contain"
+          />
+          <span className="text-xs text-zinc-500 flex-1">截圖已附加</span>
+          <button
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
+            onClick={() => setScreenshotBase64("")}
+            title="移除截圖"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Refinement input */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
         <input
           ref={inputRef}
           className="flex-1 input-field px-2.5 py-1.5 text-sm"
-          placeholder={t("preview.refinementPlaceholder")}
+          placeholder={screenshotBase64 ? "輸入你想問的問題…" : t("preview.refinementPlaceholder")}
           value={refinementInput}
           onChange={(e) => setRefinementInput(e.target.value)}
           onKeyDown={(e) => {
