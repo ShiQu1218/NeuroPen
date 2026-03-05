@@ -18,6 +18,7 @@ export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
   const [screenshotBase64, setScreenshotBase64] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
+  const outputContentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fallbackUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const fallbackTtsActiveRef = useRef(false);
@@ -255,7 +256,10 @@ export default function PreviewWindow() {
         return;
       }
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
-      const outputHeight = Math.max(60, outputRef.current.scrollHeight);
+      const outputHeight = Math.max(
+        60,
+        outputContentRef.current?.scrollHeight ?? outputRef.current.scrollHeight,
+      );
       const nextHeight = Math.min(
         PREVIEW_MAX_HEIGHT,
         Math.max(PREVIEW_MIN_HEIGHT, outputHeight + PREVIEW_CHROME_HEIGHT)
@@ -477,15 +481,17 @@ export default function PreviewWindow() {
         ref={outputRef}
         className="flex-1 overflow-auto p-4 text-sm border-b border-zinc-200 bg-zinc-50/80 preview-markdown"
       >
-        {llmError ? (
-          <span className="text-red-500">{llmError}</span>
-        ) : isLlmLoading && !hasOutput ? (
-          <span className="text-gray-400">{t("preview.loading")}</span>
-        ) : hasOutput ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{llmOutput}</ReactMarkdown>
-        ) : (
-          <span className="text-gray-400">{t("preview.empty")}</span>
-        )}
+        <div ref={outputContentRef}>
+          {llmError ? (
+            <span className="text-red-500">{llmError}</span>
+          ) : isLlmLoading && !hasOutput ? (
+            <span className="text-gray-400">{t("preview.loading")}</span>
+          ) : hasOutput ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{llmOutput}</ReactMarkdown>
+          ) : (
+            <span className="text-gray-400">{t("preview.empty")}</span>
+          )}
+        </div>
       </div>
 
       {/* Screenshot attachment preview */}
@@ -533,7 +539,7 @@ export default function PreviewWindow() {
       </div>
 
       {/* Action buttons */}
-      <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80">
+      <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80 rounded-b-2xl">
         <button
           className="btn-secondary px-3 py-1.5 text-xs"
           disabled={!hasOutput}
