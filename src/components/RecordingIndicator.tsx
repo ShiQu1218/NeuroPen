@@ -52,6 +52,22 @@ export default function RecordingIndicator() {
     }, delayMs);
   };
 
+  const showAtBottomCenter = async () => {
+    const win = getCurrentWindow();
+    try {
+      const monitor = await currentMonitor();
+      const size = await win.outerSize();
+      if (monitor) {
+        const x = monitor.position.x + Math.floor((monitor.size.width - size.width) / 2);
+        const y = monitor.position.y + monitor.size.height - size.height - 36;
+        await win.setPosition(new PhysicalPosition(x, y));
+      }
+    } catch (err) {
+      console.warn("[RecordingIndicator] positioning failed:", err);
+    }
+    await win.show();
+  };
+
   useEffect(() => {
     let cancelled = false;
     const unlisten: Array<() => void> = [];
@@ -65,20 +81,7 @@ export default function RecordingIndicator() {
         setStatusText("");
         statusTextRef.current = "";
         setPartialTranscript("");
-        const win = getCurrentWindow();
-        await win.center();
-        await win.show();
-        try {
-          const monitor = await currentMonitor();
-          const size = await win.outerSize();
-          if (monitor) {
-            const x = monitor.position.x + Math.floor((monitor.size.width - size.width) / 2);
-            const y = monitor.position.y + monitor.size.height - size.height - 36;
-            await win.setPosition(new PhysicalPosition(x, y));
-          }
-        } catch (err) {
-          console.warn("[RecordingIndicator] positioning failed:", err);
-        }
+        await showAtBottomCenter();
       });
       if (cancelled) { u1(); } else { unlisten.push(u1); }
 
@@ -117,20 +120,7 @@ export default function RecordingIndicator() {
         clearHideTimer();
         setStatusText(message);
         statusTextRef.current = message;
-        const win = getCurrentWindow();
-        await win.center();
-        await win.show();
-        try {
-          const monitor = await currentMonitor();
-          const size = await win.outerSize();
-          if (monitor) {
-            const x = monitor.position.x + Math.floor((monitor.size.width - size.width) / 2);
-            const y = monitor.position.y + monitor.size.height - size.height - 36;
-            await win.setPosition(new PhysicalPosition(x, y));
-          }
-        } catch (err) {
-          console.warn("[RecordingIndicator] status positioning failed:", err);
-        }
+        await showAtBottomCenter();
         if (!isRecordingRef.current) {
           scheduleHide(1800);
         }

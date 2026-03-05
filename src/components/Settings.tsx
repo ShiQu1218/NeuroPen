@@ -52,7 +52,7 @@ interface ModelDownloadProgressEvent {
   progressPct?: number;
 }
 
-type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "privacy" | "history";
+type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "history";
 
 const STATUS_RESET_MS = 2000;
 const RATING_INDICES = [0, 1, 2, 3, 4];
@@ -107,14 +107,6 @@ const NAV_ITEMS: { id: SettingsSection; icon: React.ReactNode }[] = [
     ),
   },
   {
-    id: "privacy",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M12 3 5 6v5c0 5 3.5 8 7 10 3.5-2 7-5 7-10V6l-7-3Z" />
-      </svg>
-    ),
-  },
-  {
     id: "history",
     icon: (
       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -136,7 +128,7 @@ export default function Settings() {
     vocabularyTerms, setVocabularyTerms,
     llmProvider, setLlmProvider,
     llmModel, setLlmModel,
-    incognito, setIncognito,
+    llmModelOptions, setLlmModelOptions,
     hotkey, setHotkey,
     screenshotHotkey, setScreenshotHotkey,
     sttEngine, setSttEngine,
@@ -161,7 +153,6 @@ export default function Settings() {
     quickAction: "settings.section.quickAction",
     llm: "settings.section.llm",
     tts: "settings.section.tts",
-    privacy: "settings.section.privacy",
     history: "settings.section.history",
   };
   const sttModelNameKey: Partial<Record<string, TranslationKey>> = {
@@ -220,10 +211,10 @@ export default function Settings() {
   const [draftVocabularyTerms, setDraftVocabularyTerms] = useState(vocabularyTerms.join("\n"));
   const [draftLlmProvider, setDraftLlmProvider] = useState(llmProvider);
   const [draftLlmModel, setDraftLlmModel] = useState(llmModel);
+  const [draftLlmModelOptions, setDraftLlmModelOptions] = useState<string[]>(llmModelOptions);
   const [draftTtsVoice, setDraftTtsVoice] = useState(ttsVoice);
   const [draftTtsRate, setDraftTtsRate] = useState(ttsRate);
   const [draftTtsPitch, setDraftTtsPitch] = useState(ttsPitch);
-  const [draftIncognito, setDraftIncognito] = useState(incognito);
   const [draftPreferredLanguage, setDraftPreferredLanguage] = useState<PreferredLanguage>(preferredLanguage);
   const [draftMicrophoneSource, setDraftMicrophoneSource] = useState(microphoneSource);
   const [draftLaunchOnStartup, setDraftLaunchOnStartup] = useState(launchOnStartup);
@@ -310,10 +301,10 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
+    setDraftLlmModelOptions(llmModelOptions);
     setDraftTtsVoice(ttsVoice);
     setDraftTtsRate(ttsRate);
     setDraftTtsPitch(ttsPitch);
-    setDraftIncognito(incognito);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -334,10 +325,10 @@ export default function Settings() {
     vocabularyTerms,
     llmProvider,
     llmModel,
+    llmModelOptions,
     ttsVoice,
     ttsRate,
     ttsPitch,
-    incognito,
     preferredLanguage,
     microphoneSource,
     launchOnStartup,
@@ -486,6 +477,12 @@ export default function Settings() {
 
     const nextWakeWord = draftWakeWord.trim();
     const nextModel = draftLlmModel.trim();
+    const nextLlmModelOptions = Array.from(
+      new Set([
+        ...draftLlmModelOptions.map((model) => model.trim()).filter(Boolean),
+        nextModel,
+      ]),
+    );
     const isExternalModelChoice = draftSttModelChoice === OPENAI_STT_MODEL;
     if (!isExternalModelChoice && !localModels.some((model) => model.id === draftSttModelChoice && model.installed)) {
       setSettingsSaveStatus("error");
@@ -544,10 +541,10 @@ export default function Settings() {
       setVocabularyTerms(nextVocabularyTerms);
       setLlmProvider(draftLlmProvider);
       setLlmModel(nextModel);
+      setLlmModelOptions(nextLlmModelOptions);
       setTtsVoice(draftTtsVoice);
       setTtsRate(draftTtsRate);
       setTtsPitch(draftTtsPitch);
-      setIncognito(draftIncognito);
       setPreferredLanguage(draftPreferredLanguage);
       setMicrophoneSource(draftMicrophoneSource);
       setLaunchOnStartup(draftLaunchOnStartup);
@@ -574,6 +571,7 @@ export default function Settings() {
         vocabularyTerms: nextVocabularyTerms,
         llmProvider: draftLlmProvider,
         llmModel: nextModel,
+        llmModelOptions: nextLlmModelOptions,
         preferredLanguage: draftPreferredLanguage,
         microphoneSource: draftMicrophoneSource,
         launchOnStartup: draftLaunchOnStartup,
@@ -581,7 +579,6 @@ export default function Settings() {
         ttsVoice: draftTtsVoice,
         ttsRate: draftTtsRate,
         ttsPitch: draftTtsPitch,
-        incognito: draftIncognito,
         quickActionCommands: nextQuickActionCommands,
         historyEnabled: draftHistoryEnabled,
         translationTarget: nextTranslationTarget,
@@ -621,10 +618,10 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
+    setDraftLlmModelOptions(llmModelOptions);
     setDraftTtsVoice(ttsVoice);
     setDraftTtsRate(ttsRate);
     setDraftTtsPitch(ttsPitch);
-    setDraftIncognito(incognito);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -681,6 +678,26 @@ export default function Settings() {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleAddLlmModelOption = () => {
+    const candidate = draftLlmModel.trim();
+    if (!candidate) return;
+    setDraftLlmModelOptions((prev) => (prev.includes(candidate) ? prev : [...prev, candidate]));
+    setDraftLlmModel(candidate);
+  };
+
+  const handleDeleteLlmModelOption = (modelToDelete: string) => {
+    setDraftLlmModelOptions((prev) => {
+      const next = prev.filter((model) => model !== modelToDelete);
+      if (!next.length) {
+        return prev;
+      }
+      if (draftLlmModel === modelToDelete) {
+        setDraftLlmModel(next[0]);
+      }
       return next;
     });
   };
@@ -767,6 +784,7 @@ export default function Settings() {
               .filter(Boolean),
             llmProvider: draftLlmProvider,
             llmModel: draftLlmModel.trim() || llmModel,
+            llmModelOptions: draftLlmModelOptions,
             preferredLanguage: draftPreferredLanguage,
             microphoneSource: draftMicrophoneSource,
             launchOnStartup: draftLaunchOnStartup,
@@ -774,7 +792,6 @@ export default function Settings() {
             ttsVoice: draftTtsVoice,
             ttsRate: draftTtsRate,
             ttsPitch: draftTtsPitch,
-            incognito: draftIncognito,
             historyEnabled: draftHistoryEnabled,
             translationTarget: draftSttOutputStrategy === "llmRefine" ? draftTranslationTarget : "off",
           });
@@ -808,10 +825,10 @@ export default function Settings() {
       draftVocabularyTerms !== vocabularyTerms.join("\n") ||
       draftLlmProvider !== llmProvider ||
       draftLlmModel !== llmModel ||
+      JSON.stringify(draftLlmModelOptions) !== JSON.stringify(llmModelOptions) ||
       draftTtsVoice !== ttsVoice ||
       draftTtsRate !== ttsRate ||
       draftTtsPitch !== ttsPitch ||
-      draftIncognito !== incognito ||
       draftPreferredLanguage !== preferredLanguage ||
       draftMicrophoneSource !== microphoneSource ||
       draftLaunchOnStartup !== launchOnStartup ||
@@ -846,14 +863,14 @@ export default function Settings() {
       llmProvider,
       draftLlmModel,
       llmModel,
+      draftLlmModelOptions,
+      llmModelOptions,
       draftTtsVoice,
       ttsVoice,
       draftTtsRate,
       ttsRate,
       draftTtsPitch,
       ttsPitch,
-      draftIncognito,
-      incognito,
       draftPreferredLanguage,
       preferredLanguage,
       draftMicrophoneSource,
@@ -923,28 +940,6 @@ export default function Settings() {
                   <option value="ru-RU">{t("settings.language.ru-RU")}</option>
                 </select>
                 <p className="text-xs text-gray-400">{t("settings.language.hint")}</p>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.preferredLanguage.label")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftPreferredLanguage}
-                  onChange={(e) => setDraftPreferredLanguage(e.target.value as PreferredLanguage)}
-                >
-                  <option value="auto">{t("settings.preferredLanguage.auto")}</option>
-                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
-                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-                  <option value="en-US">English</option>
-                  <option value="ja-JP">日本語</option>
-                  <option value="es-ES">Español</option>
-                  <option value="ko-KR">한국어</option>
-                  <option value="de-DE">Deutsch</option>
-                  <option value="fr-FR">Français</option>
-                  <option value="ar-SA">العربية</option>
-                  <option value="ru-RU">Русский</option>
-                </select>
-                <p className="text-xs text-gray-400">{t("settings.preferredLanguage.hint")}</p>
               </div>
 
               <div className="space-y-1">
@@ -1517,12 +1512,68 @@ export default function Settings() {
               </div>
               <div className="space-y-1">
                 <label className="font-medium">{t("settings.llm.model")}</label>
+                <select
+                  className="w-full input-field px-2 py-1 font-mono text-xs"
+                  value={draftLlmModel}
+                  onChange={(e) => setDraftLlmModel(e.target.value)}
+                >
+                  {draftLlmModelOptions.map((model) => (
+                    <option key={model} value={model}>
+                      {model}
+                    </option>
+                  ))}
+                </select>
                 <input
                   className="w-full input-field px-2 py-1 font-mono text-xs"
                   value={draftLlmModel}
                   onChange={(e) => setDraftLlmModel(e.target.value)}
                   placeholder="e.g. gpt-4o-mini / qwen-plus / doubao-seed-1-6-250615 / deepseek-chat / llama3.2"
                 />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddLlmModelOption}
+                    disabled={!draftLlmModel.trim()}
+                    className="btn-secondary px-2 py-1 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {t("settings.llm.modelAdd")}
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {draftLlmModelOptions.map((model) => (
+                    <button
+                      key={`saved-model-${model}`}
+                      type="button"
+                      onClick={() => handleDeleteLlmModelOption(model)}
+                      className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] hover:bg-red-100 hover:text-red-700"
+                    >
+                      {model} ×
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400">{t("settings.llm.modelHint")}</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">{t("settings.preferredLanguage.label")}</label>
+                <select
+                  className="w-full input-field px-2 py-1"
+                  value={draftPreferredLanguage}
+                  onChange={(e) => setDraftPreferredLanguage(e.target.value as PreferredLanguage)}
+                >
+                  <option value="auto">{t("settings.preferredLanguage.auto")}</option>
+                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
+                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
+                  <option value="en-US">English</option>
+                  <option value="ja-JP">日本語</option>
+                  <option value="es-ES">Español</option>
+                  <option value="ko-KR">한국어</option>
+                  <option value="de-DE">Deutsch</option>
+                  <option value="fr-FR">Français</option>
+                  <option value="ar-SA">العربية</option>
+                  <option value="ru-RU">Русский</option>
+                </select>
+                <p className="text-xs text-gray-400">{t("settings.preferredLanguage.hint")}</p>
               </div>
 
               {/* API Key — sent to Rust, never stored in localStorage */}
@@ -1600,20 +1651,6 @@ export default function Settings() {
               </div>
 
             </>
-          )}
-
-          {activeSection === "privacy" && (
-            <div className="flex items-center gap-3">
-              <label className="font-medium">{t("settings.privacy.label")}</label>
-              <button
-                onClick={() => setDraftIncognito(!draftIncognito)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${draftIncognito ? "bg-blue-500" : "bg-gray-300"}`}
-              >
-                <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${draftIncognito ? "translate-x-5" : ""}`}
-                />
-              </button>
-            </div>
           )}
 
           {activeSection === "history" && (

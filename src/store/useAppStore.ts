@@ -35,6 +35,15 @@ const DEFAULT_QUICK_ACTION_COMMANDS: QuickActionCommand[] = [
   { id: "grammar", label: "修正語法", instruction: "Fix grammar and spelling errors in the selected text." },
   { id: "formalize", label: "正式化", instruction: "Rewrite the selected text in a formal tone." },
 ];
+const DEFAULT_LLM_MODEL_OPTIONS = [
+  "gpt-4o-mini",
+  "gpt-4.1-mini",
+  "claude-3-5-sonnet-latest",
+  "gemini-2.5-flash",
+  "deepseek-chat",
+  "qwen-plus",
+  "llama3.2",
+];
 
 interface AppState {
   // --- User preferences (persisted) ---
@@ -43,6 +52,7 @@ interface AppState {
   outputMode: OutputMode;
   llmProvider: LlmProvider;
   llmModel: string;
+  llmModelOptions: string[];
   incognito: boolean;
   hotkey: string;
   screenshotHotkey: string;
@@ -89,6 +99,7 @@ interface AppState {
   setOutputMode: (mode: OutputMode) => void;
   setLlmProvider: (provider: LlmProvider) => void;
   setLlmModel: (model: string) => void;
+  setLlmModelOptions: (models: string[]) => void;
   setIncognito: (on: boolean) => void;
   setHotkey: (hotkey: string) => void;
   setScreenshotHotkey: (hotkey: string) => void;
@@ -138,6 +149,7 @@ export const useAppStore = create<AppState>()(
       outputMode: "PreviewStream",
       llmProvider: "openAi",
       llmModel: "gpt-4o-mini",
+      llmModelOptions: DEFAULT_LLM_MODEL_OPTIONS,
       incognito: false,
       hotkey: "Alt+`",
       screenshotHotkey: "Alt+S",
@@ -182,6 +194,7 @@ export const useAppStore = create<AppState>()(
       setOutputMode: (mode) => set({ outputMode: mode }),
       setLlmProvider: (provider) => set({ llmProvider: provider }),
       setLlmModel: (model) => set({ llmModel: model }),
+      setLlmModelOptions: (llmModelOptions) => set({ llmModelOptions }),
       setIncognito: (on) => set({ incognito: on }),
       setHotkey: (hotkey) => set({ hotkey }),
       setScreenshotHotkey: (screenshotHotkey) => set({ screenshotHotkey }),
@@ -243,6 +256,7 @@ export const useAppStore = create<AppState>()(
         outputMode: state.outputMode,
         llmProvider: state.llmProvider,
         llmModel: state.llmModel,
+        llmModelOptions: state.llmModelOptions,
         incognito: state.incognito,
         hotkey: state.hotkey,
         screenshotHotkey: state.screenshotHotkey,
