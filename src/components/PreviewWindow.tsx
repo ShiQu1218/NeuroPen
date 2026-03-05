@@ -38,6 +38,9 @@ export default function PreviewWindow() {
   const setLlmError = useAppStore((s) => s.setLlmError);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
+  const setTtsVoice = useAppStore((s) => s.setTtsVoice);
+  const setTtsRate = useAppStore((s) => s.setTtsRate);
+  const setTtsPitch = useAppStore((s) => s.setTtsPitch);
   const setIsTtsPlaying = useAppStore((s) => s.setIsTtsPlaying);
 
   const parseRate = (value?: string | null) => {
@@ -147,16 +150,6 @@ export default function PreviewWindow() {
           state.setLlmDurationMs(Date.now() - llmStartTime);
         }
         state.setIsLlmLoading(false);
-
-        // Auto TTS if enabled
-        if (state.ttsEnabled && state.llmOutput.trim()) {
-          void speakWithFallback(
-            state.llmOutput,
-            state.ttsVoice || null,
-            state.ttsRate || null,
-            state.ttsPitch || null
-          );
-        }
       });
       await register<{ message: string }>("llm://error", (event) => {
         useAppStore.getState().setLlmError(event.payload.message);
@@ -186,7 +179,13 @@ export default function PreviewWindow() {
           useAppStore.getState().setLlmDurationMs(0);
         }
       );
-      await register<{ language?: AppLanguage; preferredLanguage?: PreferredLanguage }>(
+      await register<{
+        language?: AppLanguage;
+        preferredLanguage?: PreferredLanguage;
+        ttsVoice?: string;
+        ttsRate?: string;
+        ttsPitch?: string;
+      }>(
         "talkflow://settings-saved",
         (event) => {
           if (event.payload.language) {
@@ -194,6 +193,15 @@ export default function PreviewWindow() {
           }
           if (event.payload.preferredLanguage) {
             setPreferredLanguage(event.payload.preferredLanguage);
+          }
+          if (typeof event.payload.ttsVoice === "string") {
+            setTtsVoice(event.payload.ttsVoice);
+          }
+          if (typeof event.payload.ttsRate === "string") {
+            setTtsRate(event.payload.ttsRate);
+          }
+          if (typeof event.payload.ttsPitch === "string") {
+            setTtsPitch(event.payload.ttsPitch);
           }
         }
       );
@@ -228,7 +236,7 @@ export default function PreviewWindow() {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [setLanguage, setPreferredLanguage, setIsTtsPlaying, speakWithFallback]);
+  }, [setLanguage, setPreferredLanguage, setTtsVoice, setTtsRate, setTtsPitch, setIsTtsPlaying, speakWithFallback]);
 
   // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {

@@ -138,7 +138,6 @@ export default function Settings() {
     language, setLanguage,
     localSttAvailable, setLocalSttAvailable,
     apiKeySet, setApiKeySet,
-    ttsEnabled, setTtsEnabled,
     ttsVoice, setTtsVoice,
     ttsRate, setTtsRate,
     ttsPitch, setTtsPitch,
@@ -481,6 +480,9 @@ export default function Settings() {
         microphoneSource: draftMicrophoneSource,
         launchOnStartup: draftLaunchOnStartup,
         language: draftLanguage,
+        ttsVoice,
+        ttsRate,
+        ttsPitch,
         quickActionCommands: nextQuickActionCommands,
         historyEnabled: draftHistoryEnabled,
         translationTarget: nextTranslationTarget,
@@ -644,6 +646,9 @@ export default function Settings() {
             microphoneSource: draftMicrophoneSource,
             launchOnStartup: draftLaunchOnStartup,
             language: draftLanguage,
+            ttsVoice,
+            ttsRate,
+            ttsPitch,
             historyEnabled: draftHistoryEnabled,
             translationTarget: draftSttOutputStrategy === "llmRefine" ? draftTranslationTarget : "off",
           });
@@ -1349,22 +1354,8 @@ export default function Settings() {
 
           {activeSection === "tts" && (
             <>
-              {/* TTS Enable */}
-              <div className="flex items-center gap-3">
-                <label className="font-medium">{t("settings.tts.enabled")}</label>
-                <button
-                  onClick={() => setTtsEnabled(!ttsEnabled)}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${ttsEnabled ? "bg-blue-500" : "bg-gray-300"}`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ttsEnabled ? "translate-x-5" : ""}`}
-                  />
-                </button>
-              </div>
-              <p className="text-[11px] text-zinc-500">{t("settings.tts.enabledHint")}</p>
-
               {/* TTS Voice */}
-              <div className="mt-3">
+              <div>
                 <label className="text-xs font-medium">{t("settings.tts.voice")}</label>
                 <input
                   className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
