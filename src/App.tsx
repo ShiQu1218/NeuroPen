@@ -99,6 +99,9 @@ const isLikelyUnexpectedEnglishTranslation = (original: string, refined: string)
   return latinCount / condensed.length > 0.6;
 };
 
+const isLikelyAuthError = (err: unknown) =>
+  /(401|unauthorized|api\s*key|authentication|invalid key)/i.test(String(err));
+
 const stripWrappingQuotes = (text: string) => {
   const pairs: Array<[string, string]> = [
     ["「", "」"],
@@ -701,6 +704,8 @@ function MainWindow() {
           if (mode === "A") {
             // ── Mode A — inject STT text directly ──
             let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
+            let usedLlmForModeA = false;
+            let postInjectWarning = "";
             const shouldRefine = store.sttOutputStrategy === "llmRefine" && !store.incognito;
             const shouldTranslate =
               store.sttOutputStrategy === "llmRefine" &&
@@ -714,6 +719,7 @@ function MainWindow() {
             }
             if (shouldRefine && llmReady) {
               try {
+                usedLlmForModeA = true;
                 setStatusMsg(t("status.llmRefining"));
                 const title = store.contextAwareTone
                   ? await invoke<string>("get_foreground_window_title")
@@ -737,13 +743,23 @@ function MainWindow() {
                 }
               } catch (err) {
                 console.warn("[App] call_llm_text failed, fallback to STT output:", err);
+                if (isLikelyAuthError(err)) {
+                  setSttError(t("error.llmApiKeyRequired"));
+                  postInjectWarning = t("status.llmApiMissingSkipRefine");
+                } else {
+                  const reason = err instanceof Error ? err.message : String(err);
+                  setSttError(t("error.llmRefineFailedOriginal", { reason }));
+                  postInjectWarning = t("status.llmRefineFailedUsingOriginal");
+                }
               }
             } else if (shouldRefine && !llmReady) {
-              setStatusMsg(t("status.llmApiMissingSkipRefine"));
+              setSttError(t("error.llmApiKeyRequired"));
+              postInjectWarning = t("status.llmApiMissingSkipRefine");
             }
             // Feature 7: Live translation mode
             if (shouldTranslate && llmReady) {
               try {
+                usedLlmForModeA = true;
                 setStatusMsg(t("status.translating"));
                 const translated = await invoke<string>("call_llm_text", {
                   selectedText: finalText,
@@ -762,7 +778,7 @@ function MainWindow() {
               }
             } else if (shouldTranslate && !llmReady) {
               setSttError(t("error.translationNeedsLlmApiKey"));
-              setStatusMsg(t("status.llmApiMissingOriginalOutput"));
+              postInjectWarning = t("status.llmApiMissingOriginalOutput");
             }
 
             setStatusMsg(t("status.injectingText"));
@@ -787,13 +803,13 @@ function MainWindow() {
                 inputText: result.transcript,
                 instruction: "",
                 output: finalText,
-                provider: store.llmProvider,
-                model: store.llmModel,
+                provider: usedLlmForModeA ? store.llmProvider : "",
+                model: usedLlmForModeA ? store.llmModel : "",
               });
             }
 
-            setStatusMsg(t("status.textInjected"));
-            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+            setStatusMsg(postInjectWarning || t("status.textInjected"));
+            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), postInjectWarning ? 3500 : 2000);
           } else if (mode === "B2") {
             // ── Mode B2 — voice command on selected text ──
             if (store.incognito) {

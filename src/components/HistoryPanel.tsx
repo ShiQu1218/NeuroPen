@@ -156,9 +156,11 @@ export default function HistoryPanel() {
                       </p>
                     </div>
                   )}
-                  <div className="text-[10px] text-zinc-400">
-                    {entry.provider} / {entry.model}
-                  </div>
+                  {(entry.provider || entry.model) && (
+                    <div className="text-[10px] text-zinc-400">
+                      {entry.provider} / {entry.model}
+                    </div>
+                  )}
                   <div className="flex gap-2 pt-1">
                     <button
                       className="text-[10px] text-blue-600 hover:text-blue-800"
