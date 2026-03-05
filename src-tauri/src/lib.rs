@@ -404,6 +404,15 @@ fn change_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String
     hotkey::change_trigger(&app, modifiers, code)
 }
 
+/// Change the screenshot hotkey at runtime.
+#[tauri::command]
+fn change_screenshot_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
+    let (modifiers, code) = hotkey::parse_hotkey(&hotkey_str)?;
+    hotkey::change_screenshot(&app, modifiers, code)?;
+    hotkey::persist_screenshot_hotkey(&hotkey_str)?;
+    Ok(())
+}
+
 // ── History commands ────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -569,6 +578,7 @@ pub fn run() {
             route_transcript,
             route_on_trigger,
             change_hotkey,
+            change_screenshot_hotkey,
             history_list,
             history_save,
             history_delete,

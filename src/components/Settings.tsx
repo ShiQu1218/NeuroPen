@@ -129,6 +129,7 @@ export default function Settings() {
     llmModel, setLlmModel,
     incognito, setIncognito,
     hotkey, setHotkey,
+    screenshotHotkey, setScreenshotHotkey,
     sttEngine, setSttEngine,
     preferredLanguage, setPreferredLanguage,
     microphoneSource, setMicrophoneSource,
@@ -197,6 +198,7 @@ export default function Settings() {
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<"" | "saved" | "error">("");
   const [draftWakeWord, setDraftWakeWord] = useState(wakeWord);
   const [draftHotkey, setDraftHotkey] = useState(hotkey);
+  const [draftScreenshotHotkey, setDraftScreenshotHotkey] = useState(screenshotHotkey);
   const [draftSttEngine, setDraftSttEngine] = useState(sttEngine);
   const [draftSttModelChoice, setDraftSttModelChoice] = useState<string>(
     sttEngine === "openAi" ? OPENAI_STT_MODEL : sttEngine
@@ -281,6 +283,7 @@ export default function Settings() {
         : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
     setDraftWakeWord(wakeWord);
     setDraftHotkey(hotkey);
+    setDraftScreenshotHotkey(screenshotHotkey);
     setDraftSttEngine(sttEngine);
     setDraftSttModelChoice(nextSttModelChoice);
     setDraftOutputMode(outputMode);
@@ -300,6 +303,7 @@ export default function Settings() {
   }, [
     wakeWord,
     hotkey,
+    screenshotHotkey,
     sttEngine,
     outputMode,
     sttOutputStrategy,
@@ -427,6 +431,9 @@ export default function Settings() {
       if (draftHotkey !== hotkey) {
         await invoke("change_hotkey", { hotkeyStr: draftHotkey });
       }
+      if (draftScreenshotHotkey !== screenshotHotkey) {
+        await invoke("change_screenshot_hotkey", { hotkeyStr: draftScreenshotHotkey });
+      }
       if (draftLaunchOnStartup !== launchOnStartup) {
         await invoke("set_launch_on_startup", { enabled: draftLaunchOnStartup });
       }
@@ -436,6 +443,7 @@ export default function Settings() {
 
       setWakeWord(nextWakeWord);
       setHotkey(draftHotkey);
+      setScreenshotHotkey(draftScreenshotHotkey);
       setSttEngine(nextSttEngine);
       setSttModelPath(nextSttModelPath);
       setOutputMode(draftOutputMode);
@@ -459,6 +467,7 @@ export default function Settings() {
       await emit("talkflow://settings-saved", {
         wakeWord: nextWakeWord,
         hotkey: draftHotkey,
+        screenshotHotkey: draftScreenshotHotkey,
         sttEngine: nextSttEngine,
         sttModelPath: nextSttModelPath,
         outputMode: draftOutputMode,
@@ -500,6 +509,7 @@ export default function Settings() {
         : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
     setDraftWakeWord(wakeWord);
     setDraftHotkey(hotkey);
+    setDraftScreenshotHotkey(screenshotHotkey);
     setDraftSttEngine(sttEngine);
     setDraftSttModelChoice(nextSttModelChoice);
     setDraftOutputMode(outputMode);
@@ -617,6 +627,7 @@ export default function Settings() {
           await emit("talkflow://settings-saved", {
             wakeWord: draftWakeWord.trim() || wakeWord,
             hotkey: draftHotkey,
+            screenshotHotkey: draftScreenshotHotkey,
             sttEngine: "openAi",
             sttModelPath: "",
             outputMode: draftOutputMode,
@@ -655,6 +666,7 @@ export default function Settings() {
     () =>
       draftWakeWord !== wakeWord ||
       draftHotkey !== hotkey ||
+      draftScreenshotHotkey !== screenshotHotkey ||
       draftSttEngine !== sttEngine ||
       draftSttModelChoice !== currentSttModelChoice ||
       draftOutputMode !== outputMode ||
@@ -676,6 +688,8 @@ export default function Settings() {
       wakeWord,
       draftHotkey,
       hotkey,
+      draftScreenshotHotkey,
+      screenshotHotkey,
       draftSttEngine,
       sttEngine,
       draftSttModelChoice,
@@ -850,6 +864,34 @@ export default function Settings() {
                       : t("settings.hotkey.error")}
                   </p>
                 )}
+              </div>
+
+              {/* Screenshot hotkey */}
+              <div className="space-y-1">
+                <label className="font-medium">{t("settings.screenshot.label")} Hotkey</label>
+                <input
+                  className="w-full input-field px-2 py-1"
+                  value={draftScreenshotHotkey}
+                  readOnly
+                  onKeyDown={(e) => {
+                    e.preventDefault();
+                    if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
+                    const parts: string[] = [];
+                    if (e.ctrlKey) parts.push("Ctrl");
+                    if (e.altKey) parts.push("Alt");
+                    if (e.shiftKey) parts.push("Shift");
+                    if (e.metaKey) parts.push("Super");
+                    let key = e.key;
+                    if (e.code === "Backquote" || key === "Dead") key = "Backquote";
+                    else if (key === " ") key = "Space";
+                    else if (key.length === 1) key = key.toUpperCase();
+                    parts.push(key);
+                    setDraftScreenshotHotkey(parts.join("+"));
+                    setHotkeyStatus("");
+                    setHotkeyErrorMessage("");
+                  }}
+                />
+                <p className="text-xs text-gray-400">{t("settings.screenshot.hint")}（可自訂）</p>
               </div>
 
               {/* Wake word */}
@@ -1355,10 +1397,6 @@ export default function Settings() {
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-zinc-200">
-                <label className="text-xs font-medium">{t("settings.screenshot.label")}</label>
-                <p className="text-[11px] text-zinc-500 mt-0.5">{t("settings.screenshot.hint")}</p>
-              </div>
             </>
           )}
 

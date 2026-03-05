@@ -62,6 +62,19 @@
         "shadow": false,
         "skipTaskbar": true,
         "resizable": false
+      },
+      {
+        "label": "screenshot-overlay",
+        "title": "Screenshot Overlay",
+        "width": 1280,
+        "height": 720,
+        "visible": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "shadow": false,
+        "skipTaskbar": true,
+        "resizable": false
       }
     ],
     "security": {

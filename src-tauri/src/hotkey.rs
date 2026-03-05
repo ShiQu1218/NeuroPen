@@ -11,20 +11,48 @@
 //! remove handlers that were set via `on_shortcut()`.
 
 use std::sync::Mutex;
+use std::{fs, path::PathBuf};
 use tauri::{Emitter, Runtime, plugin::TauriPlugin};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 /// The currently registered trigger shortcut (so we can unregister + re-register).
 static CURRENT_TRIGGER: Mutex<Option<Shortcut>> = Mutex::new(None);
+/// The currently registered screenshot shortcut.
+static CURRENT_SCREENSHOT: Mutex<Option<Shortcut>> = Mutex::new(None);
 
 /// The fixed undo shortcut.
 fn undo_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::KeyZ)
 }
 
-/// The fixed screenshot shortcut.
-fn screenshot_shortcut() -> Shortcut {
+/// The default screenshot shortcut.
+fn default_screenshot_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::KeyS)
+}
+
+fn screenshot_hotkey_file() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let dir = home.join(".talkflow");
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+    }
+    Some(dir.join("screenshot_hotkey"))
+}
+
+fn load_persisted_screenshot_hotkey() -> Option<String> {
+    let path = screenshot_hotkey_file()?;
+    let content = fs::read_to_string(path).ok()?;
+    let hotkey = content.trim().to_string();
+    if hotkey.is_empty() {
+        None
+    } else {
+        Some(hotkey)
+    }
+}
+
+pub fn persist_screenshot_hotkey(hotkey: &str) -> Result<(), String> {
+    let path = screenshot_hotkey_file().ok_or("Cannot resolve screenshot hotkey path")?;
+    fs::write(path, hotkey).map_err(|e| format!("Failed to persist screenshot hotkey: {e}"))
 }
 
 /// Build the plugin with a single global handler that dispatches events
@@ -38,6 +66,12 @@ pub fn build_plugin<R: Runtime>() -> TauriPlugin<R> {
                 .ok()
                 .and_then(|guard| *guard)
                 .map(|t| t == *shortcut)
+                .unwrap_or(false);
+            let is_screenshot = CURRENT_SCREENSHOT
+                .lock()
+                .ok()
+                .and_then(|guard| *guard)
+                .map(|s| s == *shortcut)
                 .unwrap_or(false);
 
             if is_trigger {
@@ -54,9 +88,9 @@ pub fn build_plugin<R: Runtime>() -> TauriPlugin<R> {
             } else if *shortcut == undo_shortcut() && event.state == ShortcutState::Pressed {
                 let _ = app.emit("hotkey://undo", ());
                 println!("[hotkey] Alt+Z triggered (undo)");
-            } else if *shortcut == screenshot_shortcut() && event.state == ShortcutState::Pressed {
+            } else if is_screenshot && event.state == ShortcutState::Pressed {
                 let _ = app.emit("hotkey://screenshot", ());
-                println!("[hotkey] Alt+S triggered (screenshot)");
+                println!("[hotkey] Screenshot hotkey triggered");
             }
         })
         .build()
@@ -74,11 +108,51 @@ pub fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::E
 
 /// Register the screenshot hotkey (Alt+S). Call once after app handle is ready.
 pub fn register_screenshot(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let sc = screenshot_shortcut();
+    let sc = if let Some(saved) = load_persisted_screenshot_hotkey() {
+        if let Ok((mods, code)) = parse_hotkey(&saved) {
+            Shortcut::new(mods, code)
+        } else {
+            default_screenshot_shortcut()
+        }
+    } else {
+        default_screenshot_shortcut()
+    };
     if !app.global_shortcut().is_registered(sc) {
         app.global_shortcut().register(sc)?;
-        println!("[hotkey] Registered screenshot shortcut (Alt+S)");
     }
+    if let Ok(mut guard) = CURRENT_SCREENSHOT.lock() {
+        *guard = Some(sc);
+    }
+    println!("[hotkey] Registered screenshot shortcut (Alt+S)");
+    Ok(())
+}
+
+/// Register (or change) the screenshot hotkey.
+pub fn change_screenshot(
+    app: &tauri::AppHandle,
+    modifiers: Option<Modifiers>,
+    code: Code,
+) -> Result<(), String> {
+    let new_shortcut = Shortcut::new(modifiers, code);
+
+    if let Some(old) = CURRENT_SCREENSHOT.lock().ok().and_then(|guard| *guard) {
+        if app.global_shortcut().is_registered(old) {
+            app.global_shortcut()
+                .unregister(old)
+                .map_err(|e| format!("Failed to unregister old screenshot hotkey: {e}"))?;
+            println!("[hotkey] Unregistered old screenshot shortcut");
+        }
+    }
+
+    app.global_shortcut()
+        .register(new_shortcut)
+        .map_err(|e| format!("Failed to register screenshot hotkey: {e}"))?;
+
+    if let Ok(mut guard) = CURRENT_SCREENSHOT.lock() {
+        *guard = Some(new_shortcut);
+    }
+
+    println!("[hotkey] Registered screenshot shortcut: {modifiers:?}+{code:?}");
     Ok(())
 }
 

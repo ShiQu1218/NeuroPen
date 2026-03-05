@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { listen, emit } from "@tauri-apps/api/event";
+import { listen, emit, emitTo } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import "./App.css";
@@ -10,6 +10,7 @@ import PreviewWindow from "./components/PreviewWindow";
 import QuickActionIcon from "./components/QuickActionIcon";
 import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
+import ScreenshotOverlay from "./components/ScreenshotOverlay";
 import { useAppStore } from "./store/useAppStore";
 import type {
   AppLanguage,
@@ -114,6 +115,8 @@ function App() {
       return <Settings />;
     case "recording-indicator":
       return <RecordingIndicator />;
+    case "screenshot-overlay":
+      return <ScreenshotOverlay />;
     default:
       return null;
   }
@@ -146,6 +149,7 @@ function MainWindow() {
     setLaunchOnStartup,
     setHistoryEnabled,
     setTranslationTarget,
+    setScreenshotHotkey,
     resetSession,
   } = useAppStore();
 
@@ -162,7 +166,7 @@ function MainWindow() {
 
     (async () => {
       // ── 0. Prevent sub-windows from being destroyed on close ──
-      for (const label of ["settings", "preview", "quick-action", "recording-indicator"]) {
+      for (const label of ["settings", "preview", "quick-action", "recording-indicator", "screenshot-overlay"]) {
         preventCloseDestroy(label);
       }
 
@@ -207,7 +211,7 @@ function MainWindow() {
 
       const isTalkFlowWindowFocused = async () => {
         const results = await Promise.all(
-          ["main", "quick-action", "preview", "settings", "recording-indicator"].map(async (label) => {
+          ["main", "quick-action", "preview", "settings", "recording-indicator", "screenshot-overlay"].map(async (label) => {
             const win = await WebviewWindow.getByLabel(label);
             return win ? win.isFocused() : false;
           })
@@ -272,6 +276,7 @@ function MainWindow() {
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
         historyEnabled?: boolean;
         translationTarget?: TranslationTarget;
+        screenshotHotkey?: string;
       }>(
         "talkflow://settings-saved",
         (event) => {
@@ -337,6 +342,9 @@ function MainWindow() {
           }
           if (payload.translationTarget) {
             setTranslationTarget(payload.translationTarget);
+          }
+          if (payload.screenshotHotkey) {
+            setScreenshotHotkey(payload.screenshotHotkey);
           }
           setStatusMsg("設定已更新");
           setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
@@ -529,58 +537,101 @@ function MainWindow() {
         if (store.isRecording) {
           return;
         }
-        if (store.incognito) {
-          setStatusMsg("隱私模式：截圖問 AI 已停用");
-          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
-          return;
-        }
-        if (store.llmProvider !== "ollama") {
-          const hasLlmKey = await invoke<boolean>("has_api_key").catch(() => false);
-          if (!hasLlmKey) {
-            setSttError("請先在設定中輸入 LLM API Key");
-            setStatusMsg("截圖問 AI 需要 LLM API Key");
-            return;
-          }
-        }
-        setStatusMsg("截圖中…");
         try {
-          const shot = await invoke<{ base64Png?: string; base64_png?: string }>("take_screenshot");
-          const imageBase64 = shot.base64Png ?? shot.base64_png ?? "";
-          if (!imageBase64) {
-            setStatusMsg("截圖失敗：無可用影像");
-            return;
+          const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
+          const monitor = await currentMonitor();
+          if (overlayWin && monitor) {
+            await overlayWin.setSize(new LogicalSize(monitor.size.width, monitor.size.height));
+            await overlayWin.setPosition(
+              new PhysicalPosition(monitor.position.x, monitor.position.y)
+            );
+            await overlayWin.show();
+            await overlayWin.setFocus();
+            await emitTo("screenshot-overlay", "talkflow://screenshot-start");
+            setStatusMsg("拖曳框選截圖範圍，Esc 取消");
+          } else {
+            setStatusMsg("截圖工具不可用");
           }
-          const instruction = "請描述這張截圖的重點，並用條列給出下一步建議。";
-          const screenshotOutputMode = "PreviewStream";
-          store.setCurrentMode("C");
-          store.setLlmOutput("");
-          store.setIsLlmLoading(true);
-          store.setLlmError("");
-          store.setLastSelectedText("");
-          store.setLastInstruction(instruction);
-          await emit("talkflow://preview-session", {
-            selectedText: "",
-            instruction,
-          });
-          const previewWin = await WebviewWindow.getByLabel("preview");
-          if (previewWin) {
-            await previewWin.show();
-            await previewWin.setFocus();
-          }
-          await invoke("call_llm_with_image", {
-            imageBase64,
-            instruction,
-            outputMode: screenshotOutputMode,
-            provider: store.llmProvider,
-            model: store.llmModel,
-            preferredLanguage: store.preferredLanguage,
-          });
-          setStatusMsg("截圖分析中…");
         } catch (err) {
-          console.error("[App] screenshot flow failed:", err);
-          setStatusMsg("截圖問 AI 失敗");
+          console.error("[App] screenshot overlay open failed:", err);
+          setStatusMsg("截圖工具開啟失敗");
         }
       });
+
+      await safeRegister<{ x: number; y: number; w: number; h: number; cancelled?: boolean }>(
+        "talkflow://screenshot-region",
+        async (event) => {
+          const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
+          if (overlayWin) {
+            await overlayWin.hide().catch(() => {});
+          }
+          const store = useAppStore.getState();
+          if (event.payload.cancelled) {
+            setStatusMsg("已取消截圖");
+            setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 1200);
+            return;
+          }
+          if (store.incognito) {
+            setStatusMsg("隱私模式：截圖問 AI 已停用");
+            setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+            return;
+          }
+          if (store.llmProvider !== "ollama") {
+            const hasLlmKey = await invoke<boolean>("has_api_key").catch(() => false);
+            if (!hasLlmKey) {
+              setSttError("請先在設定中輸入 LLM API Key");
+              setStatusMsg("截圖問 AI 需要 LLM API Key");
+              return;
+            }
+          }
+          setStatusMsg("截圖中…");
+          try {
+            const shot = await invoke<{ base64Png?: string; base64_png?: string }>(
+              "take_screenshot_region",
+              {
+                x: event.payload.x,
+                y: event.payload.y,
+                w: event.payload.w,
+                h: event.payload.h,
+              }
+            );
+            const imageBase64 = shot.base64Png ?? shot.base64_png ?? "";
+            if (!imageBase64) {
+              setStatusMsg("截圖失敗：無可用影像");
+              return;
+            }
+            const instruction = "請描述這張截圖的重點，並用條列給出下一步建議。";
+            const screenshotOutputMode = "PreviewStream";
+            store.setCurrentMode("C");
+            store.setLlmOutput("");
+            store.setIsLlmLoading(true);
+            store.setLlmError("");
+            store.setLastSelectedText("");
+            store.setLastInstruction(instruction);
+            await emit("talkflow://preview-session", {
+              selectedText: "",
+              instruction,
+            });
+            const previewWin = await WebviewWindow.getByLabel("preview");
+            if (previewWin) {
+              await previewWin.show();
+              await previewWin.setFocus();
+            }
+            await invoke("call_llm_with_image", {
+              imageBase64,
+              instruction,
+              outputMode: screenshotOutputMode,
+              provider: store.llmProvider,
+              model: store.llmModel,
+              preferredLanguage: store.preferredLanguage,
+            });
+            setStatusMsg("截圖分析中…");
+          } catch (err) {
+            console.error("[App] screenshot flow failed:", err);
+            setStatusMsg("截圖問 AI 失敗");
+          }
+        }
+      );
 
       // ── 3. STT final result → route transcript ──
       await safeRegister<{ text: string }>("stt://final", async (event) => {

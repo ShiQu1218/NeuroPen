@@ -44,6 +44,7 @@ interface AppState {
   llmModel: string;
   incognito: boolean;
   hotkey: string;
+  screenshotHotkey: string;
   sttEngine: SttEngine;
   sttOutputStrategy: SttOutputStrategy;
   punctuationMode: PunctuationMode;
@@ -87,6 +88,7 @@ interface AppState {
   setLlmModel: (model: string) => void;
   setIncognito: (on: boolean) => void;
   setHotkey: (hotkey: string) => void;
+  setScreenshotHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
   setSttOutputStrategy: (strategy: SttOutputStrategy) => void;
   setPunctuationMode: (mode: PunctuationMode) => void;
@@ -133,6 +135,7 @@ export const useAppStore = create<AppState>()(
       llmModel: "gpt-4o-mini",
       incognito: false,
       hotkey: "Alt+`",
+      screenshotHotkey: "Alt+S",
       sttEngine: "openAi",
       sttOutputStrategy: "raw",
       punctuationMode: "balanced",
@@ -174,6 +177,7 @@ export const useAppStore = create<AppState>()(
       setLlmModel: (model) => set({ llmModel: model }),
       setIncognito: (on) => set({ incognito: on }),
       setHotkey: (hotkey) => set({ hotkey }),
+      setScreenshotHotkey: (screenshotHotkey) => set({ screenshotHotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
       setSttOutputStrategy: (strategy) => set({ sttOutputStrategy: strategy }),
       setPunctuationMode: (mode) => set({ punctuationMode: mode }),
@@ -231,6 +235,7 @@ export const useAppStore = create<AppState>()(
         llmModel: state.llmModel,
         incognito: state.incognito,
         hotkey: state.hotkey,
+        screenshotHotkey: state.screenshotHotkey,
         sttEngine: state.sttEngine,
         sttOutputStrategy: state.sttOutputStrategy,
         punctuationMode: state.punctuationMode,
