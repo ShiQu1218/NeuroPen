@@ -540,7 +540,7 @@ pub fn start_streaming_stt(
                     }
                 };
                 if let Ok(raw_text) = result {
-                    let text = deduplicate_transcript(&raw_text);
+                    let text = sanitize_transcript_text(&raw_text);
                     if !text.is_empty() {
                         let _ = app.emit("stt://partial", SttResult { text });
                     }
@@ -558,6 +558,14 @@ pub fn start_streaming_stt(
         if !accumulated.is_empty() {
             let stt_start = std::time::Instant::now();
             let duration_secs = accumulated.len() as f32 / TARGET_SAMPLE_RATE as f32;
+            if is_effective_silence(&accumulated) {
+                println!("[stt] Effective silence detected in streaming finalization; skipping transcript");
+                let _ = app.emit("stt://final", SttResult {
+                    text: String::new(),
+                });
+                STREAMING_ACTIVE.store(false, Ordering::SeqCst);
+                return;
+            }
             let result = match &engine {
                 SttEngine::OpenAi => {
                     transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated).await
@@ -575,7 +583,7 @@ pub fn start_streaming_stt(
             let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
             match result {
                 Ok(raw_text) => {
-                    let text = deduplicate_transcript(&raw_text);
+                    let text = sanitize_transcript_text(&raw_text);
                     let _ = app.emit("stt://metrics", serde_json::json!({
                         "durationMs": stt_duration_ms,
                         "audioLengthSecs": duration_secs,
@@ -662,6 +670,13 @@ pub fn stop_recording(
 
     let duration_secs = samples.len() as f32 / TARGET_SAMPLE_RATE as f32;
     println!("[stt] Audio duration: {:.2}s", duration_secs);
+    if is_effective_silence(&samples) {
+        println!("[stt] Effective silence detected; skipping transcript");
+        let _ = app.emit("stt://final", SttResult {
+            text: String::new(),
+        });
+        return Ok(());
+    }
 
     // Spawn async task to transcribe
     let app_clone = app.clone();
@@ -682,7 +697,7 @@ pub fn stop_recording(
             Ok(raw_text) => {
                 #[cfg(debug_assertions)]
                 println!("[stt] Raw transcript: {:?}", raw_text);
-                let text = deduplicate_transcript(&raw_text);
+                let text = sanitize_transcript_text(&raw_text);
                 #[cfg(debug_assertions)]
                 if text != raw_text {
                     println!("[stt] Deduped transcript: {:?}", text);
@@ -1017,6 +1032,64 @@ fn deduplicate_transcript(text: &str) -> String {
     trimmed.to_string()
 }
 
+fn estimate_audio_levels(samples: &[f32]) -> (f32, f32) {
+    if samples.is_empty() {
+        return (0.0, 0.0);
+    }
+    let mut sum_sq = 0.0f64;
+    let mut peak = 0.0f32;
+    for sample in samples {
+        let amp = sample.abs();
+        sum_sq += (amp as f64) * (amp as f64);
+        if amp > peak {
+            peak = amp;
+        }
+    }
+    let rms = (sum_sq / samples.len() as f64).sqrt() as f32;
+    (rms, peak)
+}
+
+fn is_effective_silence(samples: &[f32]) -> bool {
+    if samples.is_empty() {
+        return true;
+    }
+    let (rms, peak) = estimate_audio_levels(samples);
+    rms < 0.006 && peak < 0.03
+}
+
+fn sanitize_transcript_text(text: &str) -> String {
+    let deduped = deduplicate_transcript(text);
+    let trimmed = deduped.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    let normalized = trimmed
+        .trim_matches(|c: char| {
+            c == '[' || c == ']' || c == '(' || c == ')' || c.is_whitespace()
+        })
+        .trim();
+    if normalized.is_empty() {
+        return String::new();
+    }
+
+    if normalized.contains("字幕製作")
+        || normalized.contains("字幕组")
+        || normalized.contains("CC字幕")
+    {
+        return String::new();
+    }
+
+    if (trimmed.starts_with('[') || trimmed.starts_with('('))
+        && normalized.chars().count() <= 16
+        && normalized.contains("拜拜")
+    {
+        return String::new();
+    }
+
+    normalized.to_string()
+}
+
 /// Encode f32 PCM samples as a WAV file in memory (16kHz mono 16-bit).
 fn encode_wav(samples: &[f32]) -> Vec<u8> {
     let num_samples = samples.len();
@@ -1193,5 +1266,21 @@ mod tests {
             deduplicate_transcript("今天天氣很好今天天氣很好"),
             "今天天氣很好"
         );
+    }
+
+    #[test]
+    fn test_sanitize_subtitle_hallucination() {
+        assert_eq!(sanitize_transcript_text("[(字幕製作:貝爾)]"), "");
+    }
+
+    #[test]
+    fn test_sanitize_bracket_bye_hallucination() {
+        assert_eq!(sanitize_transcript_text("[拜拜~]"), "");
+    }
+
+    #[test]
+    fn test_effective_silence_detection() {
+        let samples = vec![0.0001f32; 16000];
+        assert!(is_effective_silence(&samples));
     }
 }

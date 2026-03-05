@@ -59,6 +59,7 @@ interface AppState {
   ttsRate: string;
   ttsPitch: string;
   translationTarget: TranslationTarget;
+  historyEnabled: boolean;
 
   // --- Runtime state (not persisted) ---
   isRecording: boolean;
@@ -113,6 +114,7 @@ interface AppState {
   setTtsRate: (rate: string) => void;
   setTtsPitch: (pitch: string) => void;
   setTranslationTarget: (target: TranslationTarget) => void;
+  setHistoryEnabled: (enabled: boolean) => void;
   setIsTtsPlaying: (playing: boolean) => void;
   setPartialTranscript: (text: string) => void;
   setSttDurationMs: (ms: number) => void;
@@ -146,6 +148,7 @@ export const useAppStore = create<AppState>()(
       ttsRate: "+0%",
       ttsPitch: "+0Hz",
       translationTarget: "off",
+      historyEnabled: true,
 
       isRecording: false,
       selectedText: "",
@@ -198,6 +201,7 @@ export const useAppStore = create<AppState>()(
       setTtsRate: (rate) => set({ ttsRate: rate }),
       setTtsPitch: (pitch) => set({ ttsPitch: pitch }),
       setTranslationTarget: (target) => set({ translationTarget: target }),
+      setHistoryEnabled: (enabled) => set({ historyEnabled: enabled }),
       setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
       setPartialTranscript: (text) => set({ partialTranscript: text }),
       setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
@@ -242,6 +246,7 @@ export const useAppStore = create<AppState>()(
         ttsRate: state.ttsRate,
         ttsPitch: state.ttsPitch,
         translationTarget: state.translationTarget,
+        historyEnabled: state.historyEnabled,
       }),
     }
   )

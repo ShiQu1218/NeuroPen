@@ -23,6 +23,7 @@ import {
   type AppLanguage,
   type LlmProvider,
   type PreferredLanguage,
+  type TranslationTarget,
   type QuickActionCommand,
   type SttOutputStrategy,
   type PunctuationMode,
@@ -141,6 +142,7 @@ export default function Settings() {
     ttsRate, setTtsRate,
     ttsPitch, setTtsPitch,
     translationTarget, setTranslationTarget,
+    historyEnabled, setHistoryEnabled,
   } = useAppStore();
   const { t } = useI18n();
   const sectionLabelKey: Record<SettingsSection, TranslationKey> = {
@@ -211,6 +213,8 @@ export default function Settings() {
   const [draftLaunchOnStartup, setDraftLaunchOnStartup] = useState(launchOnStartup);
   const [draftQuickActionCommands, setDraftQuickActionCommands] = useState<QuickActionCommand[]>(quickActionCommands);
   const [draftLanguage, setDraftLanguage] = useState<AppLanguage>(language);
+  const [draftHistoryEnabled, setDraftHistoryEnabled] = useState(historyEnabled);
+  const [draftTranslationTarget, setDraftTranslationTarget] = useState<TranslationTarget>(translationTarget);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [audioDevicesLoading, setAudioDevicesLoading] = useState(false);
   const [localModels, setLocalModels] = useState<LocalSttModel[]>([]);
@@ -291,6 +295,8 @@ export default function Settings() {
     setDraftLaunchOnStartup(launchOnStartup);
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
+    setDraftHistoryEnabled(historyEnabled);
+    setDraftTranslationTarget(translationTarget);
   }, [
     wakeWord,
     hotkey,
@@ -307,6 +313,8 @@ export default function Settings() {
     launchOnStartup,
     quickActionCommands,
     language,
+    historyEnabled,
+    translationTarget,
     localModels,
     sttModelPath,
   ]);
@@ -393,6 +401,10 @@ export default function Settings() {
       return;
     }
     const { engine: nextSttEngine, modelPath: nextSttModelPath } = resolveEngineAndPathByModel(draftSttModelChoice);
+    const nextTranslationTarget =
+      draftSttOutputStrategy === "llmRefine"
+        ? draftTranslationTarget
+        : "off";
     const nextVocabularyTerms = draftVocabularyTerms
       .split(/\r?\n|,/)
       .map((term) => term.trim())
@@ -438,6 +450,8 @@ export default function Settings() {
       setLaunchOnStartup(draftLaunchOnStartup);
       setQuickActionCommands(nextQuickActionCommands);
       setLanguage(draftLanguage);
+      setHistoryEnabled(draftHistoryEnabled);
+      setTranslationTarget(nextTranslationTarget);
       await invoke("set_runtime_stt_config", {
         engine: nextSttEngine,
         modelPath: nextSttModelPath,
@@ -459,6 +473,8 @@ export default function Settings() {
         launchOnStartup: draftLaunchOnStartup,
         language: draftLanguage,
         quickActionCommands: nextQuickActionCommands,
+        historyEnabled: draftHistoryEnabled,
+        translationTarget: nextTranslationTarget,
       });
 
       setHotkeyStatus("");
@@ -498,6 +514,8 @@ export default function Settings() {
     setDraftLaunchOnStartup(launchOnStartup);
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
+    setDraftHistoryEnabled(historyEnabled);
+    setDraftTranslationTarget(translationTarget);
     setHotkeyStatus("");
     setHotkeyErrorMessage("");
     setSettingsSaveStatus("");
@@ -615,6 +633,8 @@ export default function Settings() {
             microphoneSource: draftMicrophoneSource,
             launchOnStartup: draftLaunchOnStartup,
             language: draftLanguage,
+            historyEnabled: draftHistoryEnabled,
+            translationTarget: draftSttOutputStrategy === "llmRefine" ? draftTranslationTarget : "off",
           });
         }
       },
@@ -648,6 +668,8 @@ export default function Settings() {
       draftMicrophoneSource !== microphoneSource ||
       draftLaunchOnStartup !== launchOnStartup ||
       draftLanguage !== language ||
+      draftHistoryEnabled !== historyEnabled ||
+      draftTranslationTarget !== translationTarget ||
       JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands),
     [
       draftWakeWord,
@@ -680,6 +702,10 @@ export default function Settings() {
       launchOnStartup,
       draftLanguage,
       language,
+      draftHistoryEnabled,
+      historyEnabled,
+      draftTranslationTarget,
+      translationTarget,
       draftQuickActionCommands,
       quickActionCommands,
     ],
@@ -938,7 +964,10 @@ export default function Settings() {
                       name="sttOutputStrategy"
                       value="raw"
                       checked={draftSttOutputStrategy === "raw"}
-                      onChange={() => setDraftSttOutputStrategy("raw")}
+                      onChange={() => {
+                        setDraftSttOutputStrategy("raw");
+                        setDraftTranslationTarget("off");
+                      }}
                     />
                     純 STT 直出
                   </label>
@@ -953,6 +982,32 @@ export default function Settings() {
                     先經 LLM 潤飾
                   </label>
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-medium">{t("settings.translation.label")}</label>
+                <select
+                  className="w-full input-field px-2 py-1"
+                  value={draftTranslationTarget}
+                  onChange={(e) => setDraftTranslationTarget(e.target.value as TranslationTarget)}
+                  disabled={draftSttOutputStrategy !== "llmRefine"}
+                >
+                  <option value="off">{t("settings.translation.off")}</option>
+                  <option value="en-US">English</option>
+                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
+                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
+                  <option value="ja-JP">{t("settings.language.ja-JP")}</option>
+                  <option value="ko-KR">{t("settings.language.ko-KR")}</option>
+                  <option value="es-ES">{t("settings.language.es-ES")}</option>
+                  <option value="de-DE">{t("settings.language.de-DE")}</option>
+                  <option value="fr-FR">{t("settings.language.fr-FR")}</option>
+                  <option value="ru-RU">{t("settings.language.ru-RU")}</option>
+                  <option value="ar-SA">{t("settings.language.ar-SA")}</option>
+                </select>
+                <p className="text-xs text-gray-500">{t("settings.translation.hint")}</p>
+                {draftSttOutputStrategy !== "llmRefine" && (
+                  <p className="text-xs text-amber-700">需先開啟「先經 LLM 潤飾」才可啟用即時翻譯。</p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -975,9 +1030,15 @@ export default function Settings() {
                     type="checkbox"
                     checked={draftContextAwareTone}
                     onChange={(e) => setDraftContextAwareTone(e.target.checked)}
+                    disabled={draftSttOutputStrategy !== "llmRefine"}
                   />
                   根據目前前景應用程式調整潤飾語氣
                 </label>
+                {draftSttOutputStrategy !== "llmRefine" && (
+                  <p className="text-xs text-amber-700">
+                    需先開啟「先經 LLM 潤飾」才會生效。
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -1294,27 +1355,9 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Translation Mode (Feature 7) */}
               <div className="mt-4 pt-3 border-t border-zinc-200">
-                <label className="text-xs font-medium">{t("settings.translation.label")}</label>
-                <select
-                  className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
-                  value={translationTarget}
-                  onChange={(e) => setTranslationTarget(e.target.value as any)}
-                >
-                  <option value="off">{t("settings.translation.off")}</option>
-                  <option value="en-US">English</option>
-                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
-                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-                  <option value="ja-JP">{t("settings.language.ja-JP")}</option>
-                  <option value="ko-KR">{t("settings.language.ko-KR")}</option>
-                  <option value="es-ES">{t("settings.language.es-ES")}</option>
-                  <option value="de-DE">{t("settings.language.de-DE")}</option>
-                  <option value="fr-FR">{t("settings.language.fr-FR")}</option>
-                  <option value="ru-RU">{t("settings.language.ru-RU")}</option>
-                  <option value="ar-SA">{t("settings.language.ar-SA")}</option>
-                </select>
-                <p className="text-[11px] text-zinc-500 mt-0.5">{t("settings.translation.hint")}</p>
+                <label className="text-xs font-medium">{t("settings.screenshot.label")}</label>
+                <p className="text-[11px] text-zinc-500 mt-0.5">{t("settings.screenshot.hint")}</p>
               </div>
             </>
           )}
@@ -1334,7 +1377,23 @@ export default function Settings() {
           )}
 
           {activeSection === "history" && (
-            <HistoryPanel />
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <label className="font-medium">啟用歷史紀錄</label>
+                <button
+                  onClick={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${draftHistoryEnabled ? "bg-blue-500" : "bg-gray-300"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${draftHistoryEnabled ? "translate-x-5" : ""}`}
+                  />
+                </button>
+              </div>
+              <p className="text-xs text-zinc-500">
+                關閉後將停止寫入新紀錄，既有紀錄可繼續查閱與手動清除。
+              </p>
+              <HistoryPanel />
+            </div>
           )}
           </div>
         </div>

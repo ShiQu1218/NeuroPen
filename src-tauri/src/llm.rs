@@ -169,7 +169,7 @@ fn build_prompt(selected_text: &str, instruction: &str, preferred_language: Opti
                 \nRespond in the same language the user types in.{language_hint}"
             ),
             format!(
-                "Highlighted text: \u{300C}{selected_text}\u{300D}\n\nUser instruction: {instruction}\nQuestion-like: {}",
+                "Highlighted text:\n{selected_text}\n\nUser instruction: {instruction}\nQuestion-like: {}",
                 if question_like { "yes" } else { "no" }
             ),
         )

@@ -3,6 +3,7 @@
 //! - Trigger hotkey (configurable) pressed  → emit `hotkey://press`
 //! - Trigger hotkey released                → emit `hotkey://release`
 //! - `Alt+Z` pressed                       → emit `hotkey://undo`
+//! - `Alt+S` pressed                       → emit `hotkey://screenshot`
 //!
 //! Uses `tauri-plugin-global-shortcut` with a **single global handler**
 //! instead of per-shortcut `on_shortcut()` calls. This avoids the ghost-
@@ -19,6 +20,11 @@ static CURRENT_TRIGGER: Mutex<Option<Shortcut>> = Mutex::new(None);
 /// The fixed undo shortcut.
 fn undo_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::KeyZ)
+}
+
+/// The fixed screenshot shortcut.
+fn screenshot_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::ALT), Code::KeyS)
 }
 
 /// Build the plugin with a single global handler that dispatches events
@@ -48,6 +54,9 @@ pub fn build_plugin<R: Runtime>() -> TauriPlugin<R> {
             } else if *shortcut == undo_shortcut() && event.state == ShortcutState::Pressed {
                 let _ = app.emit("hotkey://undo", ());
                 println!("[hotkey] Alt+Z triggered (undo)");
+            } else if *shortcut == screenshot_shortcut() && event.state == ShortcutState::Pressed {
+                let _ = app.emit("hotkey://screenshot", ());
+                println!("[hotkey] Alt+S triggered (screenshot)");
             }
         })
         .build()
@@ -59,6 +68,16 @@ pub fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::E
     if !app.global_shortcut().is_registered(sc) {
         app.global_shortcut().register(sc)?;
         println!("[hotkey] Registered undo shortcut (Alt+Z)");
+    }
+    Ok(())
+}
+
+/// Register the screenshot hotkey (Alt+S). Call once after app handle is ready.
+pub fn register_screenshot(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let sc = screenshot_shortcut();
+    if !app.global_shortcut().is_registered(sc) {
+        app.global_shortcut().register(sc)?;
+        println!("[hotkey] Registered screenshot shortcut (Alt+S)");
     }
     Ok(())
 }

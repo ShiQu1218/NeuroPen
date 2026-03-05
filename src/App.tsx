@@ -11,7 +11,13 @@ import QuickActionIcon from "./components/QuickActionIcon";
 import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
 import { useAppStore } from "./store/useAppStore";
-import type { AppLanguage, LlmProvider, PreferredLanguage, PunctuationMode } from "./store/useAppStore";
+import type {
+  AppLanguage,
+  LlmProvider,
+  PreferredLanguage,
+  PunctuationMode,
+  TranslationTarget,
+} from "./store/useAppStore";
 import { clampToMonitorBounds } from "./utils/windowBounds";
 
 /**
@@ -29,7 +35,7 @@ const preventCloseDestroy = async (label: string) => {
 
 const inferAppToneHint = (windowTitle: string) => {
   const lower = windowTitle.toLowerCase();
-  if (/(word|excel|powerpoint|notion|docs|outlook)/.test(lower)) {
+  if (/(word|excel|powerpoint|notion|docs|outlook|gmail|mail\.google)/.test(lower)) {
     return "Use formal and concise business writing style.";
   }
   if (/(discord|slack|line|wechat|telegram)/.test(lower)) {
@@ -70,6 +76,22 @@ const isLikelyUnexpectedEnglishTranslation = (original: string, refined: string)
   if (!condensed) return false;
   const latinCount = (condensed.match(/[A-Za-z]/g) ?? []).length;
   return latinCount / condensed.length > 0.6;
+};
+
+const stripWrappingQuotes = (text: string) => {
+  const pairs: Array<[string, string]> = [
+    ["「", "」"],
+    ["『", "』"],
+    ["\"", "\""],
+    ["'", "'"],
+  ];
+  const trimmed = text.trim();
+  for (const [left, right] of pairs) {
+    if (trimmed.startsWith(left) && trimmed.endsWith(right) && trimmed.length > left.length + right.length) {
+      return trimmed.slice(left.length, trimmed.length - right.length).trim();
+    }
+  }
+  return trimmed;
 };
 
 function App() {
@@ -122,6 +144,8 @@ function MainWindow() {
     setPreferredLanguage,
     setMicrophoneSource,
     setLaunchOnStartup,
+    setHistoryEnabled,
+    setTranslationTarget,
     resetSession,
   } = useAppStore();
 
@@ -246,6 +270,8 @@ function MainWindow() {
         microphoneSource?: string;
         launchOnStartup?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
+        historyEnabled?: boolean;
+        translationTarget?: TranslationTarget;
       }>(
         "talkflow://settings-saved",
         (event) => {
@@ -305,6 +331,12 @@ function MainWindow() {
           }
           if (payload.quickActionCommands) {
             setQuickActionCommands(payload.quickActionCommands);
+          }
+          if (typeof payload.historyEnabled === "boolean") {
+            setHistoryEnabled(payload.historyEnabled);
+          }
+          if (payload.translationTarget) {
+            setTranslationTarget(payload.translationTarget);
           }
           setStatusMsg("設定已更新");
           setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
@@ -492,10 +524,73 @@ function MainWindow() {
         await stopRecordingNow();
       });
 
+      await safeRegister("hotkey://screenshot", async () => {
+        const store = useAppStore.getState();
+        if (store.isRecording) {
+          return;
+        }
+        if (store.incognito) {
+          setStatusMsg("隱私模式：截圖問 AI 已停用");
+          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+          return;
+        }
+        if (store.llmProvider !== "ollama") {
+          const hasLlmKey = await invoke<boolean>("has_api_key").catch(() => false);
+          if (!hasLlmKey) {
+            setSttError("請先在設定中輸入 LLM API Key");
+            setStatusMsg("截圖問 AI 需要 LLM API Key");
+            return;
+          }
+        }
+        setStatusMsg("截圖中…");
+        try {
+          const shot = await invoke<{ base64Png?: string; base64_png?: string }>("take_screenshot");
+          const imageBase64 = shot.base64Png ?? shot.base64_png ?? "";
+          if (!imageBase64) {
+            setStatusMsg("截圖失敗：無可用影像");
+            return;
+          }
+          const instruction = "請描述這張截圖的重點，並用條列給出下一步建議。";
+          const screenshotOutputMode = "PreviewStream";
+          store.setCurrentMode("C");
+          store.setLlmOutput("");
+          store.setIsLlmLoading(true);
+          store.setLlmError("");
+          store.setLastSelectedText("");
+          store.setLastInstruction(instruction);
+          await emit("talkflow://preview-session", {
+            selectedText: "",
+            instruction,
+          });
+          const previewWin = await WebviewWindow.getByLabel("preview");
+          if (previewWin) {
+            await previewWin.show();
+            await previewWin.setFocus();
+          }
+          await invoke("call_llm_with_image", {
+            imageBase64,
+            instruction,
+            outputMode: screenshotOutputMode,
+            provider: store.llmProvider,
+            model: store.llmModel,
+            preferredLanguage: store.preferredLanguage,
+          });
+          setStatusMsg("截圖分析中…");
+        } catch (err) {
+          console.error("[App] screenshot flow failed:", err);
+          setStatusMsg("截圖問 AI 失敗");
+        }
+      });
+
       // ── 3. STT final result → route transcript ──
       await safeRegister<{ text: string }>("stt://final", async (event) => {
         const transcript = event.payload.text;
         if (import.meta.env.DEV) console.log("[App] stt://final:", transcript);
+        if (!transcript.trim()) {
+          setStatusMsg("未偵測到有效語音");
+          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 1500);
+          return;
+        }
 
         const store = useAppStore.getState();
         store.setTranscript(transcript);
@@ -520,7 +615,18 @@ function MainWindow() {
           if (mode === "A") {
             // ── Mode A — inject STT text directly ──
             let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
-            if (store.sttOutputStrategy === "llmRefine" && !store.incognito) {
+            const shouldRefine = store.sttOutputStrategy === "llmRefine" && !store.incognito;
+            const shouldTranslate =
+              store.sttOutputStrategy === "llmRefine" &&
+              store.translationTarget &&
+              store.translationTarget !== "off" &&
+              !store.incognito;
+            const llmNeedsApiKey = store.llmProvider !== "ollama";
+            let llmReady = true;
+            if (llmNeedsApiKey && (shouldRefine || shouldTranslate)) {
+              llmReady = await invoke<boolean>("has_api_key").catch(() => false);
+            }
+            if (shouldRefine && llmReady) {
               try {
                 setStatusMsg("LLM 潤飾中…");
                 const title = store.contextAwareTone
@@ -538,7 +644,7 @@ function MainWindow() {
                   preferredLanguage: store.preferredLanguage,
                 });
                 if (refined?.trim()) {
-                  const candidate = refined.trim();
+                  const candidate = stripWrappingQuotes(refined);
                   if (!isLikelyUnexpectedEnglishTranslation(finalText, candidate)) {
                     finalText = candidate;
                   }
@@ -546,9 +652,11 @@ function MainWindow() {
               } catch (err) {
                 console.warn("[App] call_llm_text failed, fallback to STT output:", err);
               }
+            } else if (shouldRefine && !llmReady) {
+              setStatusMsg("未設定 LLM API Key，已略過潤飾");
             }
             // Feature 7: Live translation mode
-            if (store.translationTarget && store.translationTarget !== "off" && !store.incognito) {
+            if (shouldTranslate && llmReady) {
               try {
                 setStatusMsg("翻譯中…");
                 const translated = await invoke<string>("call_llm_text", {
@@ -563,7 +671,12 @@ function MainWindow() {
                 }
               } catch (err) {
                 console.warn("[App] Translation failed, using original:", err);
+                setSttError("即時翻譯失敗，已輸出原文");
+                setStatusMsg("即時翻譯失敗，已輸出原文");
               }
+            } else if (shouldTranslate && !llmReady) {
+              setSttError("未設定 LLM API Key，無法使用即時翻譯");
+              setStatusMsg("未設定 LLM API Key，已輸出原文");
             }
 
             setStatusMsg("注入文字中…");
@@ -582,14 +695,16 @@ function MainWindow() {
             await invoke("restore_clipboard");
 
             // Feature 3: Save to history
-            void invoke("history_save", {
-              mode: "A",
-              inputText: result.transcript,
-              instruction: "",
-              output: finalText,
-              provider: store.llmProvider,
-              model: store.llmModel,
-            });
+            if (store.historyEnabled && !store.incognito) {
+              void invoke("history_save", {
+                mode: "A",
+                inputText: result.transcript,
+                instruction: "",
+                output: finalText,
+                provider: store.llmProvider,
+                model: store.llmModel,
+              });
+            }
 
             setStatusMsg("已注入文字");
             setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
@@ -678,7 +793,7 @@ function MainWindow() {
       // ── 3.5. History save on LLM done (Feature 3) ──
       await safeRegister("llm://done", () => {
         const s = useAppStore.getState();
-        if (s.llmOutput.trim() && !s.incognito) {
+        if (s.llmOutput.trim() && !s.incognito && s.historyEnabled) {
           const mode = s.currentMode || "C";
           void invoke("history_save", {
             mode,

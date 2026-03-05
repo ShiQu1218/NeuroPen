@@ -18,6 +18,8 @@ export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fallbackUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const fallbackTtsActiveRef = useRef(false);
   const { t } = useI18n();
 
   const llmOutput = useAppStore((s) => s.llmOutput);
@@ -36,6 +38,75 @@ export default function PreviewWindow() {
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const setIsTtsPlaying = useAppStore((s) => s.setIsTtsPlaying);
+
+  const parseRate = (value?: string | null) => {
+    if (!value) return 1;
+    const m = value.match(/([+-]?\d+(?:\.\d+)?)%/);
+    if (!m) return 1;
+    return Math.min(10, Math.max(0.1, 1 + Number(m[1]) / 100));
+  };
+
+  const parsePitch = (value?: string | null) => {
+    if (!value) return 1;
+    const m = value.match(/([+-]?\d+(?:\.\d+)?)/);
+    if (!m) return 1;
+    return Math.min(2, Math.max(0, 1 + Number(m[1]) / 100));
+  };
+
+  const stopFallbackTts = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    fallbackUtteranceRef.current = null;
+    fallbackTtsActiveRef.current = false;
+    setIsTtsPlaying(false);
+  }, [setIsTtsPlaying]);
+
+  const speakWithFallback = useCallback(
+    async (text: string, voice?: string | null, rate?: string | null, pitch?: string | null) => {
+      try {
+        fallbackTtsActiveRef.current = false;
+        await invoke("tts_speak", {
+          text,
+          voice: voice || null,
+          rate: rate || null,
+          pitch: pitch || null,
+        });
+      } catch (err) {
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+          setLlmError(`TTS 失敗：${String(err)}`);
+          setIsTtsPlaying(false);
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(text);
+        if (voice) {
+          const targetVoice = window.speechSynthesis
+            .getVoices()
+            .find((v) => v.name === voice || v.voiceURI === voice);
+          if (targetVoice) utterance.voice = targetVoice;
+        }
+        utterance.rate = parseRate(rate);
+        utterance.pitch = parsePitch(pitch);
+        utterance.onend = () => {
+          fallbackTtsActiveRef.current = false;
+          fallbackUtteranceRef.current = null;
+          setIsTtsPlaying(false);
+        };
+        utterance.onerror = () => {
+          fallbackTtsActiveRef.current = false;
+          fallbackUtteranceRef.current = null;
+          setIsTtsPlaying(false);
+          setLlmError("TTS 播放失敗");
+        };
+        fallbackUtteranceRef.current = utterance;
+        fallbackTtsActiveRef.current = true;
+        setIsTtsPlaying(true);
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      }
+    },
+    [setIsTtsPlaying, setLlmError]
+  );
 
   const keepPreviewInBounds = async (width: number, height: number) => {
     try {
@@ -78,12 +149,12 @@ export default function PreviewWindow() {
 
         // Auto TTS if enabled
         if (state.ttsEnabled && state.llmOutput.trim()) {
-          void invoke("tts_speak", {
-            text: state.llmOutput,
-            voice: state.ttsVoice || null,
-            rate: state.ttsRate || null,
-            pitch: state.ttsPitch || null,
-          });
+          void speakWithFallback(
+            state.llmOutput,
+            state.ttsVoice || null,
+            state.ttsRate || null,
+            state.ttsPitch || null
+          );
         }
       });
       await register<{ message: string }>("llm://error", (event) => {
@@ -128,12 +199,15 @@ export default function PreviewWindow() {
 
       // TTS events
       await register("tts://start", () => {
+        fallbackTtsActiveRef.current = false;
         useAppStore.getState().setIsTtsPlaying(true);
       });
       await register("tts://done", () => {
+        fallbackTtsActiveRef.current = false;
         useAppStore.getState().setIsTtsPlaying(false);
       });
       await register("tts://error", () => {
+        fallbackTtsActiveRef.current = false;
         useAppStore.getState().setIsTtsPlaying(false);
       });
     })();
@@ -142,7 +216,7 @@ export default function PreviewWindow() {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [setLanguage, setPreferredLanguage, setIsTtsPlaying]);
+  }, [setLanguage, setPreferredLanguage, setIsTtsPlaying, speakWithFallback]);
 
   // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {
@@ -201,7 +275,8 @@ export default function PreviewWindow() {
   };
 
   const handleClose = async () => {
-    await invoke("tts_stop");
+    stopFallbackTts();
+    await invoke("tts_stop").catch(() => {});
     await invoke("clear_conversation");
     await invoke("restore_clipboard");
     await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT));
@@ -235,15 +310,19 @@ export default function PreviewWindow() {
 
   const handleTtsToggle = async () => {
     if (isTtsPlaying) {
-      await invoke("tts_stop");
+      if (fallbackTtsActiveRef.current) {
+        stopFallbackTts();
+      } else {
+        await invoke("tts_stop").catch(() => {});
+      }
     } else if (llmOutput.trim()) {
       const state = useAppStore.getState();
-      await invoke("tts_speak", {
-        text: llmOutput,
-        voice: state.ttsVoice || null,
-        rate: state.ttsRate || null,
-        pitch: state.ttsPitch || null,
-      });
+      await speakWithFallback(
+        llmOutput,
+        state.ttsVoice || null,
+        state.ttsRate || null,
+        state.ttsPitch || null
+      );
     }
   };
 

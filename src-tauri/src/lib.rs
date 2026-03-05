@@ -634,6 +634,9 @@ pub fn run() {
             if let Err(e) = hotkey::register_undo(&handle) {
                 eprintln!("[setup] Failed to register undo hotkey: {e}");
             }
+            if let Err(e) = hotkey::register_screenshot(&handle) {
+                eprintln!("[setup] Failed to register screenshot hotkey: {e}");
+            }
 
             // ── hotkey://press → start recording (press-and-hold) ──
             let handle_press = app.handle().clone();

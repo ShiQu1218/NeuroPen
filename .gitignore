@@ -36,3 +36,6 @@ env/
 !CLAUDE.md
 !README.md
 !README.zh-TW.md
+
+# Application specific
+.claude/
