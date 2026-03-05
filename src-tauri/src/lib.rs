@@ -137,7 +137,7 @@ fn start_streaming_stt(
     engine: stt::SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    let (_effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
+    let (effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
         .lock()
         .ok()
         .and_then(|guard| {
@@ -146,12 +146,7 @@ fn start_streaming_stt(
                 .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
         })
         .unwrap_or((engine, model_path, "auto".to_string()));
-    let derived_engine = if effective_model_path.trim().is_empty() {
-        stt::SttEngine::OpenAi
-    } else {
-        stt::SttEngine::LocalWhisper
-    };
-    stt::start_streaming_stt(app, derived_engine, effective_model_path, effective_stt_language)
+    stt::start_streaming_stt(app, effective_engine, effective_model_path, effective_stt_language)
 }
 
 /// Stop microphone audio capture and transcribe via the selected engine.
@@ -161,7 +156,7 @@ fn stop_recording(
     engine: stt::SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    let (_effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
+    let (effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
         .lock()
         .ok()
         .and_then(|guard| {
@@ -170,12 +165,7 @@ fn stop_recording(
                 .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
         })
         .unwrap_or((engine, model_path, "auto".to_string()));
-    let derived_engine = if effective_model_path.trim().is_empty() {
-        stt::SttEngine::OpenAi
-    } else {
-        stt::SttEngine::LocalWhisper
-    };
-    stt::stop_recording(app, derived_engine, effective_model_path, effective_stt_language)
+    stt::stop_recording(app, effective_engine, effective_model_path, effective_stt_language)
 }
 
 #[tauri::command]

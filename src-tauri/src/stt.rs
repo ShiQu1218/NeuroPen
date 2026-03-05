@@ -603,7 +603,7 @@ pub fn start_streaming_stt(
                         transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated, &stt_language).await
                     }
                     SttEngine::LocalWhisper => {
-                        transcribe_local(&model_path, &accumulated).await
+                        transcribe_local(&model_path, &accumulated, &stt_language).await
                     }
                     SttEngine::Parakeet => {
                         transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &accumulated).await
@@ -644,7 +644,7 @@ pub fn start_streaming_stt(
                     transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated, &stt_language).await
                 }
                 SttEngine::LocalWhisper => {
-                    transcribe_local(&model_path, &accumulated).await
+                    transcribe_local(&model_path, &accumulated, &stt_language).await
                 }
                 SttEngine::Parakeet => {
                     transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &accumulated).await
@@ -758,7 +758,7 @@ pub fn stop_recording(
         let stt_start = std::time::Instant::now();
         let result = match engine {
             SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples, &stt_language).await,
-            SttEngine::LocalWhisper => transcribe_local(&model_path, &samples).await,
+            SttEngine::LocalWhisper => transcribe_local(&model_path, &samples, &stt_language).await,
             SttEngine::Parakeet => {
                 transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &samples).await
             }
@@ -843,10 +843,10 @@ fn validate_model_path(model_path: &str) -> Result<PathBuf, String> {
 
 /// Transcribe audio using local whisper.cpp via whisper-rs.
 /// When compiled without `--features local-stt`, returns a friendly error immediately.
-async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, String> {
+async fn transcribe_local(model_path: &str, samples: &[f32], stt_language: &str) -> Result<String, String> {
     #[cfg(not(feature = "local-stt"))]
     {
-        let _ = (model_path, samples);
+        let _ = (model_path, samples, stt_language);
         return Err(
             "本地 Whisper 未編譯。請安裝 CMake + MSVC 後以 --features local-stt 重新建置。".into(),
         );
@@ -859,6 +859,7 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
         let canonical = validate_model_path(model_path)?;
         let model_path = canonical.to_string_lossy().to_string();
         let samples: Vec<f32> = samples.to_vec();
+        let stt_language = stt_language.to_string();
 
         tokio::task::spawn_blocking(move || {
             let build_context = |path: &str| -> Result<Arc<WhisperContext>, String> {
@@ -902,7 +903,9 @@ async fn transcribe_local(model_path: &str, samples: &[f32]) -> Result<String, S
 
             let mut state = ctx.create_state().map_err(|e| format!("State error: {e}"))?;
             let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-            params.set_language(Some("zh"));
+            // Force transcription mode (never auto-translate to English).
+            params.set_translate(false);
+            params.set_language(normalize_stt_language(&stt_language));
             params.set_no_context(true);
             params.set_print_realtime(false);
             params.set_print_progress(false);

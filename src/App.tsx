@@ -68,6 +68,24 @@ const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
 const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" =>
   engine === "localWhisper" ? "localWhisper" : "openAi";
 
+const normalizeSttLanguage = (language: unknown): SttLanguage => {
+  switch (String(language ?? "").trim().toLowerCase()) {
+    case "zh":
+    case "en":
+    case "ja":
+    case "ko":
+    case "de":
+    case "fr":
+    case "es":
+    case "ru":
+    case "ar":
+    case "auto":
+      return String(language).trim().toLowerCase() as SttLanguage;
+    default:
+      return "auto";
+  }
+};
+
 const containsNonLatinScript = (text: string) =>
   /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF\u0400-\u04FF\u0600-\u06FF]/.test(text);
 
@@ -200,7 +218,7 @@ function MainWindow() {
       await invoke("set_runtime_stt_config", {
         engine: normalizeSttEngine(String(initialStore.sttEngine)),
         modelPath: initialStore.sttModelPath,
-        sttLanguage: initialStore.sttLanguage,
+        sttLanguage: normalizeSttLanguage(initialStore.sttLanguage),
       }).catch((err) => {
         console.warn("[App] set_runtime_stt_config init failed:", err);
       });
@@ -237,11 +255,11 @@ function MainWindow() {
         const store = useAppStore.getState();
         if (!store.isRecording) return;
         try {
-          const normalizedSttEngine = store.sttModelPath ? "localWhisper" : "openAi";
+          const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
           await invoke("stop_recording", {
             engine: normalizedSttEngine,
-            modelPath: store.sttModelPath,
-            sttLanguage: store.sttLanguage,
+            modelPath: normalizedSttEngine === "localWhisper" ? store.sttModelPath : "",
+            sttLanguage: normalizeSttLanguage(store.sttLanguage),
           });
           store.setIsRecording(false);
           pendingHotkeyReleaseAt = 0;
@@ -307,7 +325,7 @@ function MainWindow() {
             setSttEngine(normalizeSttEngine(payload.sttEngine));
           }
           if (payload.sttLanguage) {
-            setSttLanguage(payload.sttLanguage);
+            setSttLanguage(normalizeSttLanguage(payload.sttLanguage));
           }
           if (typeof payload.sttModelPath === "string") {
             setSttModelPath(payload.sttModelPath);
@@ -316,7 +334,7 @@ function MainWindow() {
             void invoke("set_runtime_stt_config", {
               engine: normalizeSttEngine(payload.sttEngine ?? "openAi"),
               modelPath: typeof payload.sttModelPath === "string" ? payload.sttModelPath : "",
-              sttLanguage: payload.sttLanguage ?? "auto",
+              sttLanguage: normalizeSttLanguage(payload.sttLanguage),
             }).catch((err) => {
               console.warn("[App] set_runtime_stt_config sync failed:", err);
             });
@@ -477,7 +495,7 @@ function MainWindow() {
           }
 
           // Check API key before starting (for OpenAI engine)
-          const sttEngine = store.sttModelPath ? "localWhisper" : "openAi";
+          const sttEngine = normalizeSttEngine(store.sttEngine);
           if (sttEngine === "openAi") {
             const hasKey = await invoke<boolean>("has_stt_api_key");
             if (!hasKey) {
@@ -492,8 +510,8 @@ function MainWindow() {
             await invoke("start_recording");
             // Start streaming partial transcription
             invoke("start_streaming_stt", {
-              engine: store.sttModelPath ? "localWhisper" : "openAi",
-              modelPath: store.sttModelPath || "",
+              engine: sttEngine,
+              modelPath: sttEngine === "localWhisper" ? store.sttModelPath : "",
             }).catch((e) => console.warn("[App] streaming STT start failed:", e));
             setIsRecording(true);
             if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
@@ -510,7 +528,7 @@ function MainWindow() {
         } else {
           // ── Mode A or C ── start recording
           // Check API key before starting (for OpenAI engine)
-          const sttEngine = store.sttModelPath ? "localWhisper" : "openAi";
+          const sttEngine = normalizeSttEngine(store.sttEngine);
           if (sttEngine === "openAi") {
             const hasKey = await invoke<boolean>("has_stt_api_key");
             if (!hasKey) {
@@ -528,7 +546,7 @@ function MainWindow() {
             // Start streaming partial transcription
             invoke("start_streaming_stt", {
               engine: sttEngine,
-              modelPath: store.sttModelPath || "",
+              modelPath: sttEngine === "localWhisper" ? store.sttModelPath : "",
             }).catch((e) => console.warn("[App] streaming STT start failed:", e));
             setIsRecording(true);
             if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
