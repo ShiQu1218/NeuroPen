@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen, emit, emitTo } from "@tauri-apps/api/event";
@@ -11,6 +11,7 @@ import QuickActionIcon from "./components/QuickActionIcon";
 import Settings from "./components/Settings";
 import RecordingIndicator from "./components/RecordingIndicator";
 import ScreenshotOverlay from "./components/ScreenshotOverlay";
+import { useI18n } from "./i18n";
 import { useAppStore } from "./store/useAppStore";
 import type {
   AppLanguage,
@@ -124,7 +125,9 @@ function App() {
 
 /** Main window handles hotkey events and orchestrates the full flow. */
 function MainWindow() {
-  const [, setStatusMsg] = useState("按住熱鍵開始錄音");
+  const { t } = useI18n();
+  const [statusMsg, setStatusMsg] = useState(t("status.readyHoldHotkey"));
+  const statusReadyRef = useRef(false);
 
   const {
     setIsRecording,
@@ -152,6 +155,14 @@ function MainWindow() {
     setScreenshotHotkey,
     resetSession,
   } = useAppStore();
+
+  useEffect(() => {
+    if (!statusReadyRef.current) {
+      statusReadyRef.current = true;
+      return;
+    }
+    void emit("talkflow://status", { message: statusMsg });
+  }, [statusMsg]);
 
   useEffect(() => {
     // `cancelled` flag handles React StrictMode double-mount:
@@ -230,13 +241,13 @@ function MainWindow() {
           });
           store.setIsRecording(false);
           pendingHotkeyReleaseAt = 0;
-          setStatusMsg("辨識中…");
+          setStatusMsg(t("status.recognizing"));
         } catch (err) {
           console.error("[App] stop_recording failed:", err);
           store.setSttError(String(err));
           store.setIsRecording(false);
           pendingHotkeyReleaseAt = 0;
-          setStatusMsg("停止錄音失敗");
+          setStatusMsg(t("status.stopRecordingFailed"));
         }
       };
 
@@ -346,8 +357,8 @@ function MainWindow() {
           if (payload.screenshotHotkey) {
             setScreenshotHotkey(payload.screenshotHotkey);
           }
-          setStatusMsg("設定已更新");
-          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+          setStatusMsg(t("status.settingsUpdated"));
+          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
         }
       );
 
@@ -447,7 +458,7 @@ function MainWindow() {
           // ── Mode B2 ── hide Quick Action Icon, start recording
           setSelectedText(selected_text);
           setCurrentMode("B2");
-          setStatusMsg("文字已選取 — 錄音中…");
+          setStatusMsg(t("status.selectionRecording"));
 
           // Hide Quick Action Icon if it was shown by selection watcher
           const qaWin = await WebviewWindow.getByLabel("quick-action");
@@ -462,8 +473,8 @@ function MainWindow() {
             const hasKey = await invoke<boolean>("has_stt_api_key");
             if (!hasKey) {
               pendingHotkeyReleaseAt = 0;
-              setSttError("請先在設定中輸入 Whisper STT API Key");
-              setStatusMsg("請先設定 STT API Key");
+              setSttError(t("error.sttApiKeyRequired"));
+              setStatusMsg(t("status.setupSttApiKey"));
               return;
             }
           }
@@ -484,7 +495,7 @@ function MainWindow() {
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
-            setStatusMsg("錄音啟動失敗");
+            setStatusMsg(t("status.recordingStartFailed"));
             pendingHotkeyReleaseAt = 0;
           }
         } else {
@@ -495,14 +506,14 @@ function MainWindow() {
             const hasKey = await invoke<boolean>("has_stt_api_key");
             if (!hasKey) {
               pendingHotkeyReleaseAt = 0;
-              setSttError("請先在設定中輸入 Whisper STT API Key");
-              setStatusMsg("請先設定 STT API Key");
+              setSttError(t("error.sttApiKeyRequired"));
+              setStatusMsg(t("status.setupSttApiKey"));
               return;
             }
           }
 
           setCurrentMode("A");
-          setStatusMsg("錄音中… 放開熱鍵停止");
+          setStatusMsg(t("status.recordingReleaseToStop"));
           try {
             await invoke("start_recording");
             // Start streaming partial transcription
@@ -519,7 +530,7 @@ function MainWindow() {
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
-            setStatusMsg("錄音啟動失敗");
+            setStatusMsg(t("status.recordingStartFailed"));
             pendingHotkeyReleaseAt = 0;
           }
         }
@@ -553,13 +564,13 @@ function MainWindow() {
             await overlayWin.show();
             await overlayWin.setFocus();
             await emitTo("screenshot-overlay", "talkflow://screenshot-start");
-            setStatusMsg("拖曳框選截圖範圍，Esc 取消");
+            setStatusMsg(t("status.screenshotDragHint"));
           } else {
-            setStatusMsg("截圖工具不可用");
+            setStatusMsg(t("status.screenshotUnavailable"));
           }
         } catch (err) {
           console.error("[App] screenshot overlay open failed:", err);
-          setStatusMsg("截圖工具開啟失敗");
+          setStatusMsg(t("status.screenshotOpenFailed"));
         }
       });
 
@@ -572,24 +583,24 @@ function MainWindow() {
           }
           const store = useAppStore.getState();
           if (event.payload.cancelled) {
-            setStatusMsg("已取消截圖");
-            setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 1200);
+            setStatusMsg(t("status.screenshotCancelled"));
+            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 1200);
             return;
           }
           if (store.incognito) {
-            setStatusMsg("隱私模式：截圖問 AI 已停用");
-            setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+            setStatusMsg(t("status.screenshotDisabledIncognito"));
+            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
             return;
           }
           if (store.llmProvider !== "ollama") {
             const hasLlmKey = await invoke<boolean>("has_api_key").catch(() => false);
             if (!hasLlmKey) {
-              setSttError("請先在設定中輸入 LLM API Key");
-              setStatusMsg("截圖問 AI 需要 LLM API Key");
+              setSttError(t("error.llmApiKeyRequired"));
+              setStatusMsg(t("status.screenshotNeedsLlmApiKey"));
               return;
             }
           }
-          setStatusMsg("截圖中…");
+          setStatusMsg(t("status.screenshotCapturing"));
           try {
             const shot = await invoke<{ base64Png?: string; base64_png?: string }>(
               "take_screenshot_region",
@@ -602,7 +613,7 @@ function MainWindow() {
             );
             const imageBase64 = shot.base64Png ?? shot.base64_png ?? "";
             if (!imageBase64) {
-              setStatusMsg("截圖失敗：無可用影像");
+              setStatusMsg(t("status.screenshotNoImage"));
               return;
             }
             // Store the screenshot as a pending attachment instead of sending immediately.
@@ -622,10 +633,10 @@ function MainWindow() {
             }
             // Send the screenshot to the preview window via event
             await emit("talkflow://screenshot-attached", { imageBase64 });
-            setStatusMsg("截圖已附加，請輸入問題");
+            setStatusMsg(t("status.screenshotAttachedAsk"));
           } catch (err) {
             console.error("[App] screenshot flow failed:", err);
-            setStatusMsg("截圖問 AI 失敗");
+            setStatusMsg(t("status.screenshotFailed"));
           }
         }
       );
@@ -635,8 +646,8 @@ function MainWindow() {
         const transcript = event.payload.text;
         if (import.meta.env.DEV) console.log("[App] stt://final:", transcript);
         if (!transcript.trim()) {
-          setStatusMsg("未偵測到有效語音");
-          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 1500);
+          setStatusMsg(t("status.noValidSpeech"));
+          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 1500);
           return;
         }
 
@@ -676,7 +687,7 @@ function MainWindow() {
             }
             if (shouldRefine && llmReady) {
               try {
-                setStatusMsg("LLM 潤飾中…");
+                setStatusMsg(t("status.llmRefining"));
                 const title = store.contextAwareTone
                   ? await invoke<string>("get_foreground_window_title")
                   : "";
@@ -701,12 +712,12 @@ function MainWindow() {
                 console.warn("[App] call_llm_text failed, fallback to STT output:", err);
               }
             } else if (shouldRefine && !llmReady) {
-              setStatusMsg("未設定 LLM API Key，已略過潤飾");
+              setStatusMsg(t("status.llmApiMissingSkipRefine"));
             }
             // Feature 7: Live translation mode
             if (shouldTranslate && llmReady) {
               try {
-                setStatusMsg("翻譯中…");
+                setStatusMsg(t("status.translating"));
                 const translated = await invoke<string>("call_llm_text", {
                   selectedText: finalText,
                   instruction: `Translate to ${store.translationTarget}. Output ONLY the translation, nothing else.`,
@@ -719,18 +730,18 @@ function MainWindow() {
                 }
               } catch (err) {
                 console.warn("[App] Translation failed, using original:", err);
-                setSttError("即時翻譯失敗，已輸出原文");
-                setStatusMsg("即時翻譯失敗，已輸出原文");
+                setSttError(t("error.translationFailedOriginal"));
+                setStatusMsg(t("status.translationFailedUsingOriginal"));
               }
             } else if (shouldTranslate && !llmReady) {
-              setSttError("未設定 LLM API Key，無法使用即時翻譯");
-              setStatusMsg("未設定 LLM API Key，已輸出原文");
+              setSttError(t("error.translationNeedsLlmApiKey"));
+              setStatusMsg(t("status.llmApiMissingOriginalOutput"));
             }
 
-            setStatusMsg("注入文字中…");
+            setStatusMsg(t("status.injectingText"));
             const ok = await invoke<boolean>("verify_focus");
             if (!ok) {
-              setStatusMsg("焦點視窗已變更，取消注入。");
+              setStatusMsg(t("status.focusChangedCancelInject"));
               await invoke("restore_clipboard");
               return;
             }
@@ -754,12 +765,12 @@ function MainWindow() {
               });
             }
 
-            setStatusMsg("已注入文字");
-            setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+            setStatusMsg(t("status.textInjected"));
+            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
           } else if (mode === "B2") {
             // ── Mode B2 — voice command on selected text ──
             if (store.incognito) {
-              setStatusMsg("隱私模式：不呼叫 LLM");
+              setStatusMsg(t("status.incognitoNoLlm"));
               return;
             }
             store.setLlmOutput("");
@@ -780,7 +791,7 @@ function MainWindow() {
               }
             }
 
-            setStatusMsg("LLM 處理中…");
+            setStatusMsg(t("status.llmProcessing"));
             await invoke("call_llm", {
               selectedText: store.selectedText,
               instruction: result.transcript,
@@ -791,13 +802,13 @@ function MainWindow() {
             });
             if (store.outputMode === "DirectInject") {
               await invoke("restore_clipboard");
-              setStatusMsg("已注入文字");
-              setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+              setStatusMsg(t("status.textInjected"));
+              setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
             }
           } else if (mode === "C") {
             // ── Mode C — LLM query ──
             if (store.incognito) {
-              setStatusMsg("隱私模式：不呼叫 LLM");
+              setStatusMsg(t("status.incognitoNoLlm"));
               return;
             }
             store.setLlmOutput("");
@@ -817,7 +828,7 @@ function MainWindow() {
               }
             }
 
-            setStatusMsg("LLM 處理中…");
+            setStatusMsg(t("status.llmProcessing"));
             await invoke("call_llm", {
               selectedText: "",
               instruction: result.transcript,
@@ -828,13 +839,13 @@ function MainWindow() {
             });
             if (store.outputMode === "DirectInject") {
               await invoke("restore_clipboard");
-              setStatusMsg("已注入文字");
-              setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+              setStatusMsg(t("status.textInjected"));
+              setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
             }
           }
         } catch (err) {
           console.error("[App] route_transcript error:", err);
-          setStatusMsg("路由失敗: " + String(err));
+          setStatusMsg(t("status.routeFailed", { reason: String(err) }));
         }
       });
 
@@ -868,7 +879,7 @@ function MainWindow() {
         const store = useAppStore.getState();
         store.setSttError(event.payload.message);
         store.setIsRecording(false);
-        setStatusMsg("語音辨識錯誤: " + event.payload.message);
+        setStatusMsg(t("status.sttError", { reason: event.payload.message }));
       });
 
       // ── 5. Undo result ──
@@ -876,11 +887,11 @@ function MainWindow() {
         "talkflow://undo-result",
         (event) => {
           if (event.payload.success) {
-            setStatusMsg("已復原");
+            setStatusMsg(t("status.undoSuccess"));
           } else {
-            setStatusMsg("無法復原: " + (event.payload.reason ?? ""));
+            setStatusMsg(t("status.undoFailed", { reason: event.payload.reason ?? "" }));
           }
-          setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
+          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
         }
       );
     })();

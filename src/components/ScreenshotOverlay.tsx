@@ -7,10 +7,12 @@ import {
 } from "react";
 import { emitTo, listen, TauriEvent } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useI18n } from "../i18n";
 
 type Point = { x: number; y: number };
 
 export default function ScreenshotOverlay() {
+  const { t } = useI18n();
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [dragCurrent, setDragCurrent] = useState<Point | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -229,7 +231,7 @@ export default function ScreenshotOverlay() {
         />
       )}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/70 text-white text-xs">
-        拖曳框選截圖範圍，Esc 取消
+        {t("status.screenshotDragHint")}
       </div>
     </div>
   );

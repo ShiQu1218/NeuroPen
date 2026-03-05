@@ -785,15 +785,15 @@ export default function Settings() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-medium">LLM 輸出偏好語言</label>
+                <label className="font-medium">{t("settings.preferredLanguage.label")}</label>
                 <select
                   className="w-full input-field px-2 py-1"
                   value={draftPreferredLanguage}
                   onChange={(e) => setDraftPreferredLanguage(e.target.value as PreferredLanguage)}
                 >
-                  <option value="auto">跟隨輸入語言（自動）</option>
-                  <option value="zh-TW">繁體中文</option>
-                  <option value="zh-CN">简体中文</option>
+                  <option value="auto">{t("settings.preferredLanguage.auto")}</option>
+                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
+                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
                   <option value="en-US">English</option>
                   <option value="ja-JP">日本語</option>
                   <option value="es-ES">Español</option>
@@ -803,18 +803,18 @@ export default function Settings() {
                   <option value="ar-SA">العربية</option>
                   <option value="ru-RU">Русский</option>
                 </select>
-                <p className="text-xs text-gray-400">控制 LLM 回覆預設語言（除非指令明確要求翻譯）。</p>
+                <p className="text-xs text-gray-400">{t("settings.preferredLanguage.hint")}</p>
               </div>
 
               <div className="space-y-1">
-                <label className="font-medium">開機自動啟動</label>
+                <label className="font-medium">{t("settings.launchOnStartup.label")}</label>
                 <label className="flex items-center gap-2 text-xs text-gray-600">
                   <input
                     type="checkbox"
                     checked={draftLaunchOnStartup}
                     onChange={(e) => setDraftLaunchOnStartup(e.target.checked)}
                   />
-                  登入 Windows 後自動啟動 TalkFlow
+                  {t("settings.launchOnStartup.hint")}
                 </label>
               </div>
 
@@ -917,7 +917,7 @@ export default function Settings() {
             <>
               {/* STT model selector */}
               <div className="space-y-1">
-                <label className="font-medium">STT 模型</label>
+                <label className="font-medium">{t("settings.stt.modelLabel")}</label>
                 <select
                   className="w-full input-field px-2 py-1"
                   value={draftSttModelChoice}
@@ -937,7 +937,7 @@ export default function Settings() {
                       </option>
                     ))}
                 </select>
-                <p className="text-xs text-gray-500">下載選項已集中在下方「模型下載與管理」。</p>
+                <p className="text-xs text-gray-500">{t("settings.stt.modelHint")}</p>
                 {!localSttAvailable && (
                   <div className="mt-1.5 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     <p className="font-medium">{t("settings.stt.localDisabledTitle")}</p>
@@ -951,21 +951,21 @@ export default function Settings() {
               </div>
 
               <div className="space-y-1">
-                <label className="font-medium">麥克風來源</label>
+                <label className="font-medium">{t("settings.stt.microphoneSource")}</label>
                 <select
                   className="w-full input-field px-2 py-1"
                   value={draftMicrophoneSource}
                   onChange={(e) => setDraftMicrophoneSource(e.target.value)}
                   disabled={audioDevicesLoading}
                 >
-                  <option value="">系統預設麥克風</option>
+                  <option value="">{t("settings.stt.defaultMicrophone")}</option>
                   {audioDevices.map((device) => (
                     <option key={device} value={device}>
                       {device}
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500">可切換錄音輸入裝置，儲存後立即生效。</p>
+                <p className="text-xs text-gray-500">{t("settings.stt.microphoneHint")}</p>
               </div>
 
               {draftSttModelChoice === OPENAI_STT_MODEL && (
@@ -1408,7 +1408,7 @@ export default function Settings() {
           {activeSection === "history" && (
             <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <label className="font-medium">啟用歷史紀錄</label>
+                <label className="font-medium">{t("settings.history.enable")}</label>
                 <button
                   onClick={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
                   className={`relative w-10 h-5 rounded-full transition-colors ${draftHistoryEnabled ? "bg-blue-500" : "bg-gray-300"}`}
@@ -1419,7 +1419,7 @@ export default function Settings() {
                 </button>
               </div>
               <p className="text-xs text-zinc-500">
-                關閉後將停止寫入新紀錄，既有紀錄可繼續查閱與手動清除。
+                {t("settings.history.hint")}
               </p>
               <HistoryPanel />
             </div>

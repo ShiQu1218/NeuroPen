@@ -8,11 +8,12 @@
 //! - Ollama (local)
 //!
 //! Emits:
-//!   `llm://token(text)` — output chunk (single full chunk in current implementation)
+//!   `llm://token(text)` — output chunk (true stream when provider supports it)
 //!   `llm://done`        — generation complete
 //!   `llm://error(msg)`  — API/network failure
 
 use once_cell::sync::Lazy;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
@@ -232,6 +233,111 @@ async fn call_openai_compatible(
     extract_openai_text(&parsed).ok_or_else(|| format!("Unexpected LLM response: {body}"))
 }
 
+fn emit_token_chunk(app: &tauri::AppHandle, full_output: &mut String, token: &str) {
+    if token.is_empty() {
+        return;
+    }
+    full_output.push_str(token);
+    let _ = app.emit("llm://token", LlmToken {
+        text: token.to_string(),
+    });
+}
+
+fn handle_openai_stream_data(data: &str, app: &tauri::AppHandle, full_output: &mut String) {
+    if data.is_empty() || data == "[DONE]" {
+        return;
+    }
+    let parsed: serde_json::Value = match serde_json::from_str(data) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    if let Some(token) = parsed["choices"][0]["delta"]["content"].as_str() {
+        emit_token_chunk(app, full_output, token);
+        return;
+    }
+    if let Some(parts) = parsed["choices"][0]["delta"]["content"].as_array() {
+        for part in parts {
+            if let Some(token) = part["text"].as_str() {
+                emit_token_chunk(app, full_output, token);
+            } else if let Some(token) = part.as_str() {
+                emit_token_chunk(app, full_output, token);
+            }
+        }
+        return;
+    }
+    if let Some(token) = parsed["choices"][0]["message"]["content"].as_str() {
+        emit_token_chunk(app, full_output, token);
+    }
+}
+
+async fn call_openai_compatible_streaming(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_message: &str,
+    app: &tauri::AppHandle,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "stream": true,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_message },
+        ]
+    });
+
+    let resp = HTTP_CLIENT
+        .post(base_url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("LLM API request failed: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("LLM API read failed: {e}"))?;
+        return Err(format!("LLM API error ({status}): {body}"));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut pending = String::new();
+    let mut full_output = String::new();
+
+    while let Some(item) = stream.next().await {
+        let bytes = item.map_err(|e| format!("LLM stream read failed: {e}"))?;
+        pending.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(newline_idx) = pending.find('\n') {
+            let line = pending[..newline_idx].trim().to_string();
+            pending.drain(..=newline_idx);
+            if !line.starts_with("data:") {
+                continue;
+            }
+            let data = line["data:".len()..].trim();
+            handle_openai_stream_data(data, app, &mut full_output);
+        }
+    }
+
+    for line in pending.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("data:") {
+            continue;
+        }
+        let data = trimmed["data:".len()..].trim();
+        handle_openai_stream_data(data, app, &mut full_output);
+    }
+
+    if full_output.is_empty() {
+        return Err("LLM streamed empty response".to_string());
+    }
+    Ok(full_output)
+}
+
 async fn call_gemini(
     api_key: &str,
     model: &str,
@@ -368,6 +474,81 @@ async fn call_ollama(model: &str, system_prompt: &str, user_message: &str) -> Re
     Err(format!("Unexpected Ollama response: {body}"))
 }
 
+async fn call_ollama_streaming(
+    model: &str,
+    system_prompt: &str,
+    user_message: &str,
+    app: &tauri::AppHandle,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "stream": true,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_message }
+        ]
+    });
+
+    let resp = HTTP_CLIENT
+        .post("http://127.0.0.1:11434/api/chat")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama request failed: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| format!("Ollama response read failed: {e}"))?;
+        return Err(format!("Ollama API error ({status}): {body}"));
+    }
+
+    let mut stream = resp.bytes_stream();
+    let mut pending = String::new();
+    let mut full_output = String::new();
+
+    while let Some(item) = stream.next().await {
+        let bytes = item.map_err(|e| format!("Ollama stream read failed: {e}"))?;
+        pending.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(newline_idx) = pending.find('\n') {
+            let line = pending[..newline_idx].trim().to_string();
+            pending.drain(..=newline_idx);
+            if line.is_empty() {
+                continue;
+            }
+            let parsed: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            if let Some(token) = parsed["message"]["content"].as_str() {
+                emit_token_chunk(app, &mut full_output, token);
+            }
+        }
+    }
+
+    for line in pending.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let parsed: serde_json::Value = match serde_json::from_str(trimmed) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if let Some(token) = parsed["message"]["content"].as_str() {
+            emit_token_chunk(app, &mut full_output, token);
+        }
+    }
+
+    if full_output.is_empty() {
+        return Err("Unexpected Ollama streaming response: empty content".to_string());
+    }
+    Ok(full_output)
+}
+
 fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
     match provider {
         LlmProvider::OpenAi => Some("https://api.openai.com/v1/chat/completions"),
@@ -405,6 +586,40 @@ async fn call_provider(
     }
 }
 
+async fn call_provider_preview_stream(
+    api_key: &str,
+    provider: &LlmProvider,
+    chosen_model: &str,
+    system_prompt: &str,
+    user_message: &str,
+    app: &tauri::AppHandle,
+) -> Result<String, String> {
+    if let Some(url) = openai_compatible_url(provider) {
+        return call_openai_compatible_streaming(
+            url,
+            api_key,
+            chosen_model,
+            system_prompt,
+            user_message,
+            app,
+        )
+        .await;
+    }
+    match provider {
+        LlmProvider::Ollama => {
+            call_ollama_streaming(chosen_model, system_prompt, user_message, app).await
+        }
+        _ => {
+            let full_output =
+                call_provider(api_key, provider, chosen_model, system_prompt, user_message).await?;
+            if !full_output.is_empty() {
+                emit_output_stream(app, &full_output).await;
+            }
+            Ok(full_output)
+        }
+    }
+}
+
 pub async fn call_llm(
     api_key: &str,
     selected_text: &str,
@@ -438,16 +653,31 @@ pub async fn call_llm(
         user_message.clone()
     };
 
-    let full_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &effective_user_message)
-    .await
+    let full_output = if output_mode == OutputMode::PreviewStream {
+        call_provider_preview_stream(
+            api_key,
+            &provider,
+            &chosen_model,
+            &system_prompt,
+            &effective_user_message,
+            &app,
+        )
+        .await
+    } else {
+        call_provider(
+            api_key,
+            &provider,
+            &chosen_model,
+            &system_prompt,
+            &effective_user_message,
+        )
+        .await
+    }
     .map_err(|e| {
         let _ = app.emit("llm://error", LlmError { message: e.clone() });
         e
     })?;
 
-    if !full_output.is_empty() {
-        emit_output_stream(&app, &full_output).await;
-    }
     let _ = app.emit("llm://done", ());
 
     // Save to conversation history in PreviewStream mode for multi-turn support
