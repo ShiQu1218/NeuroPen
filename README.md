@@ -49,7 +49,7 @@
 | **Local STT** | Built-in Whisper (small/medium/large/turbo) for fully offline speech recognition |
 | **Multi-LLM Providers** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, Ollama |
 | **10 UI Languages** | zh-TW, zh-CN, English, Japanese, German, French, Arabic, Russian, Spanish, Korean |
-| **Incognito Mode** | Disable all LLM calls with one click — local STT only |
+| **Saved LLM Model List** | Add custom model names (e.g., `gpt-4o-mini`) to a reusable list and remove them anytime |
 | **System Tray** | Runs in the background; right-click tray icon to open settings or exit |
 
 ---
@@ -204,7 +204,7 @@ TalkFlow automatically routes to one of four modes based on whether text is sele
 ## UI Components
 
 ### Settings Window
-Left sidebar with category navigation (General, Voice & STT, Quick Actions, LLM, Privacy). Right side scrollable content area. Fixed "Cancel / Save" buttons at the bottom.
+Left sidebar with category navigation (General, Voice & STT, Quick Actions, LLM, History). Right side scrollable content area. Fixed "Cancel / Save" buttons at the bottom.
 
 ### Quick Action Icon
 A floating icon that fades in when text is selected. Hover to expand the panel:
@@ -233,7 +233,7 @@ A floating icon that fades in when text is selected. Hover to expand the panel:
 - **Follow-up**: Add instructions on current result, LLM responds with context
 
 ### Recording Indicator
-A floating indicator at the bottom center of the screen showing recording status and elapsed time.
+A floating indicator at the bottom center of the screen showing recording status and elapsed time, positioned before showing to avoid center flash.
 
 ---
 
@@ -301,7 +301,7 @@ Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration �
 
 1. Right-click the system tray icon -> **Settings**
 2. **General**: Set display language, global hotkey, wake word
-3. **LLM**: Choose a provider, enter your API Key (e.g., OpenAI)
+3. **LLM**: Choose a provider, manage saved model list, set preferred output language, enter your API Key (e.g., OpenAI)
 4. **Voice & STT**: Choose STT engine (cloud or local), install a local model (optional)
 5. Click "Save" and you're ready to go
 
@@ -459,11 +459,10 @@ TalkFlow/
 
 | Category | Options |
 |----------|---------|
-| **General** | Display language, LLM output language, global hotkey, wake word, launch at startup |
+| **General** | Display language, global hotkey, wake word, launch at startup |
 | **Voice & STT** | STT engine selection, local model management (install/delete/switch), microphone source, STT output strategy (pure STT / LLM polish), smart punctuation, vocabulary import, foreground app context awareness |
 | **Quick Actions** | Add, edit, delete Quick Action commands |
-| **LLM** | Output mode (streaming preview / direct injection), Provider, Model, API Key, multimodal toggle |
-| **Privacy** | Incognito mode (disable all LLM calls, local STT only) |
+| **LLM** | Output mode (streaming preview / direct injection), Provider, saved model list, Model, preferred output language, API Key, multimodal toggle |
 
 ---
 
@@ -519,7 +518,6 @@ After CI completes, a Draft Release with the installer will appear on the **Rele
 
 - **Focus verification**: Confirms the target window hasn't changed before injection, preventing input to unintended locations
 - **Clipboard protection**: Caches before operations and restores after — users never lose clipboard content
-- **Incognito mode**: Disable all cloud LLM calls with one click, local STT only
 - **Secure storage**: API Keys stored encrypted via Windows Credential Manager (keyring)
 - **No background uploads**: All AI calls only happen when explicitly triggered by the user
 
