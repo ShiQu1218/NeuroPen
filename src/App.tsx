@@ -416,14 +416,17 @@ function MainWindow() {
           const qaWin = await WebviewWindow.getByLabel("quick-action");
           if (!qaWin) return;
 
-          if (has_selection && text) {
-            setSelectedText(text);
-            await emit("talkflow://stable-selection", { text });
+          if (has_selection) {
+            const selectionText = (text ?? "").trim();
+            setSelectedText(selectionText);
+            if (selectionText) {
+              await emit("talkflow://stable-selection", { text: selectionText });
+            }
 
             // Position QA icon below selection end (fallback to cursor).
             const x = typeof anchor_x === "number" ? anchor_x : cursor_x;
             const y = typeof anchor_y === "number" ? anchor_y : cursor_y;
-            const currentFingerprint = `${text}::${x}::${y}`;
+            const currentFingerprint = `${selectionText || "__selection__"}::${x}::${y}`;
             // Lock target window + cache clipboard once per unique selection.
             if (currentFingerprint !== lastSelectionFingerprint) {
               // Auto-close old Preview Window only when the selection actually changed.

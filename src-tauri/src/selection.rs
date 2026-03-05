@@ -128,26 +128,6 @@ fn is_left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
 }
 
-/// Fallback selection capture for apps where UIA text pattern is unavailable (e.g. VSCode).
-/// Acquires the global clipboard operation lock to avoid racing with the hotkey flow.
-#[cfg(target_os = "windows")]
-fn try_read_selection_via_clipboard_once() -> Option<String> {
-    let _op = crate::clipboard::acquire_op_lock().ok()?;
-    let clipboard_before = crate::clipboard::read_clipboard().unwrap_or_default();
-    if crate::injection::simulate_ctrl_c().is_err() {
-        return None;
-    }
-    // Give the target app time to process Ctrl+C and update the clipboard.
-    // Electron/browser apps can be slow; 150ms covers most cases.
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    let copied = crate::clipboard::read_clipboard().ok();
-    let _ = crate::clipboard::write_clipboard(&clipboard_before);
-    match copied {
-        Some(text) if !text.trim().is_empty() && text != clipboard_before => Some(text),
-        _ => None,
-    }
-}
-
 /// Start a background thread that polls for text selection changes.
 /// Emits `talkflow://selection-changed` with
 /// `{ has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y }`.
@@ -167,7 +147,7 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(50));
 
-            let (raw_has_selection, raw_text, _raw_unavailable) = match get_selected_text() {
+            let (raw_has_selection, raw_text, raw_unavailable) = match get_selected_text() {
                 SelectionResult::Selected(t) => (true, t, false),
                 SelectionResult::None => (false, String::new(), false),
                 SelectionResult::Unavailable => (false, String::new(), true),
@@ -201,16 +181,13 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 String::new()
             };
 
-            // Fallback for apps where UIA doesn't report selection
-            // (e.g. VSCode, Electron apps, browser content areas).
-            // Trigger clipboard fallback whenever a drag-select occurred
-            // but UIA returned no selection, regardless of Unavailable status.
-            if just_released && was_drag_select && !has_selection {
-                if let Some(fallback_text) = try_read_selection_via_clipboard_once() {
-                    has_selection = true;
-                    text = fallback_text.clone();
-                    sticky_text = Some(fallback_text);
-                }
+            // Avoid automatic Ctrl+C fallback here because it can race with user
+            // Ctrl+V workflows. For UIA-unavailable apps, still surface a selection
+            // state so Quick Action can appear; actual text is fetched on command.
+            if just_released && was_drag_select && !has_selection && raw_unavailable {
+                has_selection = true;
+                text = String::new();
+                sticky_text = Some(String::new());
             }
 
             // If no UIA selection but we have a sticky fallback selection, keep it.
