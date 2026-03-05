@@ -27,6 +27,7 @@ import {
   type SttOutputStrategy,
   type PunctuationMode,
 } from "../store/useAppStore";
+import HistoryPanel from "./HistoryPanel";
 
 interface LocalSttModel {
   id: string;
@@ -41,7 +42,7 @@ interface LocalSttModel {
   modelPath: string;
 }
 
-type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "privacy";
+type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "privacy" | "history";
 
 const STATUS_RESET_MS = 2000;
 const RATING_INDICES = [0, 1, 2, 3, 4];
@@ -86,10 +87,29 @@ const NAV_ITEMS: { id: SettingsSection; icon: React.ReactNode }[] = [
     ),
   },
   {
+    id: "tts",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+      </svg>
+    ),
+  },
+  {
     id: "privacy",
     icon: (
       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
         <path d="M12 3 5 6v5c0 5 3.5 8 7 10 3.5-2 7-5 7-10V6l-7-3Z" />
+      </svg>
+    ),
+  },
+  {
+    id: "history",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
       </svg>
     ),
   },
@@ -116,6 +136,11 @@ export default function Settings() {
     language, setLanguage,
     localSttAvailable, setLocalSttAvailable,
     apiKeySet, setApiKeySet,
+    ttsEnabled, setTtsEnabled,
+    ttsVoice, setTtsVoice,
+    ttsRate, setTtsRate,
+    ttsPitch, setTtsPitch,
+    translationTarget, setTranslationTarget,
   } = useAppStore();
   const { t } = useI18n();
   const sectionLabelKey: Record<SettingsSection, TranslationKey> = {
@@ -123,7 +148,9 @@ export default function Settings() {
     stt: "settings.section.stt",
     quickAction: "settings.section.quickAction",
     llm: "settings.section.llm",
+    tts: "settings.section.tts",
     privacy: "settings.section.privacy",
+    history: "settings.section.history",
   };
   const sttModelNameKey: Partial<Record<string, TranslationKey>> = {
     "whisper-small": "settings.stt.model.whisper-small.name",
@@ -1217,6 +1244,81 @@ export default function Settings() {
             </>
           )}
 
+          {activeSection === "tts" && (
+            <>
+              {/* TTS Enable */}
+              <div className="flex items-center gap-3">
+                <label className="font-medium">{t("settings.tts.enabled")}</label>
+                <button
+                  onClick={() => setTtsEnabled(!ttsEnabled)}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${ttsEnabled ? "bg-blue-500" : "bg-gray-300"}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ttsEnabled ? "translate-x-5" : ""}`}
+                  />
+                </button>
+              </div>
+              <p className="text-[11px] text-zinc-500">{t("settings.tts.enabledHint")}</p>
+
+              {/* TTS Voice */}
+              <div className="mt-3">
+                <label className="text-xs font-medium">{t("settings.tts.voice")}</label>
+                <input
+                  className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
+                  placeholder="zh-TW-HsiaoChenNeural"
+                  value={ttsVoice}
+                  onChange={(e) => setTtsVoice(e.target.value)}
+                />
+                <p className="text-[11px] text-zinc-500 mt-0.5">{t("settings.tts.voiceHint")}</p>
+              </div>
+
+              {/* TTS Rate */}
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium">{t("settings.tts.rate")}</label>
+                  <input
+                    className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
+                    placeholder="+0%"
+                    value={ttsRate}
+                    onChange={(e) => setTtsRate(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium">{t("settings.tts.pitch")}</label>
+                  <input
+                    className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
+                    placeholder="+0Hz"
+                    value={ttsPitch}
+                    onChange={(e) => setTtsPitch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Translation Mode (Feature 7) */}
+              <div className="mt-4 pt-3 border-t border-zinc-200">
+                <label className="text-xs font-medium">{t("settings.translation.label")}</label>
+                <select
+                  className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
+                  value={translationTarget}
+                  onChange={(e) => setTranslationTarget(e.target.value as any)}
+                >
+                  <option value="off">{t("settings.translation.off")}</option>
+                  <option value="en-US">English</option>
+                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
+                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
+                  <option value="ja-JP">{t("settings.language.ja-JP")}</option>
+                  <option value="ko-KR">{t("settings.language.ko-KR")}</option>
+                  <option value="es-ES">{t("settings.language.es-ES")}</option>
+                  <option value="de-DE">{t("settings.language.de-DE")}</option>
+                  <option value="fr-FR">{t("settings.language.fr-FR")}</option>
+                  <option value="ru-RU">{t("settings.language.ru-RU")}</option>
+                  <option value="ar-SA">{t("settings.language.ar-SA")}</option>
+                </select>
+                <p className="text-[11px] text-zinc-500 mt-0.5">{t("settings.translation.hint")}</p>
+              </div>
+            </>
+          )}
+
           {activeSection === "privacy" && (
             <div className="flex items-center gap-3">
               <label className="font-medium">{t("settings.privacy.label")}</label>
@@ -1229,6 +1331,10 @@ export default function Settings() {
                 />
               </button>
             </div>
+          )}
+
+          {activeSection === "history" && (
+            <HistoryPanel />
           )}
           </div>
         </div>

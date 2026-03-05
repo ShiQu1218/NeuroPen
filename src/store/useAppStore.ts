@@ -21,6 +21,7 @@ export type SttEngine = "openAi" | "localWhisper";
 export type PreferredLanguage = "auto" | AppLanguage;
 
 export type AppMode = "A" | "B1" | "B2" | "C" | null;
+export type TranslationTarget = "off" | AppLanguage;
 export interface QuickActionCommand {
   id: string;
   label: string;
@@ -53,6 +54,11 @@ interface AppState {
   quickActionCommands: QuickActionCommand[];
   language: AppLanguage;
   vocabularyTerms: string[];
+  ttsEnabled: boolean;
+  ttsVoice: string;
+  ttsRate: string;
+  ttsPitch: string;
+  translationTarget: TranslationTarget;
 
   // --- Runtime state (not persisted) ---
   isRecording: boolean;
@@ -67,6 +73,10 @@ interface AppState {
   llmError: string;
   lastSelectedText: string;
   lastInstruction: string;
+  isTtsPlaying: boolean;
+  partialTranscript: string;
+  sttDurationMs: number;
+  llmDurationMs: number;
 
   // --- Actions ---
   setWakeWord: (word: string) => void;
@@ -98,6 +108,15 @@ interface AppState {
   setLlmError: (error: string) => void;
   setLastSelectedText: (text: string) => void;
   setLastInstruction: (text: string) => void;
+  setTtsEnabled: (enabled: boolean) => void;
+  setTtsVoice: (voice: string) => void;
+  setTtsRate: (rate: string) => void;
+  setTtsPitch: (pitch: string) => void;
+  setTranslationTarget: (target: TranslationTarget) => void;
+  setIsTtsPlaying: (playing: boolean) => void;
+  setPartialTranscript: (text: string) => void;
+  setSttDurationMs: (ms: number) => void;
+  setLlmDurationMs: (ms: number) => void;
   resetSession: () => void;
 }
 
@@ -122,6 +141,11 @@ export const useAppStore = create<AppState>()(
       quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
       language: "zh-TW",
       vocabularyTerms: [],
+      ttsEnabled: false,
+      ttsVoice: "",
+      ttsRate: "+0%",
+      ttsPitch: "+0Hz",
+      translationTarget: "off",
 
       isRecording: false,
       selectedText: "",
@@ -135,6 +159,10 @@ export const useAppStore = create<AppState>()(
       llmError: "",
       lastSelectedText: "",
       lastInstruction: "",
+      isTtsPlaying: false,
+      partialTranscript: "",
+      sttDurationMs: 0,
+      llmDurationMs: 0,
 
       setWakeWord: (word) => set({ wakeWord: word }),
       setSttModelPath: (path) => set({ sttModelPath: path }),
@@ -165,6 +193,15 @@ export const useAppStore = create<AppState>()(
       setLlmError: (error) => set({ llmError: error }),
       setLastSelectedText: (text) => set({ lastSelectedText: text }),
       setLastInstruction: (text) => set({ lastInstruction: text }),
+      setTtsEnabled: (enabled) => set({ ttsEnabled: enabled }),
+      setTtsVoice: (voice) => set({ ttsVoice: voice }),
+      setTtsRate: (rate) => set({ ttsRate: rate }),
+      setTtsPitch: (pitch) => set({ ttsPitch: pitch }),
+      setTranslationTarget: (target) => set({ translationTarget: target }),
+      setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
+      setPartialTranscript: (text) => set({ partialTranscript: text }),
+      setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
+      setLlmDurationMs: (ms) => set({ llmDurationMs: ms }),
       resetSession: () =>
         set({
           isRecording: false,
@@ -200,6 +237,11 @@ export const useAppStore = create<AppState>()(
         quickActionCommands: state.quickActionCommands,
         language: state.language,
         vocabularyTerms: state.vocabularyTerms,
+        ttsEnabled: state.ttsEnabled,
+        ttsVoice: state.ttsVoice,
+        ttsRate: state.ttsRate,
+        ttsPitch: state.ttsPitch,
+        translationTarget: state.translationTarget,
       }),
     }
   )

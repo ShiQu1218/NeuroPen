@@ -46,3 +46,66 @@ body {
   overflow: hidden;
   background: transparent;
 }
+
+/* Feature 5: Markdown styles for Preview Window */
+.preview-markdown {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+}
+.preview-markdown h1 { font-size: 1.25em; font-weight: 700; margin: 0.5em 0 0.25em; }
+.preview-markdown h2 { font-size: 1.1em; font-weight: 600; margin: 0.5em 0 0.25em; }
+.preview-markdown h3 { font-size: 1em; font-weight: 600; margin: 0.4em 0 0.2em; }
+.preview-markdown p { margin: 0.3em 0; }
+.preview-markdown ul, .preview-markdown ol { padding-left: 1.5em; margin: 0.3em 0; }
+.preview-markdown li { margin: 0.15em 0; }
+.preview-markdown code {
+  background: rgba(0,0,0,0.06);
+  border-radius: 4px;
+  padding: 0.15em 0.35em;
+  font-size: 0.88em;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+.preview-markdown pre {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 8px;
+  padding: 0.75em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+  font-size: 0.82em;
+}
+.preview-markdown pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+.preview-markdown blockquote {
+  border-left: 3px solid #a1a1aa;
+  padding-left: 0.75em;
+  color: #71717a;
+  margin: 0.4em 0;
+}
+.preview-markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+  font-size: 0.88em;
+}
+.preview-markdown th, .preview-markdown td {
+  border: 1px solid #d4d4d8;
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+.preview-markdown th {
+  background: #f4f4f5;
+  font-weight: 600;
+}
+.preview-markdown a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+.preview-markdown hr {
+  border: none;
+  border-top: 1px solid #e4e4e7;
+  margin: 0.5em 0;
+}

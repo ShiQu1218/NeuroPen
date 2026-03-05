@@ -430,6 +430,11 @@ function MainWindow() {
 
           try {
             await invoke("start_recording");
+            // Start streaming partial transcription
+            invoke("start_streaming_stt", {
+              engine: store.sttModelPath ? "localWhisper" : "openAi",
+              modelPath: store.sttModelPath || "",
+            }).catch((e) => console.warn("[App] streaming STT start failed:", e));
             setIsRecording(true);
             if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
               await stopRecordingNow();
@@ -460,6 +465,11 @@ function MainWindow() {
           setStatusMsg("錄音中… 放開熱鍵停止");
           try {
             await invoke("start_recording");
+            // Start streaming partial transcription
+            invoke("start_streaming_stt", {
+              engine: sttEngine,
+              modelPath: store.sttModelPath || "",
+            }).catch((e) => console.warn("[App] streaming STT start failed:", e));
             setIsRecording(true);
             if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
               await stopRecordingNow();
@@ -537,6 +547,25 @@ function MainWindow() {
                 console.warn("[App] call_llm_text failed, fallback to STT output:", err);
               }
             }
+            // Feature 7: Live translation mode
+            if (store.translationTarget && store.translationTarget !== "off" && !store.incognito) {
+              try {
+                setStatusMsg("翻譯中…");
+                const translated = await invoke<string>("call_llm_text", {
+                  selectedText: finalText,
+                  instruction: `Translate to ${store.translationTarget}. Output ONLY the translation, nothing else.`,
+                  provider: store.llmProvider,
+                  model: store.llmModel,
+                  preferredLanguage: store.translationTarget,
+                });
+                if (translated?.trim()) {
+                  finalText = translated.trim();
+                }
+              } catch (err) {
+                console.warn("[App] Translation failed, using original:", err);
+              }
+            }
+
             setStatusMsg("注入文字中…");
             const ok = await invoke<boolean>("verify_focus");
             if (!ok) {
@@ -551,6 +580,17 @@ function MainWindow() {
             // Wait for target app to process the paste
             await new Promise((r) => setTimeout(r, 150));
             await invoke("restore_clipboard");
+
+            // Feature 3: Save to history
+            void invoke("history_save", {
+              mode: "A",
+              inputText: result.transcript,
+              instruction: "",
+              output: finalText,
+              provider: store.llmProvider,
+              model: store.llmModel,
+            });
+
             setStatusMsg("已注入文字");
             setTimeout(() => setStatusMsg("按住熱鍵開始錄音"), 2000);
           } else if (mode === "B2") {
@@ -634,6 +674,30 @@ function MainWindow() {
           setStatusMsg("路由失敗: " + String(err));
         }
       });
+
+      // ── 3.5. History save on LLM done (Feature 3) ──
+      await safeRegister("llm://done", () => {
+        const s = useAppStore.getState();
+        if (s.llmOutput.trim() && !s.incognito) {
+          const mode = s.currentMode || "C";
+          void invoke("history_save", {
+            mode,
+            inputText: s.lastSelectedText || "",
+            instruction: s.lastInstruction || "",
+            output: s.llmOutput,
+            provider: s.llmProvider,
+            model: s.llmModel,
+          });
+        }
+      });
+
+      // ── 3.6. STT metrics (Feature 13) ──
+      await safeRegister<{ durationMs: number; audioLengthSecs: number }>(
+        "stt://metrics",
+        (event) => {
+          useAppStore.getState().setSttDurationMs(event.payload.durationMs);
+        }
+      );
 
       // ── 4. STT error ──
       await safeRegister<{ message: string }>("stt://error", (event) => {

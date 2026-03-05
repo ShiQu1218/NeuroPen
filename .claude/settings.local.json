@@ -27,7 +27,8 @@
       "Bash(tasklist:*)",
       "Bash(taskkill:*)",
       "Bash(cargo metadata:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(npm install react-markdown remark-gfm rehype-highlight)"
     ]
   }
 }

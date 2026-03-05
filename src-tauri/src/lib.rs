@@ -1,11 +1,14 @@
 mod audio_capture;
 mod clipboard;
+mod history;
 mod hotkey;
 mod injection;
 mod llm;
 mod mode_router;
+mod screenshot;
 mod selection;
 mod stt;
+mod tts;
 mod undo;
 mod window_focus;
 
@@ -124,6 +127,28 @@ fn restore_clipboard() -> Result<(), String> {
 #[tauri::command]
 fn start_recording(app: tauri::AppHandle) -> Result<(), String> {
     stt::start_recording(app)
+}
+
+/// Start streaming partial transcription during recording.
+#[tauri::command]
+fn start_streaming_stt(
+    app: tauri::AppHandle,
+    engine: stt::SttEngine,
+    model_path: String,
+) -> Result<(), String> {
+    let (_effective_engine, effective_model_path) = RUNTIME_STT_CONFIG
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard.as_ref().map(|cfg| (cfg.engine.clone(), cfg.model_path.clone()))
+        })
+        .unwrap_or((engine, model_path));
+    let derived_engine = if effective_model_path.trim().is_empty() {
+        stt::SttEngine::OpenAi
+    } else {
+        stt::SttEngine::LocalWhisper
+    };
+    stt::start_streaming_stt(app, derived_engine, effective_model_path)
 }
 
 /// Stop microphone audio capture and transcribe via the selected engine.
@@ -379,6 +404,119 @@ fn change_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String
     hotkey::change_trigger(&app, modifiers, code)
 }
 
+// ── History commands ────────────────────────────────────────────────────
+
+#[tauri::command]
+fn history_list() -> Vec<history::HistoryEntry> {
+    history::list()
+}
+
+#[tauri::command]
+fn history_save(
+    mode: String,
+    input_text: String,
+    instruction: String,
+    output: String,
+    provider: String,
+    model: String,
+) {
+    history::save(&mode, &input_text, &instruction, &output, &provider, &model);
+}
+
+#[tauri::command]
+fn history_delete(id: String) -> bool {
+    history::delete(&id)
+}
+
+#[tauri::command]
+fn history_clear() {
+    history::clear_all();
+}
+
+#[tauri::command]
+fn history_search(query: String) -> Vec<history::HistoryEntry> {
+    history::search(&query)
+}
+
+// ── TTS commands ────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn tts_speak(
+    app: tauri::AppHandle,
+    text: String,
+    voice: Option<String>,
+    rate: Option<String>,
+    pitch: Option<String>,
+) -> Result<(), String> {
+    tts::speak(app, text, voice, rate, pitch).await
+}
+
+#[tauri::command]
+fn tts_stop() {
+    tts::stop_playback();
+}
+
+#[tauri::command]
+fn tts_is_playing() -> bool {
+    tts::is_playing()
+}
+
+// ── Screenshot commands ─────────────────────────────────────────────────
+
+#[tauri::command]
+fn take_screenshot() -> Result<screenshot::ScreenshotResult, String> {
+    screenshot::capture_full_screen()
+}
+
+#[tauri::command]
+fn take_screenshot_region(x: i32, y: i32, w: u32, h: u32) -> Result<screenshot::ScreenshotResult, String> {
+    screenshot::capture_region(x, y, w, h)
+}
+
+// ── Multimodal LLM (image + text) ──────────────────────────────────────
+
+#[tauri::command]
+async fn call_llm_with_image(
+    app: tauri::AppHandle,
+    image_base64: String,
+    instruction: String,
+    output_mode: llm::OutputMode,
+    provider: llm::LlmProvider,
+    model: String,
+    preferred_language: Option<String>,
+) -> Result<(), String> {
+    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
+        String::new()
+    } else {
+        stt::get_api_key()?
+    };
+    llm::call_llm_with_image(
+        &api_key,
+        &image_base64,
+        &instruction,
+        output_mode,
+        provider,
+        &model,
+        preferred_language,
+        app,
+    )
+    .await
+}
+
+// ── Conversation context ────────────────────────────────────────────────
+
+#[tauri::command]
+fn clear_conversation() {
+    llm::clear_conversation();
+}
+
+// ── Context-aware window title ──────────────────────────────────────────
+
+#[tauri::command]
+fn get_app_context() -> String {
+    window_focus::get_foreground_window_title()
+}
+
 fn show_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<(), String> {
     let win = app
         .get_webview_window("settings")
@@ -407,6 +545,7 @@ pub fn run() {
             copy_to_clipboard,
             restore_clipboard,
             start_recording,
+            start_streaming_stt,
             stop_recording,
             set_runtime_stt_config,
             is_recording,
@@ -425,9 +564,22 @@ pub fn run() {
             get_launch_on_startup,
             call_llm,
             call_llm_text,
+            call_llm_with_image,
+            clear_conversation,
             route_transcript,
             route_on_trigger,
             change_hotkey,
+            history_list,
+            history_save,
+            history_delete,
+            history_clear,
+            history_search,
+            tts_speak,
+            tts_stop,
+            tts_is_playing,
+            take_screenshot,
+            take_screenshot_region,
+            get_app_context,
         ])
         .setup(|app| {
             #[cfg(desktop)]

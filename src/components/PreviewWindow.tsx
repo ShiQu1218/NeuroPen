@@ -1,20 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useI18n } from "../i18n";
 import { useAppStore, type AppLanguage, type PreferredLanguage } from "../store/useAppStore";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
-const PREVIEW_WIDTH = 340;
-const PREVIEW_MIN_HEIGHT = 240;
-const PREVIEW_MAX_HEIGHT = 420;
+const PREVIEW_WIDTH = 400;
+const PREVIEW_MIN_HEIGHT = 260;
+const PREVIEW_MAX_HEIGHT = 500;
 const PREVIEW_CHROME_HEIGHT = 180;
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { t } = useI18n();
 
   const llmOutput = useAppStore((s) => s.llmOutput);
@@ -24,11 +27,16 @@ export default function PreviewWindow() {
   const llmProvider = useAppStore((s) => s.llmProvider);
   const llmModel = useAppStore((s) => s.llmModel);
   const preferredLanguage = useAppStore((s) => s.preferredLanguage);
+  const isTtsPlaying = useAppStore((s) => s.isTtsPlaying);
+  const sttDurationMs = useAppStore((s) => s.sttDurationMs);
+  const llmDurationMs = useAppStore((s) => s.llmDurationMs);
   const setLlmOutput = useAppStore((s) => s.setLlmOutput);
   const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
   const setLlmError = useAppStore((s) => s.setLlmError);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
+  const setIsTtsPlaying = useAppStore((s) => s.setIsTtsPlaying);
+
   const keepPreviewInBounds = async (width: number, height: number) => {
     try {
       const win = getCurrentWindow();
@@ -40,10 +48,11 @@ export default function PreviewWindow() {
     }
   };
 
-  // Listen to LLM streaming events
+  // Listen to LLM streaming events + TTS events
   useEffect(() => {
     let cancelled = false;
     const unlisten: Array<() => void> = [];
+    let llmStartTime = 0;
 
     (async () => {
       const register = async <T,>(event: string, handler: (e: { payload: T }) => void) => {
@@ -52,12 +61,30 @@ export default function PreviewWindow() {
       };
 
       await register<{ text: string }>("llm://token", (event) => {
-        useAppStore.getState().setLlmOutput(
-          useAppStore.getState().llmOutput + event.payload.text
-        );
+        const state = useAppStore.getState();
+        if (state.llmOutput === "" && llmStartTime > 0) {
+          // First token — record TTFT
+          const ttft = Date.now() - llmStartTime;
+          useAppStore.getState().setLlmDurationMs(ttft);
+        }
+        state.setLlmOutput(state.llmOutput + event.payload.text);
       });
       await register("llm://done", () => {
-        useAppStore.getState().setIsLlmLoading(false);
+        const state = useAppStore.getState();
+        if (llmStartTime > 0) {
+          state.setLlmDurationMs(Date.now() - llmStartTime);
+        }
+        state.setIsLlmLoading(false);
+
+        // Auto TTS if enabled
+        if (state.ttsEnabled && state.llmOutput.trim()) {
+          void invoke("tts_speak", {
+            text: state.llmOutput,
+            voice: state.ttsVoice || null,
+            rate: state.ttsRate || null,
+            pitch: state.ttsPitch || null,
+          });
+        }
       });
       await register<{ message: string }>("llm://error", (event) => {
         useAppStore.getState().setLlmError(event.payload.message);
@@ -66,6 +93,9 @@ export default function PreviewWindow() {
       await register<{ selectedText?: string; instruction?: string }>(
         "talkflow://preview-session",
         (event) => {
+          llmStartTime = Date.now();
+          // Clear conversation history for new session
+          void invoke("clear_conversation");
           void (async () => {
             try {
               await getCurrentWindow().setSize(
@@ -81,6 +111,7 @@ export default function PreviewWindow() {
           useAppStore.getState().setLlmError("");
           useAppStore.getState().setLastSelectedText(event.payload.selectedText ?? "");
           useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
+          useAppStore.getState().setLlmDurationMs(0);
         }
       );
       await register<{ language?: AppLanguage; preferredLanguage?: PreferredLanguage }>(
@@ -94,13 +125,24 @@ export default function PreviewWindow() {
           }
         }
       );
+
+      // TTS events
+      await register("tts://start", () => {
+        useAppStore.getState().setIsTtsPlaying(true);
+      });
+      await register("tts://done", () => {
+        useAppStore.getState().setIsTtsPlaying(false);
+      });
+      await register("tts://error", () => {
+        useAppStore.getState().setIsTtsPlaying(false);
+      });
     })();
 
     return () => {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [setLanguage, setPreferredLanguage]);
+  }, [setLanguage, setPreferredLanguage, setIsTtsPlaying]);
 
   // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {
@@ -159,6 +201,8 @@ export default function PreviewWindow() {
   };
 
   const handleClose = async () => {
+    await invoke("tts_stop");
+    await invoke("clear_conversation");
     await invoke("restore_clipboard");
     await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT));
     await getCurrentWindow().hide();
@@ -174,21 +218,13 @@ export default function PreviewWindow() {
   const handleRefinement = async () => {
     const input = refinementInput.trim();
     if (!input) return;
-    const previousOutput = llmOutput;
-    const contextBlocks: string[] = [];
-    if (lastSelectedText.trim()) {
-      contextBlocks.push(`Original selected text:\n${lastSelectedText}`);
-    }
-    if (previousOutput.trim()) {
-      contextBlocks.push(`Previous output:\n${previousOutput}`);
-    }
-    const selectedContext = contextBlocks.join("\n\n");
+    // Backend CONVERSATION_HISTORY tracks multi-turn context automatically
     setLlmOutput("");
     setIsLlmLoading(true);
     setLlmError("");
     setRefinementInput("");
     await invoke("call_llm", {
-      selectedText: selectedContext,
+      selectedText: lastSelectedText,
       instruction: input,
       outputMode: "PreviewStream",
       provider: llmProvider,
@@ -196,6 +232,62 @@ export default function PreviewWindow() {
       preferredLanguage,
     });
   };
+
+  const handleTtsToggle = async () => {
+    if (isTtsPlaying) {
+      await invoke("tts_stop");
+    } else if (llmOutput.trim()) {
+      const state = useAppStore.getState();
+      await invoke("tts_speak", {
+        text: llmOutput,
+        voice: state.ttsVoice || null,
+        rate: state.ttsRate || null,
+        pitch: state.ttsPitch || null,
+      });
+    }
+  };
+
+  // Feature 6: Keyboard shortcuts
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      // Escape → close
+      if (e.key === "Escape") {
+        e.preventDefault();
+        void handleClose();
+        return;
+      }
+      // Ctrl+C → copy (when no text selected in window)
+      if (e.ctrlKey && e.key === "c" && !window.getSelection()?.toString()) {
+        e.preventDefault();
+        void handleCopy();
+        return;
+      }
+      // Ctrl+Enter → replace
+      if (e.ctrlKey && e.key === "Enter") {
+        e.preventDefault();
+        void handleReplace();
+        return;
+      }
+      // Tab → focus refinement input
+      if (e.key === "Tab" && !e.shiftKey) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        return;
+      }
+      // Ctrl+T → TTS
+      if (e.ctrlKey && e.key === "t") {
+        e.preventDefault();
+        void handleTtsToggle();
+        return;
+      }
+    },
+    [llmOutput, isTtsPlaying]
+  );
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
 
   const hasOutput = llmOutput.length > 0;
 
@@ -211,31 +303,70 @@ export default function PreviewWindow() {
       >
         <div className="pointer-events-none select-none">
           <span className="text-xs font-semibold text-zinc-700">{t("preview.title")}</span>
-          <p className="text-[10px] text-zinc-400 leading-tight">{t("preview.subtitle")}</p>
+          <p className="text-[10px] text-zinc-400 leading-tight">
+            {t("preview.subtitle")}
+            {/* Performance metrics (Feature 13) */}
+            {(sttDurationMs > 0 || llmDurationMs > 0) && (
+              <span className="ml-2 text-zinc-300">
+                {sttDurationMs > 0 && `STT: ${sttDurationMs}ms`}
+                {sttDurationMs > 0 && llmDurationMs > 0 && " | "}
+                {llmDurationMs > 0 && `LLM: ${llmDurationMs}ms`}
+              </span>
+            )}
+          </p>
         </div>
-        <button
-          className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
-          onClick={handleClose}
-          title={t("preview.close")}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-1">
+          {/* TTS button */}
+          {hasOutput && (
+            <button
+              className={`w-6 h-6 flex items-center justify-center rounded-lg transition-colors ${
+                isTtsPlaying
+                  ? "bg-blue-100 text-blue-600"
+                  : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
+              }`}
+              onClick={handleTtsToggle}
+              title={isTtsPlaying ? t("preview.ttsStop") : t("preview.ttsPlay")}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {isTtsPlaying ? (
+                  <>
+                    <rect x="6" y="4" width="4" height="16" />
+                    <rect x="14" y="4" width="4" height="16" />
+                  </>
+                ) : (
+                  <>
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </>
+                )}
+              </svg>
+            </button>
+          )}
+          <button
+            className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
+            onClick={handleClose}
+            title={`${t("preview.close")} (Esc)`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Output area */}
+      {/* Output area — Markdown rendered (Feature 5) */}
       <div
         ref={outputRef}
-        className="flex-1 overflow-auto p-4 font-mono text-sm whitespace-pre-wrap border-b border-zinc-200 bg-zinc-50/80"
+        className="flex-1 overflow-auto p-4 text-sm border-b border-zinc-200 bg-zinc-50/80 preview-markdown"
       >
         {llmError ? (
           <span className="text-red-500">{llmError}</span>
         ) : isLlmLoading && !hasOutput ? (
           <span className="text-gray-400">{t("preview.loading")}</span>
         ) : hasOutput ? (
-          llmOutput
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{llmOutput}</ReactMarkdown>
         ) : (
           <span className="text-gray-400">{t("preview.empty")}</span>
         )}
@@ -244,6 +375,7 @@ export default function PreviewWindow() {
       {/* Refinement input */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
         <input
+          ref={inputRef}
           className="flex-1 input-field px-2.5 py-1.5 text-sm"
           placeholder={t("preview.refinementPlaceholder")}
           value={refinementInput}
@@ -258,29 +390,32 @@ export default function PreviewWindow() {
           disabled={isLlmLoading || !refinementInput.trim()}
           onClick={handleRefinement}
         >
-          →
+          {"\u2192"}
         </button>
       </div>
 
       {/* Action buttons */}
-      <div className="flex justify-center gap-3 px-3 py-2.5 shrink-0 bg-white/80">
+      <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80">
         <button
-          className="btn-secondary px-4 py-1.5 text-sm"
+          className="btn-secondary px-3 py-1.5 text-xs"
           disabled={!hasOutput}
           onClick={handleCopy}
+          title="Ctrl+C"
         >
           {t("preview.copy")}
         </button>
         <button
-          className="btn-primary px-4 py-1.5 text-sm"
+          className="btn-primary px-3 py-1.5 text-xs"
           disabled={!hasOutput || isLlmLoading}
           onClick={handleReplace}
+          title="Ctrl+Enter"
         >
           {t("preview.replace")}
         </button>
         <button
-          className="btn-secondary px-4 py-1.5 text-sm"
+          className="btn-secondary px-3 py-1.5 text-xs"
           onClick={handleClose}
+          title="Esc"
         >
           {t("preview.close")}
         </button>

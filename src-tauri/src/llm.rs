@@ -418,7 +418,27 @@ pub async fn call_llm(
     let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
     let chosen_model = resolve_model(model, &provider);
 
-    let full_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message)
+    // In PreviewStream mode, include conversation history as context
+    let effective_user_message = if output_mode == OutputMode::PreviewStream {
+        let history = {
+            let guard = CONVERSATION_HISTORY.lock().unwrap();
+            guard.clone()
+        };
+        if history.is_empty() {
+            user_message.clone()
+        } else {
+            let context = history
+                .iter()
+                .map(|m| format!("[{}]: {}", m.role, m.content))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!("Previous conversation context:\n{context}\n\n---\n\n{user_message}")
+        }
+    } else {
+        user_message.clone()
+    };
+
+    let full_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &effective_user_message)
     .await
     .map_err(|e| {
         let _ = app.emit("llm://error", LlmError { message: e.clone() });
@@ -429,6 +449,25 @@ pub async fn call_llm(
         emit_output_stream(&app, &full_output).await;
     }
     let _ = app.emit("llm://done", ());
+
+    // Save to conversation history in PreviewStream mode for multi-turn support
+    if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
+        let mut guard = CONVERSATION_HISTORY.lock().unwrap();
+        guard.push(ConversationMessage {
+            role: "user".to_string(),
+            content: user_message,
+        });
+        guard.push(ConversationMessage {
+            role: "assistant".to_string(),
+            content: full_output.clone(),
+        });
+        // Keep at most 10 turns (20 messages)
+        const MAX_MSGS: usize = 20;
+        if guard.len() > MAX_MSGS {
+            let drain_count = guard.len() - MAX_MSGS;
+            guard.drain(..drain_count);
+        }
+    }
 
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
         if let Err(e) = crate::injection::inject_text(&full_output) {
@@ -452,6 +491,352 @@ pub async fn call_llm_text(
     let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
     let chosen_model = resolve_model(model, &provider);
     call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await
+}
+
+// ── Multimodal (image + text) support ───────────────────────────────────
+
+async fn call_openai_compatible_with_image(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "stream": false,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": [
+                { "type": "text", "text": user_text },
+                { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{image_base64}") } }
+            ]}
+        ]
+    });
+
+    let resp = HTTP_CLIENT
+        .post(base_url)
+        .header("Authorization", format!("Bearer {api_key}"))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("LLM API request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| format!("LLM API read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("LLM API error ({status}): {body}"));
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    extract_openai_text(&parsed).ok_or_else(|| format!("Unexpected response: {body}"))
+}
+
+async fn call_gemini_with_image(
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+) -> Result<String, String> {
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+        model
+    );
+    let body = serde_json::json!({
+        "system_instruction": { "parts": [{ "text": system_prompt }] },
+        "contents": [{ "parts": [
+            { "text": user_text },
+            { "inline_data": { "mime_type": "image/png", "data": image_base64 } }
+        ]}],
+    });
+
+    let resp = HTTP_CLIENT
+        .post(url)
+        .header("x-goog-api-key", api_key)
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Gemini API request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| format!("Gemini read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Gemini API error ({status}): {body}"));
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    let mut out = String::new();
+    if let Some(parts) = parsed["candidates"][0]["content"]["parts"].as_array() {
+        for part in parts {
+            if let Some(text) = part["text"].as_str() {
+                out.push_str(text);
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(format!("Unexpected Gemini response: {body}"));
+    }
+    Ok(out)
+}
+
+async fn call_claude_with_image(
+    api_key: &str,
+    model: &str,
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "max_tokens": 4096,
+        "system": system_prompt,
+        "messages": [{ "role": "user", "content": [
+            { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": image_base64 } },
+            { "type": "text", "text": user_text }
+        ]}],
+    });
+
+    let resp = HTTP_CLIENT
+        .post("https://api.anthropic.com/v1/messages")
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Claude API request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| format!("Claude read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Claude API error ({status}): {body}"));
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    let mut out = String::new();
+    if let Some(arr) = parsed["content"].as_array() {
+        for part in arr {
+            if part["type"].as_str() == Some("text") {
+                if let Some(text) = part["text"].as_str() {
+                    out.push_str(text);
+                }
+            }
+        }
+    }
+    if out.is_empty() {
+        return Err(format!("Unexpected Claude response: {body}"));
+    }
+    Ok(out)
+}
+
+async fn call_ollama_with_image(
+    model: &str,
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+) -> Result<String, String> {
+    let body = serde_json::json!({
+        "model": model,
+        "stream": false,
+        "messages": [
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_text, "images": [image_base64] }
+        ]
+    });
+
+    let resp = HTTP_CLIENT
+        .post("http://127.0.0.1:11434/api/chat")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("Ollama request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp.text().await.map_err(|e| format!("Ollama read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Ollama API error ({status}): {body}"));
+    }
+    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    if let Some(text) = parsed["message"]["content"].as_str() {
+        if !text.is_empty() {
+            return Ok(text.to_string());
+        }
+    }
+    Err(format!("Unexpected Ollama response: {body}"))
+}
+
+async fn call_provider_with_image(
+    api_key: &str,
+    provider: &LlmProvider,
+    chosen_model: &str,
+    system_prompt: &str,
+    user_text: &str,
+    image_base64: &str,
+) -> Result<String, String> {
+    if let Some(url) = openai_compatible_url(provider) {
+        return call_openai_compatible_with_image(url, api_key, chosen_model, system_prompt, user_text, image_base64).await;
+    }
+    match provider {
+        LlmProvider::Gemini => call_gemini_with_image(api_key, chosen_model, system_prompt, user_text, image_base64).await,
+        LlmProvider::Claude => call_claude_with_image(api_key, chosen_model, system_prompt, user_text, image_base64).await,
+        LlmProvider::Ollama => call_ollama_with_image(chosen_model, system_prompt, user_text, image_base64).await,
+        _ => unreachable!(),
+    }
+}
+
+pub async fn call_llm_with_image(
+    api_key: &str,
+    image_base64: &str,
+    instruction: &str,
+    output_mode: OutputMode,
+    provider: LlmProvider,
+    model: &str,
+    preferred_language: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let language_hint = preferred_language_hint(preferred_language.as_deref())
+        .map(|h| format!(" {h}"))
+        .unwrap_or_default();
+    let system_prompt = format!(
+        "You are a helpful assistant. The user has sent a screenshot and a question about it. \
+         Answer concisely based on the image content.{language_hint}"
+    );
+    let chosen_model = resolve_model(model, &provider);
+
+    let full_output = call_provider_with_image(
+        api_key, &provider, &chosen_model, &system_prompt, instruction, image_base64,
+    )
+    .await
+    .map_err(|e| {
+        let _ = app.emit("llm://error", LlmError { message: e.clone() });
+        e
+    })?;
+
+    if !full_output.is_empty() {
+        emit_output_stream(&app, &full_output).await;
+    }
+    let _ = app.emit("llm://done", ());
+
+    if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
+        if let Err(e) = crate::injection::inject_text(&full_output) {
+            let msg = format!("Injection failed: {e}");
+            let _ = app.emit("llm://error", LlmError { message: msg.clone() });
+            return Err(msg);
+        }
+    }
+
+    Ok(())
+}
+
+// ── Conversation context (multi-turn) ───────────────────────────────────
+
+/// A conversation message for multi-turn context.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationMessage {
+    pub role: String,
+    pub content: String,
+}
+
+static CONVERSATION_HISTORY: std::sync::Mutex<Vec<ConversationMessage>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Call LLM with conversation history for multi-turn support.
+pub async fn call_llm_with_context(
+    api_key: &str,
+    selected_text: &str,
+    instruction: &str,
+    provider: &LlmProvider,
+    model: &str,
+    preferred_language: Option<&str>,
+    max_turns: usize,
+) -> Result<String, String> {
+    let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language);
+    let chosen_model = resolve_model(model, provider);
+
+    // Build messages with history
+    let history = {
+        let guard = CONVERSATION_HISTORY.lock().unwrap();
+        let start = if guard.len() > max_turns * 2 {
+            guard.len() - max_turns * 2
+        } else {
+            0
+        };
+        guard[start..].to_vec()
+    };
+
+    // For OpenAI-compatible providers, build a multi-turn messages array
+    let result = if let Some(url) = openai_compatible_url(provider) {
+        let mut messages = vec![serde_json::json!({ "role": "system", "content": system_prompt })];
+        for msg in &history {
+            messages.push(serde_json::json!({ "role": msg.role, "content": msg.content }));
+        }
+        messages.push(serde_json::json!({ "role": "user", "content": user_message }));
+
+        let body = serde_json::json!({
+            "model": chosen_model,
+            "stream": false,
+            "messages": messages,
+        });
+
+        let resp = HTTP_CLIENT
+            .post(url)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("LLM request failed: {e}"))?;
+
+        let status = resp.status();
+        let body = resp.text().await.map_err(|e| format!("LLM read failed: {e}"))?;
+        if !status.is_success() {
+            return Err(format!("LLM error ({status}): {body}"));
+        }
+        let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+        extract_openai_text(&parsed).ok_or_else(|| format!("Unexpected response: {body}"))?
+    } else {
+        // For non-OpenAI providers, fallback to simple call (context in prompt)
+        let context_text = history
+            .iter()
+            .map(|m| format!("{}: {}", m.role, m.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let augmented_message = if context_text.is_empty() {
+            user_message.clone()
+        } else {
+            format!("Previous conversation:\n{context_text}\n\nCurrent: {user_message}")
+        };
+        call_provider(api_key, provider, &chosen_model, &system_prompt, &augmented_message).await?
+    };
+
+    // Save to history
+    {
+        let mut guard = CONVERSATION_HISTORY.lock().unwrap();
+        guard.push(ConversationMessage {
+            role: "user".to_string(),
+            content: user_message,
+        });
+        guard.push(ConversationMessage {
+            role: "assistant".to_string(),
+            content: result.clone(),
+        });
+        // Trim to max_turns * 2
+        let max_msgs = max_turns * 2;
+        if guard.len() > max_msgs {
+            let drain_count = guard.len() - max_msgs;
+            guard.drain(..drain_count);
+        }
+    }
+
+    Ok(result)
+}
+
+/// Clear conversation history (for new session).
+pub fn clear_conversation() {
+    let mut guard = CONVERSATION_HISTORY.lock().unwrap();
+    guard.clear();
 }
 
 #[cfg(test)]

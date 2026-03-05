@@ -123,6 +123,13 @@ static CAPTURE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
 static API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
 static STT_API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
+// ── Streaming STT state ─────────────────────────────────────────────────
+use std::sync::atomic::{AtomicBool, Ordering};
+static STREAMING_ACTIVE: AtomicBool = AtomicBool::new(false);
+static STREAMING_STOP: AtomicBool = AtomicBool::new(false);
+/// Samples drained by stop_recording that the streaming task still needs.
+static STREAMING_FINAL_SAMPLES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
+
 #[cfg(feature = "local-stt")]
 struct LocalWhisperContextCache {
     model_path: String,
@@ -466,6 +473,134 @@ pub fn start_recording(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Start streaming partial transcription while recording.
+/// Spawns a background task that periodically drains audio chunks, transcribes,
+/// and emits `stt://partial` events for real-time feedback.
+pub fn start_streaming_stt(
+    app: tauri::AppHandle,
+    engine: SttEngine,
+    model_path: String,
+) -> Result<(), String> {
+    if !is_recording() {
+        return Err("Not recording".into());
+    }
+    if STREAMING_ACTIVE.load(Ordering::SeqCst) {
+        return Err("Streaming already active".into());
+    }
+
+    STREAMING_STOP.store(false, Ordering::SeqCst);
+    STREAMING_ACTIVE.store(true, Ordering::SeqCst);
+    {
+        let mut guard = STREAMING_FINAL_SAMPLES.lock().unwrap();
+        *guard = None;
+    }
+
+    let api_key = if engine == SttEngine::OpenAi {
+        get_stt_api_key().ok()
+    } else {
+        None
+    };
+
+    tauri::async_runtime::spawn(async move {
+        let mut accumulated: Vec<f32> = Vec::new();
+        let interval = std::time::Duration::from_millis(2000);
+
+        loop {
+            tokio::time::sleep(interval).await;
+
+            // Check stop signal first
+            if STREAMING_STOP.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // Drain available audio from capture
+            let mut chunk = Vec::new();
+            if let Ok(guard) = CAPTURE.lock() {
+                if let Some(ref handle) = *guard {
+                    handle.drain_samples(&mut chunk);
+                }
+            }
+            accumulated.extend_from_slice(&chunk);
+
+            // Transcribe accumulated audio for partial result (need >0.5s of audio)
+            let min_samples = TARGET_SAMPLE_RATE as usize / 2;
+            if accumulated.len() > min_samples {
+                let result = match &engine {
+                    SttEngine::OpenAi => {
+                        transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated).await
+                    }
+                    SttEngine::LocalWhisper => {
+                        transcribe_local(&model_path, &accumulated).await
+                    }
+                    SttEngine::Parakeet => {
+                        transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &accumulated).await
+                    }
+                    SttEngine::Moonshine => {
+                        transcribe_external_command("Moonshine", "TALKFLOW_MOONSHINE_CMD", &model_path, &accumulated).await
+                    }
+                };
+                if let Ok(raw_text) = result {
+                    let text = deduplicate_transcript(&raw_text);
+                    if !text.is_empty() {
+                        let _ = app.emit("stt://partial", SttResult { text });
+                    }
+                }
+            }
+        }
+
+        // ── Finalization: pick up any remaining samples from stop_recording ──
+        if let Ok(mut guard) = STREAMING_FINAL_SAMPLES.lock() {
+            if let Some(final_samples) = guard.take() {
+                accumulated.extend_from_slice(&final_samples);
+            }
+        }
+
+        if !accumulated.is_empty() {
+            let stt_start = std::time::Instant::now();
+            let duration_secs = accumulated.len() as f32 / TARGET_SAMPLE_RATE as f32;
+            let result = match &engine {
+                SttEngine::OpenAi => {
+                    transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated).await
+                }
+                SttEngine::LocalWhisper => {
+                    transcribe_local(&model_path, &accumulated).await
+                }
+                SttEngine::Parakeet => {
+                    transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &accumulated).await
+                }
+                SttEngine::Moonshine => {
+                    transcribe_external_command("Moonshine", "TALKFLOW_MOONSHINE_CMD", &model_path, &accumulated).await
+                }
+            };
+            let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
+            match result {
+                Ok(raw_text) => {
+                    let text = deduplicate_transcript(&raw_text);
+                    let _ = app.emit("stt://metrics", serde_json::json!({
+                        "durationMs": stt_duration_ms,
+                        "audioLengthSecs": duration_secs,
+                    }));
+                    let _ = app.emit("stt://final", SttResult { text });
+                }
+                Err(e) => {
+                    eprintln!("[stt] Streaming final transcription error: {e}");
+                    let _ = app.emit("stt://error", SttError { message: e });
+                }
+            }
+        } else {
+            let _ = app.emit("stt://error", SttError {
+                message: "No audio captured".into(),
+            });
+        }
+
+        STREAMING_ACTIVE.store(false, Ordering::SeqCst);
+        println!("[stt] Streaming transcription ended");
+    });
+
+    println!("[stt] Streaming partial transcription started");
+    Ok(())
+}
+
 /// Stops recording, transcribes via the selected engine, and emits the transcript.
 /// Returns immediately; transcription runs in the background.
 pub fn stop_recording(
@@ -493,6 +628,18 @@ pub fn stop_recording(
     let _ = app.emit("stt://stop", ());
     println!("[stt] Recording stopped, {} samples captured", samples.len());
 
+    // If streaming STT is active, hand off remaining samples and signal stop
+    if STREAMING_ACTIVE.load(Ordering::SeqCst) {
+        {
+            let mut guard = STREAMING_FINAL_SAMPLES.lock().unwrap();
+            *guard = Some(samples);
+        }
+        STREAMING_STOP.store(true, Ordering::SeqCst);
+        println!("[stt] Signaled streaming task to finalize");
+        return Ok(());
+    }
+
+    // ── Non-streaming path (original behavior) ──────────────────────────
     if samples.is_empty() {
         let _ = app.emit("stt://error", SttError {
             message: "No audio captured".into(),
@@ -519,6 +666,7 @@ pub fn stop_recording(
     // Spawn async task to transcribe
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
+        let stt_start = std::time::Instant::now();
         let result = match engine {
             SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples).await,
             SttEngine::LocalWhisper => transcribe_local(&model_path, &samples).await,
@@ -529,6 +677,7 @@ pub fn stop_recording(
                 transcribe_external_command("Moonshine", "TALKFLOW_MOONSHINE_CMD", &model_path, &samples).await
             }
         };
+        let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
         match result {
             Ok(raw_text) => {
                 #[cfg(debug_assertions)]
@@ -538,6 +687,11 @@ pub fn stop_recording(
                 if text != raw_text {
                     println!("[stt] Deduped transcript: {:?}", text);
                 }
+                // Feature 13: emit STT duration metric
+                let _ = app_clone.emit("stt://metrics", serde_json::json!({
+                    "durationMs": stt_duration_ms,
+                    "audioLengthSecs": duration_secs,
+                }));
                 let _ = app_clone.emit("stt://final", SttResult { text });
             }
             Err(e) => {

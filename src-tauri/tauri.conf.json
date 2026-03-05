@@ -30,8 +30,8 @@
       {
         "label": "preview",
         "title": "Output Preview",
-        "width": 340,
-        "height": 240,
+        "width": 400,
+        "height": 260,
         "visible": false,
         "alwaysOnTop": true,
         "decorations": false,
@@ -53,7 +53,7 @@
       {
         "label": "recording-indicator",
         "title": "Recording",
-        "width": 120,
+        "width": 420,
         "height": 60,
         "visible": false,
         "decorations": false,
@@ -65,7 +65,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; connect-src ipc: http://ipc.localhost https://api.openai.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; script-src 'self'; connect-src ipc: http://ipc.localhost https://api.openai.com https://generativelanguage.googleapis.com https://api.anthropic.com https://api.x.ai https://dashscope.aliyuncs.com https://ark.cn-beijing.volces.com https://api.deepseek.com http://127.0.0.1:11434; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {
