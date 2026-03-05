@@ -719,6 +719,27 @@ pub async fn call_llm_with_image(
     }
     let _ = app.emit("llm://done", ());
 
+    // Save to conversation history so follow-up questions retain context.
+    // We prefix the user message with [Image attached] so the LLM knows
+    // an image was part of this turn even though subsequent text-only calls
+    // won't re-send the image bytes.
+    if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
+        let mut guard = CONVERSATION_HISTORY.lock().unwrap();
+        guard.push(ConversationMessage {
+            role: "user".to_string(),
+            content: format!("[Image attached] {}", instruction),
+        });
+        guard.push(ConversationMessage {
+            role: "assistant".to_string(),
+            content: full_output.clone(),
+        });
+        const MAX_MSGS: usize = 20;
+        if guard.len() > MAX_MSGS {
+            let drain_count = guard.len() - MAX_MSGS;
+            guard.drain(..drain_count);
+        }
+    }
+
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
         if let Err(e) = crate::injection::inject_text(&full_output) {
             let msg = format!("Injection failed: {e}");
