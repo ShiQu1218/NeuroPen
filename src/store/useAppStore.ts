@@ -18,6 +18,7 @@ export type AppLanguage =
   | "ru-RU";
 
 export type SttEngine = "openAi" | "localWhisper";
+export type SttLanguage = "auto" | "zh" | "en" | "ja" | "ko" | "de" | "fr" | "es" | "ru" | "ar";
 export type PreferredLanguage = "auto" | AppLanguage;
 
 export type AppMode = "A" | "B1" | "B2" | "C" | null;
@@ -46,6 +47,7 @@ interface AppState {
   hotkey: string;
   screenshotHotkey: string;
   sttEngine: SttEngine;
+  sttLanguage: SttLanguage;
   sttOutputStrategy: SttOutputStrategy;
   punctuationMode: PunctuationMode;
   contextAwareTone: boolean;
@@ -91,6 +93,7 @@ interface AppState {
   setHotkey: (hotkey: string) => void;
   setScreenshotHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
+  setSttLanguage: (language: SttLanguage) => void;
   setSttOutputStrategy: (strategy: SttOutputStrategy) => void;
   setPunctuationMode: (mode: PunctuationMode) => void;
   setContextAwareTone: (enabled: boolean) => void;
@@ -139,6 +142,7 @@ export const useAppStore = create<AppState>()(
       hotkey: "Alt+`",
       screenshotHotkey: "Alt+S",
       sttEngine: "openAi",
+      sttLanguage: "auto",
       sttOutputStrategy: "raw",
       punctuationMode: "balanced",
       contextAwareTone: true,
@@ -182,6 +186,7 @@ export const useAppStore = create<AppState>()(
       setHotkey: (hotkey) => set({ hotkey }),
       setScreenshotHotkey: (screenshotHotkey) => set({ screenshotHotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
+      setSttLanguage: (sttLanguage) => set({ sttLanguage }),
       setSttOutputStrategy: (strategy) => set({ sttOutputStrategy: strategy }),
       setPunctuationMode: (mode) => set({ punctuationMode: mode }),
       setContextAwareTone: (enabled) => set({ contextAwareTone: enabled }),
@@ -242,6 +247,7 @@ export const useAppStore = create<AppState>()(
         hotkey: state.hotkey,
         screenshotHotkey: state.screenshotHotkey,
         sttEngine: state.sttEngine,
+        sttLanguage: state.sttLanguage,
         sttOutputStrategy: state.sttOutputStrategy,
         punctuationMode: state.punctuationMode,
         contextAwareTone: state.contextAwareTone,

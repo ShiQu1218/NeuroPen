@@ -11,6 +11,7 @@
 //!     `stt://error`         — transcription failed
 
 use crate::audio_capture::{self, CaptureHandle, TARGET_SAMPLE_RATE};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 #[cfg(feature = "local-stt")]
@@ -129,6 +130,8 @@ static STREAMING_ACTIVE: AtomicBool = AtomicBool::new(false);
 static STREAMING_STOP: AtomicBool = AtomicBool::new(false);
 /// Samples drained by stop_recording that the streaming task still needs.
 static STREAMING_FINAL_SAMPLES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
+static MODEL_DOWNLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
+static MODEL_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
 #[cfg(feature = "local-stt")]
 struct LocalWhisperContextCache {
@@ -232,38 +235,107 @@ pub fn list_local_stt_models() -> Result<Vec<LocalSttModel>, String> {
         .collect()
 }
 
-pub async fn install_local_stt_model(model_id: String) -> Result<LocalSttModel, String> {
+pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) -> Result<LocalSttModel, String> {
     let entry = catalog_entry_by_id(&model_id)
         .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
     let target_path = model_file_path(entry)?;
     if !target_path.exists() {
-        let client = reqwest::Client::new();
-        let response = client
-            .get(entry.download_url)
-            .send()
-            .await
-            .map_err(|e| format!("Failed to download model: {e}"))?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(format!("Download failed with status {status}"));
+        if MODEL_DOWNLOAD_ACTIVE.swap(true, Ordering::SeqCst) {
+            return Err("Another model download is in progress".to_string());
         }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| format!("Failed to read download bytes: {e}"))?;
+        MODEL_DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
+        let client = reqwest::Client::new();
         let temp_path = target_path.with_extension("download");
-        tokio::fs::write(&temp_path, &bytes)
-            .await
-            .map_err(|e| format!("Failed to write model file: {e}"))?;
-        tokio::fs::rename(&temp_path, &target_path)
-            .await
-            .map_err(|e| format!("Failed to finalize model file: {e}"))?;
+        let download_result: Result<(), String> = async {
+            let response = client
+                .get(entry.download_url)
+                .send()
+                .await
+                .map_err(|e| format!("Failed to download model: {e}"))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(format!("Download failed with status {status}"));
+            }
+            let total_bytes = response.content_length();
+            let _ = app.emit("stt://model-download-progress", serde_json::json!({
+                "modelId": model_id,
+                "status": "start",
+                "downloadedBytes": 0u64,
+                "totalBytes": total_bytes,
+                "progressPct": 0.0f64,
+            }));
+
+            let mut file = tokio::fs::File::create(&temp_path)
+                .await
+                .map_err(|e| format!("Failed to create model file: {e}"))?;
+            let mut downloaded: u64 = 0;
+            let mut stream = response.bytes_stream();
+
+            while let Some(chunk) = stream.next().await {
+                if MODEL_DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    let _ = app.emit("stt://model-download-progress", serde_json::json!({
+                        "modelId": model_id,
+                        "status": "cancelled",
+                        "downloadedBytes": downloaded,
+                        "totalBytes": total_bytes,
+                        "progressPct": 0.0f64,
+                    }));
+                    return Err("Model download cancelled".to_string());
+                }
+                let bytes = chunk.map_err(|e| format!("Failed to read download chunk: {e}"))?;
+                tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
+                    .await
+                    .map_err(|e| format!("Failed to write model file: {e}"))?;
+                downloaded += bytes.len() as u64;
+                let progress_pct = total_bytes
+                    .map(|total| ((downloaded as f64 / total as f64) * 100.0).min(100.0))
+                    .unwrap_or(0.0);
+                let _ = app.emit("stt://model-download-progress", serde_json::json!({
+                    "modelId": model_id,
+                    "status": "downloading",
+                    "downloadedBytes": downloaded,
+                    "totalBytes": total_bytes,
+                    "progressPct": progress_pct,
+                }));
+            }
+
+            tokio::fs::rename(&temp_path, &target_path)
+                .await
+                .map_err(|e| format!("Failed to finalize model file: {e}"))?;
+            let _ = app.emit("stt://model-download-progress", serde_json::json!({
+                "modelId": model_id,
+                "status": "done",
+                "downloadedBytes": total_bytes.unwrap_or(downloaded),
+                "totalBytes": total_bytes,
+                "progressPct": 100.0f64,
+            }));
+            Ok(())
+        }
+        .await;
+        MODEL_DOWNLOAD_ACTIVE.store(false, Ordering::SeqCst);
+        if let Err(err) = download_result {
+            let _ = app.emit("stt://model-download-progress", serde_json::json!({
+                "modelId": model_id,
+                "status": "error",
+            }));
+            return Err(err);
+        }
     }
 
     list_local_stt_models()?
         .into_iter()
         .find(|model| model.id == model_id)
         .ok_or_else(|| "Installed model not found in catalog".to_string())
+}
+
+pub fn cancel_local_stt_download() -> bool {
+    if MODEL_DOWNLOAD_ACTIVE.load(Ordering::SeqCst) {
+        MODEL_DOWNLOAD_CANCEL.store(true, Ordering::SeqCst);
+        true
+    } else {
+        false
+    }
 }
 
 pub fn delete_local_stt_model(model_id: String) -> Result<(), String> {
@@ -480,6 +552,7 @@ pub fn start_streaming_stt(
     app: tauri::AppHandle,
     engine: SttEngine,
     model_path: String,
+    stt_language: String,
 ) -> Result<(), String> {
     if !is_recording() {
         return Err("Not recording".into());
@@ -527,7 +600,7 @@ pub fn start_streaming_stt(
             if accumulated.len() > min_samples {
                 let result = match &engine {
                     SttEngine::OpenAi => {
-                        transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated).await
+                        transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated, &stt_language).await
                     }
                     SttEngine::LocalWhisper => {
                         transcribe_local(&model_path, &accumulated).await
@@ -568,7 +641,7 @@ pub fn start_streaming_stt(
             }
             let result = match &engine {
                 SttEngine::OpenAi => {
-                    transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated).await
+                    transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated, &stt_language).await
                 }
                 SttEngine::LocalWhisper => {
                     transcribe_local(&model_path, &accumulated).await
@@ -615,6 +688,7 @@ pub fn stop_recording(
     app: tauri::AppHandle,
     engine: SttEngine,
     model_path: String,
+    stt_language: String,
 ) -> Result<(), String> {
     // Always take and stop the capture handle first, so recording is guaranteed to stop
     // even if the API key is missing or other errors occur.
@@ -683,7 +757,7 @@ pub fn stop_recording(
     tauri::async_runtime::spawn(async move {
         let stt_start = std::time::Instant::now();
         let result = match engine {
-            SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples).await,
+            SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples, &stt_language).await,
             SttEngine::LocalWhisper => transcribe_local(&model_path, &samples).await,
             SttEngine::Parakeet => {
                 transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &samples).await
@@ -1132,7 +1206,24 @@ fn encode_wav(samples: &[f32]) -> Vec<u8> {
 }
 
 /// Call OpenAI Whisper API to transcribe audio samples.
-async fn transcribe_openai(api_key: &str, samples: &[f32]) -> Result<String, String> {
+fn normalize_stt_language(language: &str) -> Option<&'static str> {
+    match language.trim().to_lowercase().as_str() {
+        "" | "auto" => None,
+        "zh" | "zh-tw" | "zh-cn" => Some("zh"),
+        "en" | "en-us" | "en-gb" => Some("en"),
+        "ja" | "ja-jp" => Some("ja"),
+        "ko" | "ko-kr" => Some("ko"),
+        "de" | "de-de" => Some("de"),
+        "fr" | "fr-fr" => Some("fr"),
+        "es" | "es-es" => Some("es"),
+        "ru" | "ru-ru" => Some("ru"),
+        "ar" | "ar-sa" => Some("ar"),
+        _ => None,
+    }
+}
+
+/// Call OpenAI Whisper API to transcribe audio samples.
+async fn transcribe_openai(api_key: &str, samples: &[f32], stt_language: &str) -> Result<String, String> {
     let wav_data = encode_wav(samples);
 
     println!("[stt] Sending {} bytes of WAV to OpenAI Whisper API", wav_data.len());
@@ -1142,12 +1233,14 @@ async fn transcribe_openai(api_key: &str, samples: &[f32]) -> Result<String, Str
         .mime_str("audio/wav")
         .map_err(|e| format!("Failed to create multipart: {e}"))?;
 
-    let form = reqwest::multipart::Form::new()
+    let mut form = reqwest::multipart::Form::new()
         .text("model", "whisper-1")
-        .text("language", "zh")
         .text("response_format", "verbose_json")
         .text("temperature", "0")
         .part("file", part);
+    if let Some(language) = normalize_stt_language(stt_language) {
+        form = form.text("language", language.to_string());
+    }
 
     let client = reqwest::Client::new();
     let resp = client

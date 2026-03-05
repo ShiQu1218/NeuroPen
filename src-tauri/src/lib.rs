@@ -38,6 +38,7 @@ pub struct FocusInfo {
 struct RuntimeSttConfig {
     engine: stt::SttEngine,
     model_path: String,
+    stt_language: String,
 }
 
 static RUNTIME_STT_CONFIG: Mutex<Option<RuntimeSttConfig>> = Mutex::new(None);
@@ -136,19 +137,21 @@ fn start_streaming_stt(
     engine: stt::SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    let (_effective_engine, effective_model_path) = RUNTIME_STT_CONFIG
+    let (_effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
         .lock()
         .ok()
         .and_then(|guard| {
-            guard.as_ref().map(|cfg| (cfg.engine.clone(), cfg.model_path.clone()))
+            guard
+                .as_ref()
+                .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
         })
-        .unwrap_or((engine, model_path));
+        .unwrap_or((engine, model_path, "auto".to_string()));
     let derived_engine = if effective_model_path.trim().is_empty() {
         stt::SttEngine::OpenAi
     } else {
         stt::SttEngine::LocalWhisper
     };
-    stt::start_streaming_stt(app, derived_engine, effective_model_path)
+    stt::start_streaming_stt(app, derived_engine, effective_model_path, effective_stt_language)
 }
 
 /// Stop microphone audio capture and transcribe via the selected engine.
@@ -158,27 +161,37 @@ fn stop_recording(
     engine: stt::SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    let (_effective_engine, effective_model_path) = RUNTIME_STT_CONFIG
+    let (_effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
         .lock()
         .ok()
         .and_then(|guard| {
-            guard.as_ref().map(|cfg| (cfg.engine.clone(), cfg.model_path.clone()))
+            guard
+                .as_ref()
+                .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
         })
-        .unwrap_or((engine, model_path));
+        .unwrap_or((engine, model_path, "auto".to_string()));
     let derived_engine = if effective_model_path.trim().is_empty() {
         stt::SttEngine::OpenAi
     } else {
         stt::SttEngine::LocalWhisper
     };
-    stt::stop_recording(app, derived_engine, effective_model_path)
+    stt::stop_recording(app, derived_engine, effective_model_path, effective_stt_language)
 }
 
 #[tauri::command]
-fn set_runtime_stt_config(engine: stt::SttEngine, model_path: String) -> Result<(), String> {
+fn set_runtime_stt_config(
+    engine: stt::SttEngine,
+    model_path: String,
+    stt_language: Option<String>,
+) -> Result<(), String> {
     let mut guard = RUNTIME_STT_CONFIG
         .lock()
         .map_err(|e| format!("Failed to lock STT runtime config: {e}"))?;
-    *guard = Some(RuntimeSttConfig { engine, model_path });
+    *guard = Some(RuntimeSttConfig {
+        engine,
+        model_path,
+        stt_language: stt_language.unwrap_or_else(|| "auto".to_string()),
+    });
     Ok(())
 }
 
@@ -218,8 +231,13 @@ fn list_local_stt_models() -> Result<Vec<stt::LocalSttModel>, String> {
 
 /// Install a local STT model file.
 #[tauri::command]
-async fn install_local_stt_model(model_id: String) -> Result<stt::LocalSttModel, String> {
-    stt::install_local_stt_model(model_id).await
+async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) -> Result<stt::LocalSttModel, String> {
+    stt::install_local_stt_model(app, model_id).await
+}
+
+#[tauri::command]
+fn cancel_local_stt_download() -> bool {
+    stt::cancel_local_stt_download()
 }
 
 /// Delete an installed local STT model file.
@@ -565,6 +583,7 @@ pub fn run() {
             get_stt_capabilities,
             list_local_stt_models,
             install_local_stt_model,
+            cancel_local_stt_download,
             delete_local_stt_model,
             select_local_stt_model,
             list_audio_devices,

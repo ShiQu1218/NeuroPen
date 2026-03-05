@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n, type TranslationKey } from "../i18n";
 import {
@@ -26,6 +26,7 @@ import {
   type TranslationTarget,
   type QuickActionCommand,
   type SttOutputStrategy,
+  type SttLanguage,
   type PunctuationMode,
 } from "../store/useAppStore";
 import HistoryPanel from "./HistoryPanel";
@@ -41,6 +42,14 @@ interface LocalSttModel {
   installed: boolean;
   active: boolean;
   modelPath: string;
+}
+
+interface ModelDownloadProgressEvent {
+  modelId: string;
+  status: "start" | "downloading" | "done" | "cancelled" | "error";
+  downloadedBytes?: number;
+  totalBytes?: number;
+  progressPct?: number;
 }
 
 type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "privacy" | "history";
@@ -131,6 +140,7 @@ export default function Settings() {
     hotkey, setHotkey,
     screenshotHotkey, setScreenshotHotkey,
     sttEngine, setSttEngine,
+    sttLanguage, setSttLanguage,
     preferredLanguage, setPreferredLanguage,
     microphoneSource, setMicrophoneSource,
     launchOnStartup, setLaunchOnStartup,
@@ -199,6 +209,7 @@ export default function Settings() {
   const [draftHotkey, setDraftHotkey] = useState(hotkey);
   const [draftScreenshotHotkey, setDraftScreenshotHotkey] = useState(screenshotHotkey);
   const [draftSttEngine, setDraftSttEngine] = useState(sttEngine);
+  const [draftSttLanguage, setDraftSttLanguage] = useState<SttLanguage>(sttLanguage);
   const [draftSttModelChoice, setDraftSttModelChoice] = useState<string>(
     sttEngine === "openAi" ? OPENAI_STT_MODEL : sttEngine
   );
@@ -209,6 +220,10 @@ export default function Settings() {
   const [draftVocabularyTerms, setDraftVocabularyTerms] = useState(vocabularyTerms.join("\n"));
   const [draftLlmProvider, setDraftLlmProvider] = useState(llmProvider);
   const [draftLlmModel, setDraftLlmModel] = useState(llmModel);
+  const [draftTtsVoice, setDraftTtsVoice] = useState(ttsVoice);
+  const [draftTtsRate, setDraftTtsRate] = useState(ttsRate);
+  const [draftTtsPitch, setDraftTtsPitch] = useState(ttsPitch);
+  const [draftIncognito, setDraftIncognito] = useState(incognito);
   const [draftPreferredLanguage, setDraftPreferredLanguage] = useState<PreferredLanguage>(preferredLanguage);
   const [draftMicrophoneSource, setDraftMicrophoneSource] = useState(microphoneSource);
   const [draftLaunchOnStartup, setDraftLaunchOnStartup] = useState(launchOnStartup);
@@ -222,6 +237,8 @@ export default function Settings() {
   const [localModelsLoading, setLocalModelsLoading] = useState(false);
   const [localModelBusyId, setLocalModelBusyId] = useState("");
   const [localModelBusyAction, setLocalModelBusyAction] = useState<"" | "install" | "delete">("");
+  const [localModelDownloadProgress, setLocalModelDownloadProgress] = useState<Record<string, ModelDownloadProgressEvent>>({});
+  const [failedDownloadModelId, setFailedDownloadModelId] = useState("");
   const [localModelStatus, setLocalModelStatus] = useState<{ type: "" | "success" | "error"; message: string }>({
     type: "",
     message: "",
@@ -284,6 +301,7 @@ export default function Settings() {
     setDraftHotkey(hotkey);
     setDraftScreenshotHotkey(screenshotHotkey);
     setDraftSttEngine(sttEngine);
+    setDraftSttLanguage(sttLanguage);
     setDraftSttModelChoice(nextSttModelChoice);
     setDraftOutputMode(outputMode);
     setDraftSttOutputStrategy(sttOutputStrategy);
@@ -292,6 +310,10 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
+    setDraftTtsVoice(ttsVoice);
+    setDraftTtsRate(ttsRate);
+    setDraftTtsPitch(ttsPitch);
+    setDraftIncognito(incognito);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -304,6 +326,7 @@ export default function Settings() {
     hotkey,
     screenshotHotkey,
     sttEngine,
+    sttLanguage,
     outputMode,
     sttOutputStrategy,
     punctuationMode,
@@ -311,6 +334,10 @@ export default function Settings() {
     vocabularyTerms,
     llmProvider,
     llmModel,
+    ttsVoice,
+    ttsRate,
+    ttsPitch,
+    incognito,
     preferredLanguage,
     microphoneSource,
     launchOnStartup,
@@ -338,6 +365,43 @@ export default function Settings() {
   useEffect(() => {
     void loadLocalModels();
   }, [loadLocalModels]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenProgress: (() => void) | undefined;
+    void listen<ModelDownloadProgressEvent>("stt://model-download-progress", (event) => {
+      if (disposed) return;
+      const payload = event.payload;
+      setLocalModelDownloadProgress((prev) => ({ ...prev, [payload.modelId]: payload }));
+      if (payload.status === "done") {
+        setFailedDownloadModelId("");
+      } else if (payload.status === "cancelled" || payload.status === "error") {
+        setFailedDownloadModelId(payload.modelId);
+      }
+    }).then((unlistenFn) => {
+      if (disposed) {
+        unlistenFn();
+      } else {
+        unlistenProgress = unlistenFn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlistenProgress?.();
+    };
+  }, []);
+
+  const formatBytes = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return "0 MB";
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const normalizeHotkey = (value: string) =>
+    value
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "")
+      .replace(/CONTROL/g, "CTRL");
 
   const handleSaveApiKey = () => {
     setApiKeySaveStatus("saving");
@@ -384,9 +448,11 @@ export default function Settings() {
       await fn();
       await loadLocalModels();
       setLocalModelStatus({ type: "success", message: successMsg });
+      return true;
     } catch (err) {
       console.error(`[Settings] ${action}_local_stt_model failed:`, err);
       setLocalModelStatus({ type: "error", message: errorMsg });
+      return false;
     } finally {
       setLocalModelBusyId("");
       setLocalModelBusyAction("");
@@ -394,6 +460,30 @@ export default function Settings() {
   };
 
   const handleSaveSettings = async () => {
+    const normalizedHotkey = normalizeHotkey(draftHotkey);
+    const normalizedScreenshotHotkey = normalizeHotkey(draftScreenshotHotkey);
+    const normalizedUndoHotkey = normalizeHotkey("Alt+Z");
+    if (normalizedHotkey && normalizedHotkey === normalizedScreenshotHotkey) {
+      setHotkeyStatus("error");
+      setHotkeyErrorMessage(t("settings.hotkey.conflictTriggerScreenshot"));
+      setSettingsSaveStatus("error");
+      setTimeout(() => {
+        setHotkeyStatus("");
+        setSettingsSaveStatus("");
+      }, STATUS_RESET_MS);
+      return;
+    }
+    if (normalizedHotkey === normalizedUndoHotkey || normalizedScreenshotHotkey === normalizedUndoHotkey) {
+      setHotkeyStatus("error");
+      setHotkeyErrorMessage(t("settings.hotkey.conflictUndo"));
+      setSettingsSaveStatus("error");
+      setTimeout(() => {
+        setHotkeyStatus("");
+        setSettingsSaveStatus("");
+      }, STATUS_RESET_MS);
+      return;
+    }
+
     const nextWakeWord = draftWakeWord.trim();
     const nextModel = draftLlmModel.trim();
     const isExternalModelChoice = draftSttModelChoice === OPENAI_STT_MODEL;
@@ -404,6 +494,7 @@ export default function Settings() {
       return;
     }
     const { engine: nextSttEngine, modelPath: nextSttModelPath } = resolveEngineAndPathByModel(draftSttModelChoice);
+    const nextSttLanguage = draftSttLanguage;
     const nextTranslationTarget =
       draftSttOutputStrategy === "llmRefine"
         ? draftTranslationTarget
@@ -444,6 +535,7 @@ export default function Settings() {
       setHotkey(draftHotkey);
       setScreenshotHotkey(draftScreenshotHotkey);
       setSttEngine(nextSttEngine);
+      setSttLanguage(nextSttLanguage);
       setSttModelPath(nextSttModelPath);
       setOutputMode(draftOutputMode);
       setSttOutputStrategy(draftSttOutputStrategy);
@@ -452,6 +544,10 @@ export default function Settings() {
       setVocabularyTerms(nextVocabularyTerms);
       setLlmProvider(draftLlmProvider);
       setLlmModel(nextModel);
+      setTtsVoice(draftTtsVoice);
+      setTtsRate(draftTtsRate);
+      setTtsPitch(draftTtsPitch);
+      setIncognito(draftIncognito);
       setPreferredLanguage(draftPreferredLanguage);
       setMicrophoneSource(draftMicrophoneSource);
       setLaunchOnStartup(draftLaunchOnStartup);
@@ -462,12 +558,14 @@ export default function Settings() {
       await invoke("set_runtime_stt_config", {
         engine: nextSttEngine,
         modelPath: nextSttModelPath,
+        sttLanguage: nextSttLanguage,
       });
       await emit("talkflow://settings-saved", {
         wakeWord: nextWakeWord,
         hotkey: draftHotkey,
         screenshotHotkey: draftScreenshotHotkey,
         sttEngine: nextSttEngine,
+        sttLanguage: nextSttLanguage,
         sttModelPath: nextSttModelPath,
         outputMode: draftOutputMode,
         sttOutputStrategy: draftSttOutputStrategy,
@@ -480,9 +578,10 @@ export default function Settings() {
         microphoneSource: draftMicrophoneSource,
         launchOnStartup: draftLaunchOnStartup,
         language: draftLanguage,
-        ttsVoice,
-        ttsRate,
-        ttsPitch,
+        ttsVoice: draftTtsVoice,
+        ttsRate: draftTtsRate,
+        ttsPitch: draftTtsPitch,
+        incognito: draftIncognito,
         quickActionCommands: nextQuickActionCommands,
         historyEnabled: draftHistoryEnabled,
         translationTarget: nextTranslationTarget,
@@ -513,6 +612,7 @@ export default function Settings() {
     setDraftHotkey(hotkey);
     setDraftScreenshotHotkey(screenshotHotkey);
     setDraftSttEngine(sttEngine);
+    setDraftSttLanguage(sttLanguage);
     setDraftSttModelChoice(nextSttModelChoice);
     setDraftOutputMode(outputMode);
     setDraftSttOutputStrategy(sttOutputStrategy);
@@ -521,6 +621,10 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
+    setDraftTtsVoice(ttsVoice);
+    setDraftTtsRate(ttsRate);
+    setDraftTtsPitch(ttsPitch);
+    setDraftIncognito(incognito);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -602,14 +706,33 @@ export default function Settings() {
     }
   };
 
-  const handleInstallLocalModel = (modelId: string) =>
-    withModelBusy(
+  const handleInstallLocalModel = async (modelId: string) => {
+    setFailedDownloadModelId("");
+    setLocalModelDownloadProgress((prev) => ({
+      ...prev,
+      [modelId]: {
+        modelId,
+        status: "start",
+        downloadedBytes: 0,
+        totalBytes: prev[modelId]?.totalBytes ?? 0,
+        progressPct: 0,
+      },
+    }));
+    const success = await withModelBusy(
       modelId,
       "install",
       () => invoke<void>("install_local_stt_model", { modelId }),
       t("settings.status.modelInstalled"),
       t("settings.status.modelInstallFailed"),
     );
+    if (!success) {
+      setFailedDownloadModelId(modelId);
+    }
+  };
+
+  const handleCancelLocalModelDownload = async () => {
+    await invoke("cancel_local_stt_download");
+  };
 
   const handleDeleteLocalModel = (modelId: string) =>
     withModelBusy(
@@ -625,12 +748,14 @@ export default function Settings() {
           await invoke("set_runtime_stt_config", {
             engine: "openAi",
             modelPath: "",
+            sttLanguage: draftSttLanguage,
           });
           await emit("talkflow://settings-saved", {
             wakeWord: draftWakeWord.trim() || wakeWord,
             hotkey: draftHotkey,
             screenshotHotkey: draftScreenshotHotkey,
             sttEngine: "openAi",
+            sttLanguage: draftSttLanguage,
             sttModelPath: "",
             outputMode: draftOutputMode,
             sttOutputStrategy: draftSttOutputStrategy,
@@ -646,9 +771,10 @@ export default function Settings() {
             microphoneSource: draftMicrophoneSource,
             launchOnStartup: draftLaunchOnStartup,
             language: draftLanguage,
-            ttsVoice,
-            ttsRate,
-            ttsPitch,
+            ttsVoice: draftTtsVoice,
+            ttsRate: draftTtsRate,
+            ttsPitch: draftTtsPitch,
+            incognito: draftIncognito,
             historyEnabled: draftHistoryEnabled,
             translationTarget: draftSttOutputStrategy === "llmRefine" ? draftTranslationTarget : "off",
           });
@@ -673,6 +799,7 @@ export default function Settings() {
       draftHotkey !== hotkey ||
       draftScreenshotHotkey !== screenshotHotkey ||
       draftSttEngine !== sttEngine ||
+      draftSttLanguage !== sttLanguage ||
       draftSttModelChoice !== currentSttModelChoice ||
       draftOutputMode !== outputMode ||
       draftSttOutputStrategy !== sttOutputStrategy ||
@@ -681,6 +808,10 @@ export default function Settings() {
       draftVocabularyTerms !== vocabularyTerms.join("\n") ||
       draftLlmProvider !== llmProvider ||
       draftLlmModel !== llmModel ||
+      draftTtsVoice !== ttsVoice ||
+      draftTtsRate !== ttsRate ||
+      draftTtsPitch !== ttsPitch ||
+      draftIncognito !== incognito ||
       draftPreferredLanguage !== preferredLanguage ||
       draftMicrophoneSource !== microphoneSource ||
       draftLaunchOnStartup !== launchOnStartup ||
@@ -697,6 +828,8 @@ export default function Settings() {
       screenshotHotkey,
       draftSttEngine,
       sttEngine,
+      draftSttLanguage,
+      sttLanguage,
       draftSttModelChoice,
       currentSttModelChoice,
       draftOutputMode,
@@ -713,6 +846,14 @@ export default function Settings() {
       llmProvider,
       draftLlmModel,
       llmModel,
+      draftTtsVoice,
+      ttsVoice,
+      draftTtsRate,
+      ttsRate,
+      draftTtsPitch,
+      ttsPitch,
+      draftIncognito,
+      incognito,
       draftPreferredLanguage,
       preferredLanguage,
       draftMicrophoneSource,
@@ -951,6 +1092,27 @@ export default function Settings() {
               </div>
 
               <div className="space-y-1">
+                <label className="font-medium">{t("settings.stt.language.label")}</label>
+                <select
+                  className="w-full input-field px-2 py-1"
+                  value={draftSttLanguage}
+                  onChange={(e) => setDraftSttLanguage(e.target.value as SttLanguage)}
+                >
+                  <option value="auto">{t("settings.stt.language.auto")}</option>
+                  <option value="zh">中文</option>
+                  <option value="en">English</option>
+                  <option value="ja">日本語</option>
+                  <option value="ko">한국어</option>
+                  <option value="de">Deutsch</option>
+                  <option value="fr">Français</option>
+                  <option value="es">Español</option>
+                  <option value="ru">Русский</option>
+                  <option value="ar">العربية</option>
+                </select>
+                <p className="text-xs text-gray-500">{t("settings.stt.language.hint")}</p>
+              </div>
+
+              <div className="space-y-1">
                 <label className="font-medium">{t("settings.stt.microphoneSource")}</label>
                 <select
                   className="w-full input-field px-2 py-1"
@@ -1120,6 +1282,13 @@ export default function Settings() {
                   )}
                   {!localModelsLoading && localModels.map((model) => {
                     const isBusy = localModelBusyId === model.id;
+                    const downloadProgress = localModelDownloadProgress[model.id];
+                    const isInstalling = isBusy && localModelBusyAction === "install";
+                    const isDownloadActive =
+                      downloadProgress?.status === "start" || downloadProgress?.status === "downloading";
+                    const progressPct = Math.max(0, Math.min(100, Math.round(downloadProgress?.progressPct ?? 0)));
+                    const downloadedBytes = downloadProgress?.downloadedBytes ?? 0;
+                    const totalBytes = downloadProgress?.totalBytes ?? 0;
                     return (
                       <div key={model.id} className="rounded border border-gray-200 bg-gray-50 p-3 space-y-2">
                         <div className="flex items-center justify-between gap-2">
@@ -1164,13 +1333,27 @@ export default function Settings() {
 
                         <div className="flex items-center gap-2">
                           {!model.installed ? (
-                            <button
-                              onClick={() => handleInstallLocalModel(model.id)}
-                              disabled={!!localModelBusyId}
-                              className="px-2.5 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                            >
-                              {isBusy && localModelBusyAction === "install" ? t("settings.stt.installing") : t("settings.stt.install")}
-                            </button>
+                            <>
+                              <button
+                                onClick={() => void handleInstallLocalModel(model.id)}
+                                disabled={!!localModelBusyId}
+                                className="px-2.5 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                              >
+                                {isDownloadActive || isInstalling
+                                  ? `${t("settings.stt.installing")} ${progressPct}%`
+                                  : failedDownloadModelId === model.id
+                                    ? t("settings.stt.retry")
+                                    : t("settings.stt.install")}
+                              </button>
+                              {(isDownloadActive || isInstalling) && (
+                                <button
+                                  onClick={() => void handleCancelLocalModelDownload()}
+                                  className="px-2.5 py-1 rounded text-xs font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 transition-colors"
+                                >
+                                  {t("settings.cancel")}
+                                </button>
+                              )}
+                            </>
                           ) : (
                             <button
                               onClick={() => handleDeleteLocalModel(model.id)}
@@ -1181,6 +1364,34 @@ export default function Settings() {
                             </button>
                           )}
                         </div>
+                        {downloadProgress && (
+                          <div className="space-y-1">
+                            <div className="h-1.5 w-full rounded bg-gray-200 overflow-hidden">
+                              <div
+                                className={`h-full transition-all ${
+                                  downloadProgress.status === "error"
+                                    ? "bg-red-500"
+                                    : downloadProgress.status === "cancelled"
+                                      ? "bg-amber-500"
+                                      : "bg-blue-500"
+                                }`}
+                                style={{ width: `${progressPct}%` }}
+                              />
+                            </div>
+                            <p className="text-[11px] text-gray-600">
+                              {progressPct}% ({formatBytes(downloadedBytes)} / {formatBytes(totalBytes)})
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                              {downloadProgress.status === "downloading" || downloadProgress.status === "start"
+                                ? t("settings.stt.installing")
+                                : downloadProgress.status === "done"
+                                  ? t("settings.status.modelInstalled")
+                                  : downloadProgress.status === "cancelled"
+                                    ? t("settings.status.modelInstallCancelled")
+                                    : t("settings.status.modelInstallFailed")}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1360,8 +1571,8 @@ export default function Settings() {
                 <input
                   className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
                   placeholder="zh-TW-HsiaoChenNeural"
-                  value={ttsVoice}
-                  onChange={(e) => setTtsVoice(e.target.value)}
+                  value={draftTtsVoice}
+                  onChange={(e) => setDraftTtsVoice(e.target.value)}
                 />
                 <p className="text-[11px] text-zinc-500 mt-0.5">{t("settings.tts.voiceHint")}</p>
               </div>
@@ -1373,8 +1584,8 @@ export default function Settings() {
                   <input
                     className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
                     placeholder="+0%"
-                    value={ttsRate}
-                    onChange={(e) => setTtsRate(e.target.value)}
+                    value={draftTtsRate}
+                    onChange={(e) => setDraftTtsRate(e.target.value)}
                   />
                 </div>
                 <div>
@@ -1382,8 +1593,8 @@ export default function Settings() {
                   <input
                     className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
                     placeholder="+0Hz"
-                    value={ttsPitch}
-                    onChange={(e) => setTtsPitch(e.target.value)}
+                    value={draftTtsPitch}
+                    onChange={(e) => setDraftTtsPitch(e.target.value)}
                   />
                 </div>
               </div>
@@ -1395,11 +1606,11 @@ export default function Settings() {
             <div className="flex items-center gap-3">
               <label className="font-medium">{t("settings.privacy.label")}</label>
               <button
-                onClick={() => setIncognito(!incognito)}
-                className={`relative w-10 h-5 rounded-full transition-colors ${incognito ? "bg-blue-500" : "bg-gray-300"}`}
+                onClick={() => setDraftIncognito(!draftIncognito)}
+                className={`relative w-10 h-5 rounded-full transition-colors ${draftIncognito ? "bg-blue-500" : "bg-gray-300"}`}
               >
                 <span
-                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${incognito ? "translate-x-5" : ""}`}
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${draftIncognito ? "translate-x-5" : ""}`}
                 />
               </button>
             </div>

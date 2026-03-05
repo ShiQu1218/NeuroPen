@@ -18,6 +18,7 @@ import type {
   LlmProvider,
   PreferredLanguage,
   PunctuationMode,
+  SttLanguage,
   TranslationTarget,
 } from "./store/useAppStore";
 import { clampToMonitorBounds } from "./utils/windowBounds";
@@ -135,6 +136,7 @@ function MainWindow() {
     setCurrentMode,
     setSttError,
     setSttEngine,
+    setSttLanguage,
     setSttModelPath,
     setWakeWord,
     setHotkey,
@@ -198,6 +200,7 @@ function MainWindow() {
       await invoke("set_runtime_stt_config", {
         engine: normalizeSttEngine(String(initialStore.sttEngine)),
         modelPath: initialStore.sttModelPath,
+        sttLanguage: initialStore.sttLanguage,
       }).catch((err) => {
         console.warn("[App] set_runtime_stt_config init failed:", err);
       });
@@ -238,6 +241,7 @@ function MainWindow() {
           await invoke("stop_recording", {
             engine: normalizedSttEngine,
             modelPath: store.sttModelPath,
+            sttLanguage: store.sttLanguage,
           });
           store.setIsRecording(false);
           pendingHotkeyReleaseAt = 0;
@@ -273,6 +277,7 @@ function MainWindow() {
         hotkey: string;
         sttEngine: "openAi" | "localWhisper";
         sttModelPath?: string;
+        sttLanguage?: SttLanguage;
         outputMode: "DirectInject" | "PreviewStream";
         sttOutputStrategy?: "raw" | "llmRefine";
         punctuationMode?: "off" | "balanced" | "aggressive";
@@ -301,13 +306,17 @@ function MainWindow() {
           if (payload.sttEngine) {
             setSttEngine(normalizeSttEngine(payload.sttEngine));
           }
+          if (payload.sttLanguage) {
+            setSttLanguage(payload.sttLanguage);
+          }
           if (typeof payload.sttModelPath === "string") {
             setSttModelPath(payload.sttModelPath);
           }
-          if (payload.sttEngine || typeof payload.sttModelPath === "string") {
+          if (payload.sttEngine || payload.sttLanguage || typeof payload.sttModelPath === "string") {
             void invoke("set_runtime_stt_config", {
               engine: normalizeSttEngine(payload.sttEngine ?? "openAi"),
               modelPath: typeof payload.sttModelPath === "string" ? payload.sttModelPath : "",
+              sttLanguage: payload.sttLanguage ?? "auto",
             }).catch((err) => {
               console.warn("[App] set_runtime_stt_config sync failed:", err);
             });
@@ -900,7 +909,7 @@ function MainWindow() {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, []);
+  }, [setSttLanguage]);
 
   return null;
 }
