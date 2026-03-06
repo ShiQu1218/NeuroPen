@@ -163,6 +163,13 @@ export default function QuickActionIcon() {
     const scaleFactor = await getCurrentWindow().scaleFactor();
 
     if (outputMode === "PreviewStream") {
+      // Emit session event BEFORE showing the window so the animation
+      // key changes while the window is still hidden.
+      await emit("talkflow://preview-session", {
+        selectedText,
+        instruction,
+      });
+
       const previewWin = await WebviewWindow.getByLabel("preview");
       if (previewWin) {
         await previewWin.setSize(
@@ -185,10 +192,6 @@ export default function QuickActionIcon() {
         await previewWin.show();
         await previewWin.setFocus();
       }
-      await emit("talkflow://preview-session", {
-        selectedText,
-        instruction,
-      });
     }
 
     await invoke("call_llm", {
@@ -250,7 +253,7 @@ export default function QuickActionIcon() {
   return (
     <div
       ref={panelRef}
-      className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm animate-scaleUp"
+      className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm animate-scaleUp overflow-hidden h-screen"
       onMouseEnter={expand}
       onMouseLeave={() => collapse()}
     >

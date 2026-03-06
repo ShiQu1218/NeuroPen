@@ -17,7 +17,7 @@ const PREVIEW_CHROME_HEIGHT = 180;
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
   const [screenshotBase64, setScreenshotBase64] = useState("");
-  const [sessionKey, setSessionKey] = useState(0);
+  const [animKey, setAnimKey] = useState(0);
   const [isScreenshotSession, setIsScreenshotSession] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const outputContentRef = useRef<HTMLDivElement>(null);
@@ -174,7 +174,7 @@ export default function PreviewWindow() {
               console.warn("[Preview] preview-session resize failed:", err);
             }
           })();
-          setSessionKey((k) => k + 1);
+          setAnimKey((k) => k + 1);
           useAppStore.getState().setLlmOutput("");
           useAppStore.getState().setIsLlmLoading(true);
           useAppStore.getState().setLlmError("");
@@ -230,6 +230,7 @@ export default function PreviewWindow() {
         (event) => {
           setScreenshotBase64(event.payload.imageBase64 || "");
           setIsScreenshotSession(true);
+          setAnimKey((k) => k + 1);
           useAppStore.getState().setLlmOutput("");
           useAppStore.getState().setIsLlmLoading(false);
           useAppStore.getState().setLlmError("");
@@ -421,7 +422,7 @@ export default function PreviewWindow() {
   const hasOutput = llmOutput.length > 0;
 
   return (
-    <div key={sessionKey} className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp">
+    <div key={animKey} className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp">
       {/* Custom title bar (draggable) */}
       <div
         className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"
@@ -547,7 +548,7 @@ export default function PreviewWindow() {
       </div>
 
       {/* Action buttons */}
-      <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80 rounded-b-2xl">
+      <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80">
         <button
           className="btn-secondary px-3 py-1.5 text-xs"
           disabled={!hasOutput}
