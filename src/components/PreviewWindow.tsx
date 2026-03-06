@@ -17,6 +17,7 @@ const PREVIEW_CHROME_HEIGHT = 180;
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
   const [screenshotBase64, setScreenshotBase64] = useState("");
+  const [sessionKey, setSessionKey] = useState(0);
   const outputRef = useRef<HTMLDivElement>(null);
   const outputContentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -172,6 +173,7 @@ export default function PreviewWindow() {
               console.warn("[Preview] preview-session resize failed:", err);
             }
           })();
+          setSessionKey((k) => k + 1);
           useAppStore.getState().setLlmOutput("");
           useAppStore.getState().setIsLlmLoading(true);
           useAppStore.getState().setLlmError("");
@@ -413,7 +415,7 @@ export default function PreviewWindow() {
   const hasOutput = llmOutput.length > 0;
 
   return (
-    <div className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden">
+    <div key={sessionKey} className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp">
       {/* Custom title bar (draggable) */}
       <div
         className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"

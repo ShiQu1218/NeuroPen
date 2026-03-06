@@ -123,7 +123,7 @@ export default function QuickActionIcon() {
       void setQaInteracting(false);
       getCurrentWindow()
         .setSize(new LogicalSize(ICON_SIZE.width, ICON_SIZE.height))
-        .catch(() => {});
+        .catch(() => { });
     }, 200);
   }, [isInputFocused, setQaInteracting]);
 
@@ -234,9 +234,8 @@ export default function QuickActionIcon() {
   if (!expanded) {
     return (
       <div
-        className={`flex items-center justify-center w-[36px] h-[36px] bg-white/85 backdrop-blur-md border border-white/80 rounded-full shadow-[0_10px_28px_rgba(0,0,0,0.18)] cursor-pointer transition-all duration-200 ease-out ${
-          iconVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
-        }`}
+        className={`flex items-center justify-center w-[36px] h-[36px] bg-white/85 backdrop-blur-md border border-white/80 rounded-full shadow-[0_10px_28px_rgba(0,0,0,0.18)] cursor-pointer transition-all duration-200 ease-out animate-scaleUp ${iconVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+          }`}
         onMouseEnter={expand}
         onClick={expand}
       >
@@ -248,7 +247,7 @@ export default function QuickActionIcon() {
   return (
     <div
       ref={panelRef}
-      className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm"
+      className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm animate-scaleUp"
       onMouseEnter={expand}
       onMouseLeave={() => collapse()}
     >

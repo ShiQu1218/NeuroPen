@@ -152,13 +152,12 @@ export default function RecordingIndicator() {
 
   return (
     <div className="flex items-center justify-center w-full h-full bg-transparent">
-      <div className="flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full text-sm shadow-lg backdrop-blur-sm max-w-[400px]">
+      <div className="flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full text-sm shadow-lg backdrop-blur-sm max-w-[400px] animate-scaleUp">
         <span
-          className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-            isRecording
+          className={`w-2.5 h-2.5 rounded-full shrink-0 ${isRecording
               ? "bg-red-500 animate-pulse"
               : "bg-gray-400"
-          }`}
+            }`}
         />
         {isRecording && partialText ? (
           <span className="text-white/70 text-xs truncate">{partialText}</span>
