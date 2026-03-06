@@ -125,6 +125,16 @@ const stripWrappingQuotes = (text: string) => {
   return trimmed;
 };
 
+const buildSelectionFingerprint = (
+  selectionText: string,
+  anchorX?: number | null,
+  anchorY?: number | null,
+) => `${selectionText || "__selection__"}::${
+  typeof anchorX === "number" && typeof anchorY === "number"
+    ? `${Math.round(anchorX)}::${Math.round(anchorY)}`
+    : "__anchor__"
+}`;
+
 function App() {
   const [windowLabel, setWindowLabel] = useState<string>("");
 
@@ -203,6 +213,7 @@ function MainWindow() {
     const unlisten: Array<() => void> = [];
     let qaInteracting = false;
     let lastSelectionFingerprint = "";
+    let suppressedSelectionFingerprint = "";
     let pendingHotkeyReleaseAt = 0;
     let qaHideTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -311,9 +322,10 @@ function MainWindow() {
             qaHideTimer = null;
           }
           if (!qaInteracting) {
-            lastSelectionFingerprint = "";
             const sel = await invoke<{ has_selection: boolean }>("get_selection");
             if (!sel.has_selection) {
+              lastSelectionFingerprint = "";
+              suppressedSelectionFingerprint = "";
               const qaWin = await WebviewWindow.getByLabel("quick-action");
               if (qaWin) {
                 await qaWin.hide();
@@ -322,6 +334,14 @@ function MainWindow() {
           }
         }
       );
+
+      await safeRegister("talkflow://qa-suppress-current-selection", async () => {
+        suppressedSelectionFingerprint = lastSelectionFingerprint;
+        const qaWin = await WebviewWindow.getByLabel("quick-action");
+        if (qaWin) {
+          await qaWin.hide().catch(() => {});
+        }
+      });
 
       await safeRegister<{
         wakeWord: string;
@@ -460,11 +480,14 @@ function MainWindow() {
             // Position QA icon below selection end (fallback to cursor).
             const x = typeof anchor_x === "number" ? anchor_x : cursor_x;
             const y = typeof anchor_y === "number" ? anchor_y : cursor_y;
-            const currentFingerprint = `${selectionText || "__selection__"}::${
-              typeof anchor_x === "number" && typeof anchor_y === "number"
-                ? `${Math.round(anchor_x)}::${Math.round(anchor_y)}`
-                : "__anchor__"
-            }`;
+            const currentFingerprint = buildSelectionFingerprint(selectionText, anchor_x, anchor_y);
+            if (suppressedSelectionFingerprint) {
+              if (currentFingerprint === suppressedSelectionFingerprint) {
+                lastSelectionFingerprint = currentFingerprint;
+                return;
+              }
+              suppressedSelectionFingerprint = "";
+            }
             // Lock target window + cache clipboard once per unique selection.
             if (currentFingerprint !== lastSelectionFingerprint) {
               // Auto-close old Preview Window only when the selection actually changed.
@@ -499,6 +522,7 @@ function MainWindow() {
             await emit("talkflow://qa-show");
           } else {
             lastSelectionFingerprint = "";
+            suppressedSelectionFingerprint = "";
             if (qaInteracting) return;
             if (qaHideTimer) {
               clearTimeout(qaHideTimer);

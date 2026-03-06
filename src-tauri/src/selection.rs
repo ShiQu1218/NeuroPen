@@ -7,6 +7,40 @@
 //!
 //! Uses IUIAutomation via the `windows` crate.
 
+#[cfg(target_os = "windows")]
+fn capture_selection_snapshot_via_clipboard() -> Option<String> {
+    use crate::{clipboard, injection};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let _op = clipboard::acquire_op_lock().ok()?;
+    let original_clipboard = clipboard::read_clipboard().unwrap_or_default();
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let sentinel = format!(
+        "__TALKFLOW_SELECTION_SNAPSHOT_{}_{}__",
+        std::process::id(),
+        nonce
+    );
+
+    if clipboard::write_clipboard(&sentinel).is_err() {
+        return None;
+    }
+    let copy_result = injection::simulate_ctrl_c();
+    let clipboard_text = clipboard::read_clipboard().ok();
+    let _ = clipboard::write_clipboard(&original_clipboard);
+
+    if copy_result.is_err() {
+        return None;
+    }
+
+    match clipboard_text {
+        Some(text) if !text.trim().is_empty() && text != sentinel => Some(text),
+        _ => None,
+    }
+}
+
 /// Result of a selection poll attempt.
 #[derive(Debug, Clone)]
 pub enum SelectionResult {
@@ -181,13 +215,16 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 String::new()
             };
 
-            // Avoid automatic Ctrl+C fallback here because it can race with user
-            // Ctrl+V workflows. For UIA-unavailable apps, still surface a selection
-            // state so Quick Action can appear; actual text is fetched on command.
+            // In UIA-unavailable apps, capture the selection immediately after
+            // mouse release while it is still active, then restore clipboard.
+            // This keeps Quick Action responsive without reading stale clipboard
+            // contents later after the user clicks the popup.
             if just_released && was_drag_select && !has_selection && raw_unavailable {
-                has_selection = true;
-                text = String::new();
-                sticky_text = Some(String::new());
+                if let Some(snapshot) = capture_selection_snapshot_via_clipboard() {
+                    has_selection = true;
+                    text = snapshot.clone();
+                    sticky_text = Some(snapshot);
+                }
             }
 
             // If no UIA selection but we have a sticky fallback selection, keep it.

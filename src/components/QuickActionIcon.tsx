@@ -151,12 +151,10 @@ export default function QuickActionIcon() {
         const sel = await invoke<{ has_selection: boolean; text: string | null }>("get_selection");
         if (sel.has_selection && sel.text) {
           selectedText = sel.text;
-        } else {
-          selectedText = await invoke<string>("read_selection_clipboard");
         }
       }
     } catch (err) {
-      console.error("[QuickAction] Failed to get selection:", err);
+      console.error("[QuickAction] Failed to safely get selection:", err);
     }
 
     if (!selectedText) {
@@ -166,6 +164,7 @@ export default function QuickActionIcon() {
     }
 
     await invoke("restore_clipboard");
+    await emit("talkflow://qa-suppress-current-selection");
     await setQaInteracting(false);
     await getCurrentWindow().hide();
     setExpanded(false);

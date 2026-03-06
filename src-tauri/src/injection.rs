@@ -11,6 +11,7 @@
 
 use crate::clipboard;
 use crate::window_focus;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub enum InjectionError {
@@ -220,6 +221,19 @@ pub fn inject_text(text: &str) -> Result<(), InjectionError> {
 /// Reads selected text from the target window by simulating Ctrl+C.
 /// Assumes clipboard has already been cached.
 pub fn read_selection_via_clipboard() -> Result<String, InjectionError> {
+    let _op = clipboard::acquire_op_lock().map_err(InjectionError::ClipboardError)?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let sentinel = format!("__TALKFLOW_SELECTION_SENTINEL_{}_{}__", std::process::id(), now);
+    clipboard::write_clipboard(&sentinel).map_err(InjectionError::ClipboardError)?;
     simulate_ctrl_c()?;
-    clipboard::read_clipboard().map_err(InjectionError::ClipboardError)
+    let text = clipboard::read_clipboard().map_err(InjectionError::ClipboardError)?;
+    if text.trim().is_empty() || text == sentinel {
+        return Err(InjectionError::ClipboardError(
+            "Cannot safely read the current selection from clipboard".to_string(),
+        ));
+    }
+    Ok(text)
 }
