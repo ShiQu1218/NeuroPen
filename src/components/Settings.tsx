@@ -30,100 +30,21 @@ import {
   type SttLanguage,
   type PunctuationMode,
 } from "../store/useAppStore";
-import HistoryPanel from "./HistoryPanel";
-
-interface LocalSttModel {
-  id: string;
-  name: string;
-  description: string;
-  speed: number;
-  accuracy: number;
-  downloadUrl: string;
-  fileName: string;
-  installed: boolean;
-  active: boolean;
-  modelPath: string;
-}
-
-interface ModelDownloadProgressEvent {
-  modelId: string;
-  status: "start" | "downloading" | "done" | "cancelled" | "error";
-  downloadedBytes?: number;
-  totalBytes?: number;
-  progressPct?: number;
-}
-
-interface RegisteredHotkeys {
-  triggerHotkey: string;
-  triggerPersisted: boolean;
-  screenshotHotkey: string;
-  screenshotPersisted: boolean;
-}
-
-type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "history";
-
-const STATUS_RESET_MS = 2000;
-const RATING_INDICES = [0, 1, 2, 3, 4];
-const OPENAI_STT_MODEL = "openai-whisper-api";
-
-const NAV_ITEMS: { id: SettingsSection; icon: React.ReactNode }[] = [
-  {
-    id: "general",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M12 3v4m0 10v4m9-9h-4M7 12H3m14.364 6.364-2.828-2.828M9.464 9.464 6.636 6.636m10.728 0-2.828 2.828M9.464 14.536l-2.828 2.828" />
-      </svg>
-    ),
-  },
-  {
-    id: "stt",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <rect x="9" y="3" width="6" height="12" rx="3" />
-        <path d="M5 11a7 7 0 0 0 14 0M12 18v3m-3 0h6" />
-      </svg>
-    ),
-  },
-  {
-    id: "quickAction",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M7 7h10v10H7z" />
-        <path d="M3 12h2m14 0h2M12 3v2m0 14v2" />
-      </svg>
-    ),
-  },
-  {
-    id: "llm",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <path d="M12 2a7 7 0 0 0-7 7c0 2.5 1.2 4.5 3 5.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3c1.8-1.2 3-3.2 3-5.7a7 7 0 0 0-7-7Z" />
-        <path d="M9 21h6M10 17v4M14 17v4" />
-        <path d="M9 10h0M15 10h0" />
-        <path d="M9.5 13a3.5 3.5 0 0 0 5 0" />
-      </svg>
-    ),
-  },
-  {
-    id: "tts",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-      </svg>
-    ),
-  },
-  {
-    id: "history",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-  },
-];
+import SettingsFooter from "./settings/SettingsFooter";
+import SettingsHistorySection from "./settings/SettingsHistorySection";
+import SettingsQuickActionSection from "./settings/SettingsQuickActionSection";
+import SettingsSidebar from "./settings/SettingsSidebar";
+import SettingsTtsSection from "./settings/SettingsTtsSection";
+import {
+  NAV_ITEMS,
+  OPENAI_STT_MODEL,
+  RATING_INDICES,
+  STATUS_RESET_MS,
+  type LocalSttModel,
+  type ModelDownloadProgressEvent,
+  type RegisteredHotkeys,
+  type SettingsSection,
+} from "./settings/settingsShared";
 
 export default function Settings() {
   const {
@@ -977,26 +898,13 @@ export default function Settings() {
       </div>
 
       <div className="mt-4 grid grid-cols-[210px_minmax(0,1fr)] gap-4 flex-1 min-h-0">
-        {/* 2b: sidebar rendered via NAV_ITEMS.map() */}
-        <div className="self-start glass-panel-sm p-2 min-h-0 overflow-y-auto">
-          <p className="px-2 py-1 text-xs font-semibold text-zinc-500">{t("settings.directory")}</p>
-          <div className="space-y-1">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveSection(item.id)}
-                className={activeSection === item.id ? "nav-tab-active" : "nav-tab-inactive"}
-              >
-                <span className="flex items-center gap-2">
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-zinc-100 text-zinc-500">
-                    {item.icon}
-                  </span>
-                  <span>{t(sectionLabelKey[item.id])}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <SettingsSidebar
+          activeSection={activeSection}
+          navItems={NAV_ITEMS}
+          onSelectSection={setActiveSection}
+          sectionLabelKey={sectionLabelKey}
+          t={t}
+        />
 
         <div className="glass-panel-md p-4 min-h-0 flex flex-col">
           <div className="space-y-5 min-h-0 overflow-y-auto pr-1">
@@ -1547,65 +1455,14 @@ export default function Settings() {
           )}
 
           {activeSection === "quickAction" && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <label className="font-medium">{t("settings.quickAction.label")}</label>
-                  <p className="text-xs text-gray-400">{t("settings.quickAction.hint")}</p>
-                </div>
-                <button
-                  onClick={handleAddQuickActionCommand}
-                  className="btn-primary px-3 py-1.5 text-xs"
-                >
-                  {t("settings.quickAction.add")}
-                </button>
-              </div>
-              <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
-                {draftQuickActionCommands.map((command, index) => (
-                  <div key={command.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-                    <input
-                      className="w-full input-field px-2 py-1 text-xs"
-                      value={command.label}
-                      onChange={(e) => handleUpdateQuickActionCommand(command.id, "label", e.target.value)}
-                      placeholder={t("settings.quickAction.namePlaceholder")}
-                    />
-                    <textarea
-                      className="w-full min-h-[72px] input-field px-2 py-1 text-xs"
-                      value={command.instruction}
-                      onChange={(e) => handleUpdateQuickActionCommand(command.id, "instruction", e.target.value)}
-                      placeholder={t("settings.quickAction.instructionPlaceholder")}
-                    />
-                    <div className="flex justify-end gap-1.5">
-                      <button
-                        onClick={() => handleMoveQuickActionCommand(command.id, "up")}
-                        disabled={index === 0}
-                        className="btn-secondary px-2.5 py-1 rounded-lg text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                        title="上移"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        onClick={() => handleMoveQuickActionCommand(command.id, "down")}
-                        disabled={index === draftQuickActionCommands.length - 1}
-                        className="btn-secondary px-2.5 py-1 rounded-lg text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                        title="下移"
-                      >
-                        ↓
-                      </button>
-                      <button
-                        onClick={() => handleDeleteQuickActionCommand(command.id)}
-                        className="btn-danger px-2.5 py-1 rounded-lg text-xs"
-                      >
-                        {t("settings.stt.delete")}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {draftQuickActionCommands.length === 0 && (
-                  <p className="text-xs text-amber-700">{t("settings.quickAction.requireOne")}</p>
-                )}
-              </div>
-            </div>
+            <SettingsQuickActionSection
+              commands={draftQuickActionCommands}
+              onAdd={handleAddQuickActionCommand}
+              onDelete={handleDeleteQuickActionCommand}
+              onMove={handleMoveQuickActionCommand}
+              onUpdate={handleUpdateQuickActionCommand}
+              t={t}
+            />
           )}
 
           {activeSection === "llm" && (
@@ -1760,89 +1617,35 @@ export default function Settings() {
           )}
 
           {activeSection === "tts" && (
-            <>
-              {/* TTS Voice */}
-              <div>
-                <label className="text-xs font-medium">{t("settings.tts.voice")}</label>
-                <input
-                  className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
-                  placeholder="zh-TW-HsiaoChenNeural"
-                  value={draftTtsVoice}
-                  onChange={(e) => setDraftTtsVoice(e.target.value)}
-                />
-                <p className="text-[11px] text-zinc-500 mt-0.5">{t("settings.tts.voiceHint")}</p>
-              </div>
-
-              {/* TTS Rate */}
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium">{t("settings.tts.rate")}</label>
-                  <input
-                    className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
-                    placeholder="+0%"
-                    value={draftTtsRate}
-                    onChange={(e) => setDraftTtsRate(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium">{t("settings.tts.pitch")}</label>
-                  <input
-                    className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
-                    placeholder="+0Hz"
-                    value={draftTtsPitch}
-                    onChange={(e) => setDraftTtsPitch(e.target.value)}
-                  />
-                </div>
-              </div>
-
-            </>
+            <SettingsTtsSection
+              draftTtsPitch={draftTtsPitch}
+              draftTtsRate={draftTtsRate}
+              draftTtsVoice={draftTtsVoice}
+              onPitchChange={setDraftTtsPitch}
+              onRateChange={setDraftTtsRate}
+              onVoiceChange={setDraftTtsVoice}
+              t={t}
+            />
           )}
 
           {activeSection === "history" && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <label className="font-medium">{t("settings.history.enable")}</label>
-                <button
-                  onClick={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
-                  className={`relative w-10 h-5 rounded-full transition-colors ${draftHistoryEnabled ? "bg-blue-500" : "bg-gray-300"}`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${draftHistoryEnabled ? "translate-x-5" : ""}`}
-                  />
-                </button>
-              </div>
-              <p className="text-xs text-zinc-500">
-                {t("settings.history.hint")}
-              </p>
-              <HistoryPanel />
-            </div>
+            <SettingsHistorySection
+              draftHistoryEnabled={draftHistoryEnabled}
+              onToggle={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
+              t={t}
+            />
           )}
           </div>
         </div>
       </div>
 
-      <div className="pt-3 mt-3 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
-        {settingsSaveStatus === "saved" && (
-          <p className="text-xs text-green-600">{t("settings.saveApplied")}</p>
-        )}
-        {settingsSaveStatus === "error" && (
-          <p className="text-xs text-red-600">{t("settings.saveError")}</p>
-        )}
-        <button
-          onClick={handleCancelSettings}
-          disabled={!hasSettingsChanges}
-          className="btn-secondary px-3.5 py-1.5 text-xs"
-        >
-          {t("settings.cancel")}
-        </button>
-        <button
-          onClick={handleSaveSettings}
-          disabled={!hasSettingsChanges}
-          className="btn-primary px-3.5 py-1.5 text-xs"
-        >
-          {t("settings.save")}
-        </button>
-      </div>
+      <SettingsFooter
+        hasSettingsChanges={hasSettingsChanges}
+        onCancel={handleCancelSettings}
+        onSave={handleSaveSettings}
+        settingsSaveStatus={settingsSaveStatus}
+        t={t}
+      />
     </div>
   );
 }
