@@ -51,6 +51,34 @@ struct RuntimeSttConfig {
 }
 
 static RUNTIME_STT_CONFIG: Mutex<Option<RuntimeSttConfig>> = Mutex::new(None);
+#[cfg(target_os = "windows")]
+static SINGLE_INSTANCE_GUARD: Mutex<Option<std::net::TcpListener>> = Mutex::new(None);
+
+#[cfg(target_os = "windows")]
+fn acquire_single_instance_lock() -> Result<(), String> {
+    // Bind a localhost guard port for the process lifetime.
+    // If another instance is already running, the address will already be in use.
+    const SINGLE_INSTANCE_ADDR: &str = "127.0.0.1:48173";
+    let listener = std::net::TcpListener::bind(SINGLE_INSTANCE_ADDR).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::AddrInUse {
+            "TalkFlow is already running.".to_string()
+        } else {
+            format!("Failed to acquire single-instance lock: {e}")
+        }
+    })?;
+    let _ = listener.set_nonblocking(true);
+
+    let mut guard = SINGLE_INSTANCE_GUARD
+        .lock()
+        .map_err(|e| format!("Failed to store single-instance guard: {e}"))?;
+    *guard = Some(listener);
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn acquire_single_instance_lock() -> Result<(), String> {
+    Ok(())
+}
 
 // ── Tauri commands exposed to the frontend ──────────────────────────────
 
@@ -575,6 +603,11 @@ fn show_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Err(err) = acquire_single_instance_lock() {
+        eprintln!("[setup] {err}");
+        return;
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(hotkey::build_plugin())
