@@ -137,6 +137,9 @@ export default function Settings() {
     llmProvider, setLlmProvider,
     llmModel, setLlmModel,
     llmModelOptions, setLlmModelOptions,
+    sttEnabled, setSttEnabled,
+    selectionEnabled, setSelectionEnabled,
+    screenshotEnabled, setScreenshotEnabled,
     hotkey, setHotkey,
     screenshotHotkey, setScreenshotHotkey,
     sttEngine, setSttEngine,
@@ -205,6 +208,9 @@ export default function Settings() {
   const [hotkeyErrorMessage, setHotkeyErrorMessage] = useState("");
   const [settingsSaveStatus, setSettingsSaveStatus] = useState<"" | "saved" | "error">("");
   const [draftWakeWord, setDraftWakeWord] = useState(wakeWord);
+  const [draftSttEnabled, setDraftSttEnabled] = useState(sttEnabled);
+  const [draftSelectionEnabled, setDraftSelectionEnabled] = useState(selectionEnabled);
+  const [draftScreenshotEnabled, setDraftScreenshotEnabled] = useState(screenshotEnabled);
   const [draftHotkey, setDraftHotkey] = useState(hotkey);
   const [draftScreenshotHotkey, setDraftScreenshotHotkey] = useState(screenshotHotkey);
   const [draftSttEngine, setDraftSttEngine] = useState(sttEngine);
@@ -339,6 +345,9 @@ export default function Settings() {
         ? OPENAI_STT_MODEL
         : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
     setDraftWakeWord(wakeWord);
+    setDraftSttEnabled(sttEnabled);
+    setDraftSelectionEnabled(selectionEnabled);
+    setDraftScreenshotEnabled(screenshotEnabled);
     setDraftHotkey(hotkey);
     setDraftScreenshotHotkey(screenshotHotkey);
     setDraftSttEngine(sttEngine);
@@ -364,6 +373,9 @@ export default function Settings() {
     setDraftTranslationTarget(translationTarget);
   }, [
     wakeWord,
+    sttEnabled,
+    selectionEnabled,
+    screenshotEnabled,
     hotkey,
     screenshotHotkey,
     sttEngine,
@@ -504,6 +516,8 @@ export default function Settings() {
   const handleSaveSettings = async () => {
     const normalizedHotkey = normalizeHotkey(draftHotkey);
     const normalizedScreenshotHotkey = normalizeHotkey(draftScreenshotHotkey);
+    const nextHotkey = draftHotkey.trim();
+    const nextScreenshotHotkey = draftScreenshotHotkey.trim();
     const normalizedUndoHotkey = normalizeHotkey("Alt+Z");
     if (normalizedHotkey && normalizedHotkey === normalizedScreenshotHotkey) {
       setHotkeyStatus("error");
@@ -561,11 +575,11 @@ export default function Settings() {
 
     try {
       setHotkeyErrorMessage("");
-      if (draftHotkey !== hotkey) {
-        await invoke("change_hotkey", { hotkeyStr: draftHotkey });
+      if (nextHotkey !== hotkey) {
+        await invoke("change_hotkey", { hotkeyStr: nextHotkey });
       }
-      if (draftScreenshotHotkey !== screenshotHotkey) {
-        await invoke("change_screenshot_hotkey", { hotkeyStr: draftScreenshotHotkey });
+      if (nextScreenshotHotkey !== screenshotHotkey) {
+        await invoke("change_screenshot_hotkey", { hotkeyStr: nextScreenshotHotkey });
       }
       if (draftLaunchOnStartup !== launchOnStartup) {
         await invoke("set_launch_on_startup", { enabled: draftLaunchOnStartup });
@@ -575,8 +589,11 @@ export default function Settings() {
       }
 
       setWakeWord(nextWakeWord);
-      setHotkey(draftHotkey);
-      setScreenshotHotkey(draftScreenshotHotkey);
+      setSttEnabled(draftSttEnabled);
+      setSelectionEnabled(draftSelectionEnabled);
+      setScreenshotEnabled(draftScreenshotEnabled);
+      setHotkey(nextHotkey);
+      setScreenshotHotkey(nextScreenshotHotkey);
       setSttEngine(nextSttEngine);
       setSttLanguage(nextSttLanguage);
       setSttModelPath(nextSttModelPath);
@@ -605,8 +622,11 @@ export default function Settings() {
       });
       await emit("talkflow://settings-saved", {
         wakeWord: nextWakeWord,
-        hotkey: draftHotkey,
-        screenshotHotkey: draftScreenshotHotkey,
+        sttEnabled: draftSttEnabled,
+        selectionEnabled: draftSelectionEnabled,
+        screenshotEnabled: draftScreenshotEnabled,
+        hotkey: nextHotkey,
+        screenshotHotkey: nextScreenshotHotkey,
         sttEngine: nextSttEngine,
         sttLanguage: nextSttLanguage,
         sttModelPath: nextSttModelPath,
@@ -652,6 +672,9 @@ export default function Settings() {
         ? OPENAI_STT_MODEL
         : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
     setDraftWakeWord(wakeWord);
+    setDraftSttEnabled(sttEnabled);
+    setDraftSelectionEnabled(selectionEnabled);
+    setDraftScreenshotEnabled(screenshotEnabled);
     setDraftHotkey(hotkey);
     setDraftScreenshotHotkey(screenshotHotkey);
     setDraftSttEngine(sttEngine);
@@ -815,6 +838,9 @@ export default function Settings() {
           });
           await emit("talkflow://settings-saved", {
             wakeWord: draftWakeWord.trim() || wakeWord,
+            sttEnabled: draftSttEnabled,
+            selectionEnabled: draftSelectionEnabled,
+            screenshotEnabled: draftScreenshotEnabled,
             hotkey: draftHotkey,
             screenshotHotkey: draftScreenshotHotkey,
             sttEngine: "openAi",
@@ -859,6 +885,9 @@ export default function Settings() {
   const hasSettingsChanges = useMemo(
     () =>
       draftWakeWord !== wakeWord ||
+      draftSttEnabled !== sttEnabled ||
+      draftSelectionEnabled !== selectionEnabled ||
+      draftScreenshotEnabled !== screenshotEnabled ||
       draftHotkey !== hotkey ||
       draftScreenshotHotkey !== screenshotHotkey ||
       draftSttEngine !== sttEngine ||
@@ -885,6 +914,12 @@ export default function Settings() {
     [
       draftWakeWord,
       wakeWord,
+      draftSttEnabled,
+      sttEnabled,
+      draftSelectionEnabled,
+      selectionEnabled,
+      draftScreenshotEnabled,
+      screenshotEnabled,
       draftHotkey,
       hotkey,
       draftScreenshotHotkey,
@@ -1000,6 +1035,35 @@ export default function Settings() {
                 </label>
               </div>
 
+              <div className="space-y-2">
+                <label className="font-medium">{t("settings.features.title")}</label>
+                <p className="text-xs text-gray-500">{t("settings.features.hint")}</p>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={draftSttEnabled}
+                    onChange={(e) => setDraftSttEnabled(e.target.checked)}
+                  />
+                  {t("settings.feature.stt")}
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={draftSelectionEnabled}
+                    onChange={(e) => setDraftSelectionEnabled(e.target.checked)}
+                  />
+                  {t("settings.feature.selection")}
+                </label>
+                <label className="flex items-center gap-2 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={draftScreenshotEnabled}
+                    onChange={(e) => setDraftScreenshotEnabled(e.target.checked)}
+                  />
+                  {t("settings.feature.screenshot")}
+                </label>
+              </div>
+
               {/* Hotkey */}
               <div className="space-y-1">
                 <label className="font-medium">{t("settings.hotkey.label")}</label>
@@ -1042,8 +1106,22 @@ export default function Settings() {
                   >
                     {t("settings.hotkey.reset")}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftHotkey("");
+                      setHotkeyStatus("");
+                      setHotkeyErrorMessage("");
+                    }}
+                    className="btn-secondary px-2 py-1 text-xs"
+                  >
+                    {t("settings.hotkey.clear")}
+                  </button>
                   <span className="text-xs text-gray-400">{t("settings.hotkey.resetHint")}</span>
                 </div>
+                {!draftHotkey && (
+                  <p className="text-xs text-amber-700">{t("settings.hotkey.emptyHint")}</p>
+                )}
                 {hotkeyStatus === "error" && (
                   <p className="text-xs text-red-600">
                     {hotkeyErrorMessage
@@ -1079,6 +1157,22 @@ export default function Settings() {
                   }}
                 />
                 <p className="text-xs text-gray-400">{t("settings.screenshot.hint")}（可自訂）</p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftScreenshotHotkey("");
+                      setHotkeyStatus("");
+                      setHotkeyErrorMessage("");
+                    }}
+                    className="btn-secondary px-2 py-1 text-xs"
+                  >
+                    {t("settings.hotkey.clear")}
+                  </button>
+                  {!draftScreenshotHotkey && (
+                    <span className="text-xs text-amber-700">{t("settings.hotkey.emptyHint")}</span>
+                  )}
+                </div>
               </div>
 
               {/* Wake word */}
@@ -1097,6 +1191,11 @@ export default function Settings() {
 
           {activeSection === "stt" && (
             <>
+              {!draftSttEnabled && (
+                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {t("settings.stt.disabledHint")}
+                </div>
+              )}
               {/* STT model selector */}
               <div className="space-y-1">
                 <label className="font-medium">{t("settings.stt.modelLabel")}</label>

@@ -53,23 +53,13 @@ fn screenshot_hotkey_file() -> Option<PathBuf> {
 fn load_persisted_trigger_hotkey() -> Option<String> {
     let path = trigger_hotkey_file()?;
     let content = fs::read_to_string(path).ok()?;
-    let hotkey = content.trim().to_string();
-    if hotkey.is_empty() {
-        None
-    } else {
-        Some(hotkey)
-    }
+    Some(content.trim().to_string())
 }
 
 fn load_persisted_screenshot_hotkey() -> Option<String> {
     let path = screenshot_hotkey_file()?;
     let content = fs::read_to_string(path).ok()?;
-    let hotkey = content.trim().to_string();
-    if hotkey.is_empty() {
-        None
-    } else {
-        Some(hotkey)
-    }
+    Some(content.trim().to_string())
 }
 
 pub fn persist_trigger_hotkey(hotkey: &str) -> Result<(), String> {
@@ -149,7 +139,14 @@ pub fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::E
 
 /// Register the trigger hotkey from persisted config or fallback default.
 pub fn register_trigger(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let (hotkey, _) = current_trigger_hotkey();
+    let (hotkey, persisted) = current_trigger_hotkey();
+    if persisted && hotkey.trim().is_empty() {
+        if let Ok(mut guard) = CURRENT_TRIGGER.lock() {
+            *guard = None;
+        }
+        println!("[hotkey] Trigger hotkey disabled");
+        return Ok(());
+    }
     let sc = if let Ok((mods, code)) = parse_hotkey(&hotkey) {
         Shortcut::new(mods, code)
     } else {
@@ -168,6 +165,13 @@ pub fn register_trigger(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error
 /// Register the screenshot hotkey (Alt+S). Call once after app handle is ready.
 pub fn register_screenshot(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let (hotkey, persisted) = current_screenshot_hotkey();
+    if persisted && hotkey.trim().is_empty() {
+        if let Ok(mut guard) = CURRENT_SCREENSHOT.lock() {
+            *guard = None;
+        }
+        println!("[hotkey] Screenshot hotkey disabled");
+        return Ok(());
+    }
     let sc = if persisted {
         if let Ok((mods, code)) = parse_hotkey(&hotkey) {
             Shortcut::new(mods, code)
@@ -243,6 +247,36 @@ pub fn change_trigger(app: &tauri::AppHandle, modifiers: Option<Modifiers>, code
     }
 
     println!("[hotkey] Registered trigger shortcut: {modifiers:?}+{code:?}");
+    Ok(())
+}
+
+pub fn clear_trigger(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(old) = CURRENT_TRIGGER.lock().ok().and_then(|guard| *guard) {
+        if app.global_shortcut().is_registered(old) {
+            app.global_shortcut()
+                .unregister(old)
+                .map_err(|e| format!("Failed to unregister trigger hotkey: {e}"))?;
+        }
+    }
+    if let Ok(mut guard) = CURRENT_TRIGGER.lock() {
+        *guard = None;
+    }
+    println!("[hotkey] Trigger hotkey cleared");
+    Ok(())
+}
+
+pub fn clear_screenshot(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(old) = CURRENT_SCREENSHOT.lock().ok().and_then(|guard| *guard) {
+        if app.global_shortcut().is_registered(old) {
+            app.global_shortcut()
+                .unregister(old)
+                .map_err(|e| format!("Failed to unregister screenshot hotkey: {e}"))?;
+        }
+    }
+    if let Ok(mut guard) = CURRENT_SCREENSHOT.lock() {
+        *guard = None;
+    }
+    println!("[hotkey] Screenshot hotkey cleared");
     Ok(())
 }
 

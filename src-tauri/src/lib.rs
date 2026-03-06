@@ -412,17 +412,28 @@ fn route_on_trigger(has_selection: bool) -> mode_router::AppMode {
 /// Change the global trigger hotkey at runtime.
 #[tauri::command]
 fn change_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
-    let (modifiers, code) = hotkey::parse_hotkey(&hotkey_str)?;
+    let normalized = hotkey_str.trim();
+    if normalized.is_empty() {
+        hotkey::clear_trigger(&app)?;
+        return hotkey::persist_trigger_hotkey("");
+    }
+    let (modifiers, code) = hotkey::parse_hotkey(normalized)?;
     hotkey::change_trigger(&app, modifiers, code)?;
-    hotkey::persist_trigger_hotkey(&hotkey_str)
+    hotkey::persist_trigger_hotkey(normalized)
 }
 
 /// Change the screenshot hotkey at runtime.
 #[tauri::command]
 fn change_screenshot_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
-    let (modifiers, code) = hotkey::parse_hotkey(&hotkey_str)?;
+    let normalized = hotkey_str.trim();
+    if normalized.is_empty() {
+        hotkey::clear_screenshot(&app)?;
+        hotkey::persist_screenshot_hotkey("")?;
+        return Ok(());
+    }
+    let (modifiers, code) = hotkey::parse_hotkey(normalized)?;
     hotkey::change_screenshot(&app, modifiers, code)?;
-    hotkey::persist_screenshot_hotkey(&hotkey_str)?;
+    hotkey::persist_screenshot_hotkey(normalized)?;
     Ok(())
 }
 

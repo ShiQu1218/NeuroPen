@@ -177,6 +177,9 @@ function MainWindow() {
     setSttLanguage,
     setSttModelPath,
     setWakeWord,
+    setSttEnabled,
+    setSelectionEnabled,
+    setScreenshotEnabled,
     setHotkey,
     setOutputMode,
     setSttOutputStrategy,
@@ -241,10 +244,10 @@ function MainWindow() {
         backendHotkeys?.triggerPersisted ? backendHotkeys.triggerHotkey : hydratedStore.hotkey;
       const initialScreenshotHotkey =
         backendHotkeys?.screenshotPersisted ? backendHotkeys.screenshotHotkey : hydratedStore.screenshotHotkey;
-      if (initialTriggerHotkey && initialTriggerHotkey !== hydratedStore.hotkey) {
+      if (initialTriggerHotkey !== hydratedStore.hotkey) {
         setHotkey(initialTriggerHotkey);
       }
-      if (initialScreenshotHotkey && initialScreenshotHotkey !== hydratedStore.screenshotHotkey) {
+      if (initialScreenshotHotkey !== hydratedStore.screenshotHotkey) {
         setScreenshotHotkey(initialScreenshotHotkey);
       }
       if (!backendHotkeys || backendHotkeys.triggerHotkey !== initialTriggerHotkey) {
@@ -363,6 +366,9 @@ function MainWindow() {
       await safeRegister<{
         wakeWord: string;
         hotkey: string;
+        sttEnabled?: boolean;
+        selectionEnabled?: boolean;
+        screenshotEnabled?: boolean;
         sttEngine: "openAi" | "localWhisper";
         sttModelPath?: string;
         sttLanguage?: SttLanguage;
@@ -389,8 +395,29 @@ function MainWindow() {
           if (payload.wakeWord) {
             setWakeWord(payload.wakeWord);
           }
-          if (payload.hotkey) {
+          if (typeof payload.hotkey === "string") {
             setHotkey(payload.hotkey);
+          }
+          if (typeof payload.sttEnabled === "boolean") {
+            setSttEnabled(payload.sttEnabled);
+          }
+          if (typeof payload.selectionEnabled === "boolean") {
+            setSelectionEnabled(payload.selectionEnabled);
+            if (!payload.selectionEnabled) {
+              void (async () => {
+                const qaWin = await WebviewWindow.getByLabel("quick-action");
+                await qaWin?.hide().catch(() => {});
+              })();
+            }
+          }
+          if (typeof payload.screenshotEnabled === "boolean") {
+            setScreenshotEnabled(payload.screenshotEnabled);
+            if (!payload.screenshotEnabled) {
+              void (async () => {
+                const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
+                await overlayWin?.hide().catch(() => {});
+              })();
+            }
           }
           if (payload.sttEngine) {
             setSttEngine(normalizeSttEngine(payload.sttEngine));
@@ -455,7 +482,7 @@ function MainWindow() {
           if (payload.translationTarget) {
             setTranslationTarget(payload.translationTarget);
           }
-          if (payload.screenshotHotkey) {
+          if (typeof payload.screenshotHotkey === "string") {
             setScreenshotHotkey(payload.screenshotHotkey);
           }
           setStatusMsg(t("status.settingsUpdated"));
@@ -477,6 +504,13 @@ function MainWindow() {
           const { has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y } = event.payload;
           const store = useAppStore.getState();
           if (Date.now() < selectionWatchSuppressedUntil) {
+            return;
+          }
+          if (!store.selectionEnabled) {
+            lastSelectionFingerprint = "";
+            suppressedSelectionFingerprint = "";
+            const qaWin = await WebviewWindow.getByLabel("quick-action");
+            await qaWin?.hide().catch(() => {});
             return;
           }
 
@@ -578,6 +612,11 @@ function MainWindow() {
         if (store.isRecording) {
           return;
         }
+        if (!store.sttEnabled) {
+          setStatusMsg(t("status.sttFeatureDisabled"));
+          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 1500);
+          return;
+        }
 
         // ── New session ──
         const { has_selection, selected_text } = event.payload;
@@ -585,7 +624,7 @@ function MainWindow() {
 
         resetSession();
 
-        if (has_selection && selected_text) {
+        if (has_selection && selected_text && store.selectionEnabled) {
           // ── Mode B2 ── hide Quick Action Icon, start recording
           setSelectedText(selected_text);
           setCurrentMode("B2");
@@ -677,6 +716,11 @@ function MainWindow() {
       await safeRegister("hotkey://screenshot", async () => {
         const store = useAppStore.getState();
         if (store.isRecording) {
+          return;
+        }
+        if (!store.screenshotEnabled) {
+          setStatusMsg(t("status.screenshotFeatureDisabled"));
+          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 1500);
           return;
         }
         try {

@@ -63,6 +63,9 @@ interface AppState {
   llmModel: string;
   llmModelOptions: string[];
   incognito: boolean;
+  sttEnabled: boolean;
+  selectionEnabled: boolean;
+  screenshotEnabled: boolean;
   hotkey: string;
   screenshotHotkey: string;
   sttEngine: SttEngine;
@@ -110,6 +113,9 @@ interface AppState {
   setLlmModel: (model: string) => void;
   setLlmModelOptions: (models: string[]) => void;
   setIncognito: (on: boolean) => void;
+  setSttEnabled: (enabled: boolean) => void;
+  setSelectionEnabled: (enabled: boolean) => void;
+  setScreenshotEnabled: (enabled: boolean) => void;
   setHotkey: (hotkey: string) => void;
   setScreenshotHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
@@ -160,6 +166,9 @@ export const useAppStore = create<AppState>()(
       llmModel: "gpt-4o-mini",
       llmModelOptions: normalizeLlmModelOptions(DEFAULT_LLM_MODEL_OPTIONS, "gpt-4o-mini"),
       incognito: false,
+      sttEnabled: true,
+      selectionEnabled: true,
+      screenshotEnabled: true,
       hotkey: "Alt+`",
       screenshotHotkey: "Alt+S",
       sttEngine: "openAi",
@@ -218,6 +227,9 @@ export const useAppStore = create<AppState>()(
           llmModelOptions: normalizeLlmModelOptions(llmModelOptions, state.llmModel),
         })),
       setIncognito: (on) => set({ incognito: on }),
+      setSttEnabled: (sttEnabled) => set({ sttEnabled }),
+      setSelectionEnabled: (selectionEnabled) => set({ selectionEnabled }),
+      setScreenshotEnabled: (screenshotEnabled) => set({ screenshotEnabled }),
       setHotkey: (hotkey) => set({ hotkey }),
       setScreenshotHotkey: (screenshotHotkey) => set({ screenshotHotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
@@ -296,6 +308,9 @@ export const useAppStore = create<AppState>()(
         llmModel: state.llmModel,
         llmModelOptions: state.llmModelOptions,
         incognito: state.incognito,
+        sttEnabled: state.sttEnabled,
+        selectionEnabled: state.selectionEnabled,
+        screenshotEnabled: state.screenshotEnabled,
         hotkey: state.hotkey,
         screenshotHotkey: state.screenshotHotkey,
         sttEngine: state.sttEngine,
