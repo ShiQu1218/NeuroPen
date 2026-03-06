@@ -19,6 +19,8 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 static CURRENT_TRIGGER: Mutex<Option<Shortcut>> = Mutex::new(None);
 /// The currently registered screenshot shortcut.
 static CURRENT_SCREENSHOT: Mutex<Option<Shortcut>> = Mutex::new(None);
+const DEFAULT_TRIGGER_HOTKEY: &str = "Alt+Backquote";
+const DEFAULT_SCREENSHOT_HOTKEY: &str = "Alt+S";
 
 /// The fixed undo shortcut.
 fn undo_shortcut() -> Shortcut {
@@ -30,6 +32,15 @@ fn default_screenshot_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::KeyS)
 }
 
+fn trigger_hotkey_file() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let dir = home.join(".talkflow");
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+    }
+    Some(dir.join("trigger_hotkey"))
+}
+
 fn screenshot_hotkey_file() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let dir = home.join(".talkflow");
@@ -37,6 +48,17 @@ fn screenshot_hotkey_file() -> Option<PathBuf> {
         let _ = fs::create_dir_all(&dir);
     }
     Some(dir.join("screenshot_hotkey"))
+}
+
+fn load_persisted_trigger_hotkey() -> Option<String> {
+    let path = trigger_hotkey_file()?;
+    let content = fs::read_to_string(path).ok()?;
+    let hotkey = content.trim().to_string();
+    if hotkey.is_empty() {
+        None
+    } else {
+        Some(hotkey)
+    }
 }
 
 fn load_persisted_screenshot_hotkey() -> Option<String> {
@@ -50,9 +72,28 @@ fn load_persisted_screenshot_hotkey() -> Option<String> {
     }
 }
 
+pub fn persist_trigger_hotkey(hotkey: &str) -> Result<(), String> {
+    let path = trigger_hotkey_file().ok_or("Cannot resolve trigger hotkey path")?;
+    fs::write(path, hotkey).map_err(|e| format!("Failed to persist trigger hotkey: {e}"))
+}
+
 pub fn persist_screenshot_hotkey(hotkey: &str) -> Result<(), String> {
     let path = screenshot_hotkey_file().ok_or("Cannot resolve screenshot hotkey path")?;
     fs::write(path, hotkey).map_err(|e| format!("Failed to persist screenshot hotkey: {e}"))
+}
+
+pub fn current_trigger_hotkey() -> (String, bool) {
+    match load_persisted_trigger_hotkey() {
+        Some(hotkey) => (hotkey, true),
+        None => (DEFAULT_TRIGGER_HOTKEY.to_string(), false),
+    }
+}
+
+pub fn current_screenshot_hotkey() -> (String, bool) {
+    match load_persisted_screenshot_hotkey() {
+        Some(hotkey) => (hotkey, true),
+        None => (DEFAULT_SCREENSHOT_HOTKEY.to_string(), false),
+    }
 }
 
 /// Build the plugin with a single global handler that dispatches events
@@ -106,10 +147,29 @@ pub fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+/// Register the trigger hotkey from persisted config or fallback default.
+pub fn register_trigger(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let (hotkey, _) = current_trigger_hotkey();
+    let sc = if let Ok((mods, code)) = parse_hotkey(&hotkey) {
+        Shortcut::new(mods, code)
+    } else {
+        Shortcut::new(Some(Modifiers::ALT), Code::Backquote)
+    };
+    if !app.global_shortcut().is_registered(sc) {
+        app.global_shortcut().register(sc)?;
+    }
+    if let Ok(mut guard) = CURRENT_TRIGGER.lock() {
+        *guard = Some(sc);
+    }
+    println!("[hotkey] Registered trigger shortcut ({hotkey})");
+    Ok(())
+}
+
 /// Register the screenshot hotkey (Alt+S). Call once after app handle is ready.
 pub fn register_screenshot(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let sc = if let Some(saved) = load_persisted_screenshot_hotkey() {
-        if let Ok((mods, code)) = parse_hotkey(&saved) {
+    let (hotkey, persisted) = current_screenshot_hotkey();
+    let sc = if persisted {
+        if let Ok((mods, code)) = parse_hotkey(&hotkey) {
             Shortcut::new(mods, code)
         } else {
             default_screenshot_shortcut()
@@ -123,7 +183,7 @@ pub fn register_screenshot(app: &tauri::AppHandle) -> Result<(), Box<dyn std::er
     if let Ok(mut guard) = CURRENT_SCREENSHOT.lock() {
         *guard = Some(sc);
     }
-    println!("[hotkey] Registered screenshot shortcut (Alt+S)");
+    println!("[hotkey] Registered screenshot shortcut ({hotkey})");
     Ok(())
 }
 

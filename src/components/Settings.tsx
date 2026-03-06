@@ -52,6 +52,13 @@ interface ModelDownloadProgressEvent {
   progressPct?: number;
 }
 
+interface RegisteredHotkeys {
+  triggerHotkey: string;
+  triggerPersisted: boolean;
+  screenshotHotkey: string;
+  screenshotPersisted: boolean;
+}
+
 type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "history";
 
 const STATUS_RESET_MS = 2000;
@@ -235,6 +242,7 @@ export default function Settings() {
     message: "",
   });
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const [storeHydrated, setStoreHydrated] = useState(useAppStore.persist.hasHydrated());
 
   // Prevent the settings window from being destroyed on close — hide it instead.
   useEffect(() => {
@@ -247,6 +255,19 @@ export default function Settings() {
   }, []);
 
   // Query backend once on mount
+  useEffect(() => {
+    if (useAppStore.persist.hasHydrated()) {
+      setStoreHydrated(true);
+      return;
+    }
+    const unsubscribe = useAppStore.persist.onFinishHydration(() => {
+      setStoreHydrated(true);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   useEffect(() => {
     invoke<{
       openAiAvailable: boolean;
@@ -278,10 +299,38 @@ export default function Settings() {
         setDraftLaunchOnStartup(enabled);
       })
       .catch(() => {});
+
+    void (async () => {
+      if (!useAppStore.persist.hasHydrated()) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = useAppStore.persist.onFinishHydration(() => {
+            unsubscribe?.();
+            resolve();
+          });
+        });
+      }
+      const registeredHotkeys = await invoke<RegisteredHotkeys>("get_registered_hotkeys").catch((err) => {
+        console.warn("[Settings] get_registered_hotkeys failed:", err);
+        return null;
+      });
+      if (!registeredHotkeys) return;
+      const currentState = useAppStore.getState();
+      const effectiveTriggerHotkey = registeredHotkeys.triggerPersisted
+        ? registeredHotkeys.triggerHotkey
+        : currentState.hotkey;
+      const effectiveScreenshotHotkey = registeredHotkeys.screenshotPersisted
+        ? registeredHotkeys.screenshotHotkey
+        : currentState.screenshotHotkey;
+      setHotkey(effectiveTriggerHotkey);
+      setScreenshotHotkey(effectiveScreenshotHotkey);
+      setDraftHotkey(effectiveTriggerHotkey);
+      setDraftScreenshotHotkey(effectiveScreenshotHotkey);
+    })();
   }, []);
 
   // Sync all drafts from store (2a: merged 7 useEffects into 1)
   useEffect(() => {
+    if (!storeHydrated) return;
     const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
       ?? localModels.find((model) => model.active);
     const nextSttModelChoice =
@@ -338,6 +387,7 @@ export default function Settings() {
     translationTarget,
     localModels,
     sttModelPath,
+    storeHydrated,
   ]);
 
   const loadLocalModels = useCallback(async () => {

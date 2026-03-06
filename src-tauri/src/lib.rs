@@ -34,6 +34,15 @@ pub struct FocusInfo {
     pub hwnd: isize,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisteredHotkeys {
+    pub trigger_hotkey: String,
+    pub trigger_persisted: bool,
+    pub screenshot_hotkey: String,
+    pub screenshot_persisted: bool,
+}
+
 #[derive(Debug, Clone)]
 struct RuntimeSttConfig {
     engine: stt::SttEngine,
@@ -409,7 +418,8 @@ fn route_on_trigger(has_selection: bool) -> mode_router::AppMode {
 #[tauri::command]
 fn change_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
     let (modifiers, code) = hotkey::parse_hotkey(&hotkey_str)?;
-    hotkey::change_trigger(&app, modifiers, code)
+    hotkey::change_trigger(&app, modifiers, code)?;
+    hotkey::persist_trigger_hotkey(&hotkey_str)
 }
 
 /// Change the screenshot hotkey at runtime.
@@ -419,6 +429,18 @@ fn change_screenshot_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result
     hotkey::change_screenshot(&app, modifiers, code)?;
     hotkey::persist_screenshot_hotkey(&hotkey_str)?;
     Ok(())
+}
+
+#[tauri::command]
+fn get_registered_hotkeys() -> RegisteredHotkeys {
+    let (trigger_hotkey, trigger_persisted) = hotkey::current_trigger_hotkey();
+    let (screenshot_hotkey, screenshot_persisted) = hotkey::current_screenshot_hotkey();
+    RegisteredHotkeys {
+        trigger_hotkey,
+        trigger_persisted,
+        screenshot_hotkey,
+        screenshot_persisted,
+    }
 }
 
 // ── History commands ────────────────────────────────────────────────────
@@ -588,6 +610,7 @@ pub fn run() {
             route_on_trigger,
             change_hotkey,
             change_screenshot_hotkey,
+            get_registered_hotkeys,
             history_list,
             history_save,
             history_delete,
@@ -646,12 +669,12 @@ pub fn run() {
             // Start selection watcher (background polling)
             selection::start_selection_watcher(app.handle().clone());
 
-            // Register only the undo hotkey (Alt+Z) at startup.
-            // The trigger hotkey is registered later when the frontend calls
-            // change_hotkey with the user's persisted setting.
             let handle = app.handle().clone();
             if let Err(e) = hotkey::register_undo(&handle) {
                 eprintln!("[setup] Failed to register undo hotkey: {e}");
+            }
+            if let Err(e) = hotkey::register_trigger(&handle) {
+                eprintln!("[setup] Failed to register trigger hotkey: {e}");
             }
             if let Err(e) = hotkey::register_screenshot(&handle) {
                 eprintln!("[setup] Failed to register screenshot hotkey: {e}");

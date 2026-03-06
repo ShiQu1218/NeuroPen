@@ -23,6 +23,13 @@ import type {
 } from "./store/useAppStore";
 import { clampToMonitorBounds } from "./utils/windowBounds";
 
+interface RegisteredHotkeys {
+  triggerHotkey: string;
+  triggerPersisted: boolean;
+  screenshotHotkey: string;
+  screenshotPersisted: boolean;
+}
+
 /**
  * Prevent a window from being destroyed on close — hide it instead.
  */
@@ -197,6 +204,7 @@ function MainWindow() {
     let qaInteracting = false;
     let lastSelectionFingerprint = "";
     let pendingHotkeyReleaseAt = 0;
+    let qaHideTimer: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
       // ── 0. Prevent sub-windows from being destroyed on close ──
@@ -211,22 +219,40 @@ function MainWindow() {
         });
       }
 
-      const initialStore = useAppStore.getState();
-      // Register the trigger hotkey in Rust backend.
-      // Rust only registers the undo hotkey (Alt+Z) at startup; the trigger
-      // hotkey is set here from the user's persisted setting.
-      await invoke("change_hotkey", { hotkeyStr: initialStore.hotkey }).catch((err) => {
-        console.warn("[App] change_hotkey init failed, keeping stored value:", err);
+      const hydratedStore = useAppStore.getState();
+      const backendHotkeys = await invoke<RegisteredHotkeys>("get_registered_hotkeys").catch((err) => {
+        console.warn("[App] get_registered_hotkeys failed:", err);
+        return null;
       });
+      const initialTriggerHotkey =
+        backendHotkeys?.triggerPersisted ? backendHotkeys.triggerHotkey : hydratedStore.hotkey;
+      const initialScreenshotHotkey =
+        backendHotkeys?.screenshotPersisted ? backendHotkeys.screenshotHotkey : hydratedStore.screenshotHotkey;
+      if (initialTriggerHotkey && initialTriggerHotkey !== hydratedStore.hotkey) {
+        setHotkey(initialTriggerHotkey);
+      }
+      if (initialScreenshotHotkey && initialScreenshotHotkey !== hydratedStore.screenshotHotkey) {
+        setScreenshotHotkey(initialScreenshotHotkey);
+      }
+      if (!backendHotkeys || backendHotkeys.triggerHotkey !== initialTriggerHotkey) {
+        await invoke("change_hotkey", { hotkeyStr: initialTriggerHotkey }).catch((err) => {
+          console.warn("[App] change_hotkey init failed, keeping stored value:", err);
+        });
+      }
+      if (!backendHotkeys || backendHotkeys.screenshotHotkey !== initialScreenshotHotkey) {
+        await invoke("change_screenshot_hotkey", { hotkeyStr: initialScreenshotHotkey }).catch((err) => {
+          console.warn("[App] change_screenshot_hotkey init failed:", err);
+        });
+      }
       await invoke("set_runtime_stt_config", {
-        engine: normalizeSttEngine(String(initialStore.sttEngine)),
-        modelPath: initialStore.sttModelPath,
-        sttLanguage: normalizeSttLanguage(initialStore.sttLanguage),
+        engine: normalizeSttEngine(String(hydratedStore.sttEngine)),
+        modelPath: hydratedStore.sttModelPath,
+        sttLanguage: normalizeSttLanguage(hydratedStore.sttLanguage),
       }).catch((err) => {
         console.warn("[App] set_runtime_stt_config init failed:", err);
       });
       await invoke("set_audio_device", {
-        name: initialStore.microphoneSource ?? "",
+        name: hydratedStore.microphoneSource ?? "",
       }).catch((err) => {
         console.warn("[App] set_audio_device init failed:", err);
       });
@@ -280,6 +306,10 @@ function MainWindow() {
         "talkflow://qa-interacting",
         async (event) => {
           qaInteracting = !!event.payload.active;
+          if (qaInteracting && qaHideTimer) {
+            clearTimeout(qaHideTimer);
+            qaHideTimer = null;
+          }
           if (!qaInteracting) {
             lastSelectionFingerprint = "";
             const sel = await invoke<{ has_selection: boolean }>("get_selection");
@@ -417,6 +447,10 @@ function MainWindow() {
           if (!qaWin) return;
 
           if (has_selection) {
+            if (qaHideTimer) {
+              clearTimeout(qaHideTimer);
+              qaHideTimer = null;
+            }
             const selectionText = (text ?? "").trim();
             setSelectedText(selectionText);
             if (selectionText) {
@@ -466,7 +500,19 @@ function MainWindow() {
           } else {
             lastSelectionFingerprint = "";
             if (qaInteracting) return;
-            await qaWin.hide();
+            if (qaHideTimer) {
+              clearTimeout(qaHideTimer);
+            }
+            qaHideTimer = setTimeout(() => {
+              qaHideTimer = null;
+              if (qaInteracting) return;
+              void (async () => {
+                const sel = await invoke<{ has_selection: boolean }>("get_selection").catch(() => ({ has_selection: false }));
+                if (!sel.has_selection) {
+                  await qaWin.hide().catch(() => {});
+                }
+              })();
+            }, 180);
           }
         }
       );
@@ -966,6 +1012,9 @@ function MainWindow() {
 
     return () => {
       cancelled = true;
+      if (qaHideTimer) {
+        clearTimeout(qaHideTimer);
+      }
       unlisten.forEach((fn) => fn());
     };
   }, [setSttLanguage]);
