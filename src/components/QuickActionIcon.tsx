@@ -2,10 +2,10 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
 import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
+import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
 const ICON_SIZE = { width: 40, height: 40 };
@@ -200,35 +200,26 @@ export default function QuickActionIcon() {
 
     // Selection-based flows always use the preview workflow; the global
     // LLM output mode only applies to direct voice input and wake-word mode.
-    await emit("talkflow://preview-session", {
+    await emitPreviewSession({
       sessionType: "text",
       sourceMode: "B1",
       selectedText,
       instruction,
     });
-
-    const previewWin = await WebviewWindow.getByLabel("preview");
-    if (previewWin) {
-      await previewWin.setFocusable(false).catch(() => { });
-      await previewWin.setSize(
-        new LogicalSize(PREVIEW_INITIAL_SIZE.width, PREVIEW_INITIAL_SIZE.height)
-      );
-      const previewX = pointer
-        ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
-        : qaPos.x;
-      const previewY = pointer
-        ? Math.round(qaPos.y + pointer.y * scaleFactor + 12)
-        : qaPos.y + qaSize.height + 4;
-      const previewSize = await previewWin.outerSize();
-      const clampedPreviewPos = await clampToMonitorBounds(
-        previewX,
-        previewY,
-        previewSize.width || PREVIEW_INITIAL_SIZE.width,
-        previewSize.height || PREVIEW_INITIAL_SIZE.height
-      );
-      await previewWin.setPosition(new PhysicalPosition(clampedPreviewPos.x, clampedPreviewPos.y));
-      await previewWin.show();
-    }
+    const previewX = pointer
+      ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
+      : qaPos.x;
+    const previewY = pointer
+      ? Math.round(qaPos.y + pointer.y * scaleFactor + 12)
+      : qaPos.y + qaSize.height + 4;
+    await showPreviewWindow({
+      focusable: false,
+      size: PREVIEW_INITIAL_SIZE,
+      position: {
+        x: previewX,
+        y: previewY,
+      },
+    });
 
     try {
       await invoke("call_llm", {

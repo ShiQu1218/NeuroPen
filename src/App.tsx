@@ -17,11 +17,24 @@ import type {
   AppLanguage,
   LlmProvider,
   PreferredLanguage,
-  PunctuationMode,
   SttLanguage,
   TranslationTarget,
 } from "./store/useAppStore";
+import {
+  applyPunctuationMode,
+  buildSelectionFingerprint,
+  inferAppToneHint,
+  isLikelyUnexpectedEnglishTranslation,
+  normalizeSttEngine,
+  normalizeSttLanguage,
+  stripWrappingQuotes,
+} from "./utils/appText";
 import { clampToMonitorBounds } from "./utils/windowBounds";
+import {
+  emitPreviewSession,
+  emitPreviewStaticOutput,
+  showPreviewWindow,
+} from "./utils/previewWindow";
 
 interface RegisteredHotkeys {
   triggerHotkey: string;
@@ -43,97 +56,8 @@ const preventCloseDestroy = async (label: string) => {
   }
 };
 
-const inferAppToneHint = (windowTitle: string) => {
-  const lower = windowTitle.toLowerCase();
-  if (/(word|excel|powerpoint|notion|docs|outlook|gmail|mail\.google)/.test(lower)) {
-    return "Use formal and concise business writing style.";
-  }
-  if (/(discord|slack|line|wechat|telegram)/.test(lower)) {
-    return "Use casual chat-friendly style.";
-  }
-  if (/(code|visual studio|github|terminal|powershell)/.test(lower)) {
-    return "Keep technical terms and code symbols unchanged.";
-  }
-  return "Keep neutral and clear style.";
-};
-
-const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
-  const base = text.trim();
-  if (!base || mode === "off") return base;
-  let normalized = base.replace(/\s+/g, " ");
-  if (mode === "aggressive") {
-    normalized = normalized
-      .replace(/([，,;；])\s*/g, "$1 ")
-      .replace(/([。.!?！？])\s*/g, "$1\n");
-  }
-  if (!/[。.!?！？]$/.test(normalized)) {
-    normalized += "。";
-  }
-  return normalized;
-};
-
-const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" =>
-  engine === "localWhisper" ? "localWhisper" : "openAi";
-
-const normalizeSttLanguage = (language: unknown): SttLanguage => {
-  switch (String(language ?? "").trim().toLowerCase()) {
-    case "zh":
-    case "en":
-    case "ja":
-    case "ko":
-    case "de":
-    case "fr":
-    case "es":
-    case "ru":
-    case "ar":
-    case "auto":
-      return String(language).trim().toLowerCase() as SttLanguage;
-    default:
-      return "auto";
-  }
-};
-
-const containsNonLatinScript = (text: string) =>
-  /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF\u0400-\u04FF\u0600-\u06FF]/.test(text);
-
-const isLikelyUnexpectedEnglishTranslation = (original: string, refined: string) => {
-  if (!containsNonLatinScript(original) || containsNonLatinScript(refined)) {
-    return false;
-  }
-  const condensed = refined.replace(/\s+/g, "");
-  if (!condensed) return false;
-  const latinCount = (condensed.match(/[A-Za-z]/g) ?? []).length;
-  return latinCount / condensed.length > 0.6;
-};
-
 const isLikelyAuthError = (err: unknown) =>
   /(401|unauthorized|api\s*key|authentication|invalid key)/i.test(String(err));
-
-const stripWrappingQuotes = (text: string) => {
-  const pairs: Array<[string, string]> = [
-    ["「", "」"],
-    ["『", "』"],
-    ["\"", "\""],
-    ["'", "'"],
-  ];
-  const trimmed = text.trim();
-  for (const [left, right] of pairs) {
-    if (trimmed.startsWith(left) && trimmed.endsWith(right) && trimmed.length > left.length + right.length) {
-      return trimmed.slice(left.length, trimmed.length - right.length).trim();
-    }
-  }
-  return trimmed;
-};
-
-const buildSelectionFingerprint = (
-  selectionText: string,
-  anchorX?: number | null,
-  anchorY?: number | null,
-) => `${selectionText || "__selection__"}::${
-  typeof anchorX === "number" && typeof anchorY === "number"
-    ? `${Math.round(anchorX)}::${Math.round(anchorY)}`
-    : "__anchor__"
-}`;
 
 function App() {
   const [windowLabel, setWindowLabel] = useState<string>("");
@@ -801,18 +725,13 @@ function MainWindow() {
             store.setLastSelectedText("");
             store.setLastInstruction("");
             void invoke("clear_conversation");
-            await emit("talkflow://preview-session", {
+            await emitPreviewSession({
               sessionType: "screenshot",
               sourceMode: "C",
               selectedText: "",
               instruction: "",
             });
-            const previewWin = await WebviewWindow.getByLabel("preview");
-            if (previewWin) {
-              await previewWin.setFocusable(true).catch(() => {});
-              await previewWin.show();
-              await previewWin.setFocus();
-            }
+            await showPreviewWindow({ focusable: true, focus: true });
             // Send the screenshot to the preview window via event
             await emit("talkflow://screenshot-attached", { imageBase64 });
             setStatusMsg(t("status.screenshotAttachedAsk"));
@@ -936,23 +855,14 @@ function MainWindow() {
             if (store.outputMode === "PreviewStream") {
               store.setLastSelectedText(finalText);
               store.setLastInstruction("");
-              await emit("talkflow://preview-session", {
+              await emitPreviewSession({
                 sessionType: "text",
                 sourceMode: "A",
                 selectedText: finalText,
                 instruction: "",
               });
-
-              const previewWin = await WebviewWindow.getByLabel("preview");
-              if (previewWin) {
-                await previewWin.setFocusable(true).catch(() => {});
-                await previewWin.show();
-                await previewWin.setFocus();
-              }
-
-              await emit("talkflow://preview-static-output", {
-                text: finalText,
-              });
+              await showPreviewWindow({ focusable: true, focus: true });
+              await emitPreviewStaticOutput(finalText);
 
               if (store.historyEnabled && !store.incognito) {
                 void invoke("history_save", {
@@ -1017,19 +927,13 @@ function MainWindow() {
             store.setLlmError("");
             store.setLastSelectedText(store.selectedText);
             store.setLastInstruction(result.transcript);
-            await emit("talkflow://preview-session", {
+            await emitPreviewSession({
               sessionType: "text",
               sourceMode: "B2",
               selectedText: store.selectedText,
               instruction: result.transcript,
             });
-
-            const previewWin = await WebviewWindow.getByLabel("preview");
-            if (previewWin) {
-              await previewWin.setFocusable(true).catch(() => {});
-              await previewWin.show();
-              await previewWin.setFocus();
-            }
+            await showPreviewWindow({ focusable: true, focus: true });
 
             setStatusMsg(t("status.llmProcessing"));
             try {
@@ -1060,19 +964,13 @@ function MainWindow() {
             store.setLlmError("");
             store.setLastInstruction(result.transcript);
             if (store.outputMode === "PreviewStream") {
-              await emit("talkflow://preview-session", {
+              await emitPreviewSession({
                 sessionType: "text",
                 sourceMode: "C",
                 selectedText: "",
                 instruction: result.transcript,
               });
-
-              const previewWin = await WebviewWindow.getByLabel("preview");
-              if (previewWin) {
-                await previewWin.setFocusable(true).catch(() => {});
-                await previewWin.show();
-                await previewWin.setFocus();
-              }
+              await showPreviewWindow({ focusable: true, focus: true });
             }
 
             setStatusMsg(t("status.llmProcessing"));

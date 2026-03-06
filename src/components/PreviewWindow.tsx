@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { usePreviewDragGuard } from "../hooks/usePreviewDragGuard";
 import { useI18n } from "../i18n";
 import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
+import type { PreviewSourceMode } from "../utils/previewWindow";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
 const PREVIEW_WIDTH = 480;
@@ -14,7 +16,7 @@ const PREVIEW_MIN_HEIGHT = 340;
 const PREVIEW_MAX_HEIGHT = 620;
 const PREVIEW_CHROME_HEIGHT = 240;
 type PreviewSession =
-  | { type: "text"; selectedText: string; sourceMode: "A" | "B1" | "B2" | "C" }
+  | { type: "text"; selectedText: string; sourceMode: PreviewSourceMode }
   | { type: "screenshot"; imageBase64: string; sourceMode: "C" };
 
 export default function PreviewWindow() {
@@ -26,8 +28,6 @@ export default function PreviewWindow() {
   const inputRef = useRef<HTMLInputElement>(null);
   const fallbackUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const fallbackTtsActiveRef = useRef(false);
-  const dragLockUntilRef = useRef(0);
-  const dragResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useI18n();
 
   const llmOutput = useAppStore((s) => s.llmOutput);
@@ -138,6 +138,9 @@ export default function PreviewWindow() {
       await win.setFocus().catch(() => { });
     }
   }, []);
+  const { handleStartDrag, isDragInteractionLocked, swallowDragRelease } = usePreviewDragGuard({
+    setPreviewFocusable,
+  });
 
   const runPreviewInstruction = useCallback(
     async (instruction: string) => {
@@ -223,7 +226,7 @@ export default function PreviewWindow() {
         selectedText?: string;
         instruction?: string;
         sessionType?: "text" | "screenshot";
-        sourceMode?: "A" | "B1" | "B2" | "C";
+        sourceMode?: PreviewSourceMode;
       }>(
         "talkflow://preview-session",
         (event) => {
@@ -424,37 +427,6 @@ export default function PreviewWindow() {
     setPreviewSession(null);
   };
 
-  const isDragInteractionLocked = useCallback(
-    () => Date.now() < dragLockUntilRef.current,
-    []
-  );
-
-  const swallowDragRelease = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    if (!isDragInteractionLocked()) return;
-    event.preventDefault();
-    event.stopPropagation();
-  }, [isDragInteractionLocked]);
-
-  const handleStartDrag = async () => {
-    dragLockUntilRef.current = Date.now() + 1500;
-    if (dragResetTimerRef.current) {
-      clearTimeout(dragResetTimerRef.current);
-      dragResetTimerRef.current = null;
-    }
-    try {
-      await setPreviewFocusable(true, true);
-      await getCurrentWindow().startDragging();
-    } finally {
-      dragLockUntilRef.current = Date.now() + 220;
-      dragResetTimerRef.current = setTimeout(() => {
-        dragResetTimerRef.current = null;
-        if (Date.now() >= dragLockUntilRef.current) {
-          void setPreviewFocusable(false);
-        }
-      }, 260);
-    }
-  };
-
   const handleRefinement = async () => {
     const input = refinementInput.trim();
     if (!input) return;
@@ -521,12 +493,6 @@ export default function PreviewWindow() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  useEffect(() => () => {
-    if (dragResetTimerRef.current) {
-      clearTimeout(dragResetTimerRef.current);
-    }
-  }, []);
 
   const hasOutput = llmOutput.length > 0;
 
