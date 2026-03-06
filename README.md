@@ -20,9 +20,9 @@
 ## Table of Contents
 
 - [Features](#features)
-- [How It Works](#how-it-works)
-- [Architecture](#architecture)
-- [UI Components](#ui-components)
+- [Operating Modes](#operating-modes)
+- [Core Workflow Safeguards](#core-workflow-safeguards)
+- [UI Modules](#ui-modules)
 - [Supported Models](#supported-models)
 - [Getting Started (Users)](#getting-started-users)
 - [Getting Started (Developers)](#getting-started-developers)
@@ -37,203 +37,56 @@
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **Global Voice Input** | Press `Alt + Backtick` in any app to convert speech to text, inserted directly at the cursor |
-| **Quick Action on Selection** | Select text and a floating icon appears — one-click translate, summarize, rewrite, or fix grammar |
-| **Voice Command on Selection** | Select text + hotkey + speak your instruction — AI processes it automatically |
-| **LLM Q&A** | Say the wake word (default: "assistant") without selecting text to ask AI anything |
-| **Streaming Preview Window** | LLM responses stream token-by-token; follow up, copy, replace, or dismiss |
-| **Direct Injection Mode** | Optionally skip preview — LLM results paste directly into the input field |
-| **One-Key Undo** | `Alt + Z` reverts the last text injection |
-| **Local STT** | Built-in Whisper (small/medium/large/turbo) for fully offline speech recognition |
-| **Multi-LLM Providers** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, Ollama |
-| **10 UI Languages** | zh-TW, zh-CN, English, Japanese, German, French, Arabic, Russian, Spanish, Korean |
-| **Saved LLM Model List** | Add custom model names (e.g., `gpt-4o-mini`) to a reusable list and remove them anytime |
-| **System Tray** | Runs in the background; right-click tray icon to open settings or exit |
+| Area | Current capability |
+|------|--------------------|
+| **Global voice capture** | Hold `Alt + Backtick` to record and transcribe speech from any app |
+| **Mode routing (A / B1 / B2 / C)** | Routes behavior by selection state and wake word detection |
+| **Selection quick actions** | Floating Quick Action icon with customizable preset commands |
+| **Voice command on selection** | Speak instructions over selected text for LLM rewriting |
+| **LLM assistant mode** | Wake-word query flow with streaming response support |
+| **Output strategies** | `PreviewStream` window or direct injection into focused app |
+| **Focus-safe injection + undo** | Focus verification before paste and one-key rollback (`Alt + Z`) |
+| **STT pipeline** | OpenAI Whisper API and local Whisper engine support |
+| **Local STT model management** | Install/select/delete Whisper models with download progress and cancellation |
+| **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, and Ollama |
+| **Screenshot-to-LLM workflow** | `Alt + S` region capture and multimodal prompt flow in preview window |
+| **TTS playback** | Built-in read-aloud via Edge TTS with configurable voice/rate/pitch |
+| **History controls** | Searchable local history (up to 200 entries) |
+| **Operational settings** | Startup launch toggle, microphone selection, hotkey customization, language settings |
+| **System tray operation** | Background tray app with quick access to settings and exit |
 
 ---
 
-## How It Works
+## Operating Modes
 
-TalkFlow automatically routes to one of four modes based on whether text is selected and whether a wake word is spoken:
+| Mode | Trigger | Output |
+|------|---------|--------|
+| **A — Direct Voice Input** | No selection + `Alt + Backtick` + no wake word | STT result injected at cursor |
+| **B1 — Quick Action on Selection** | Text selected + Quick Action click | LLM result in preview window or direct inject |
+| **B2 — Voice Command on Selection** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite in preview window or direct inject |
+| **C — LLM Query** | No selection + wake word detected in transcript | LLM answer in preview window or direct inject |
 
-```
-                         +----------------+
-                         | Alt + Backtick |
-                         |  (Global Key)  |
-                         +-------+--------+
-                                 |
-                    +------------+------------+
-                    |                         |
-              Text selected?            No selection
-                    |                         |
-            +-------+-------+       +---------+---------+
-            |               |       |                   |
-        Via mouse       Via voice   Wake word         No wake word
-       Quick Action      hotkey     detected           detected
-            |               |       |                   |
-            v               v       v                   v
-     +----------+   +----------+ +----------+   +----------+
-     | Mode B1  |   | Mode B2  | | Mode C   |   | Mode A   |
-     | Quick    |   | Voice    | | LLM Q&A  |   | Voice    |
-     | Action   |   | Command  | |          |   | Input    |
-     +----+-----+   +----+-----+ +----+-----+   +----+-----+
-          |              |            |               |
-          v              v            v               v
-     +-------------------------+  +-----------------+
-     |   Output Preview Window |  |  Direct inject  |
-     |   (stream / copy /      |  |  into focused   |
-     |    replace / follow-up) |  |  input field    |
-     +-------------------------+  +-----------------+
-```
+## Core Workflow Safeguards
 
-### Mode A — Direct Voice Input
-> **Scenario**: You're typing and want to use voice instead of the keyboard.
-> **Usage**: Hold the hotkey, speak, release — text appears at the cursor.
+TalkFlow uses a strict injection sequence to reduce unintended edits:
 
-### Mode B1 — Quick Action on Selection
-> **Scenario**: You selected some English text and want to translate it.
-> **Usage**: Select text, click "Translate" on the floating icon, preview window shows the result, click "Replace" to swap the original text.
+1. Lock foreground window and cache clipboard.
+2. Process STT/LLM request.
+3. Verify target focus is unchanged.
+4. Inject result and restore clipboard.
 
-### Mode B2 — Voice Command on Selection
-> **Scenario**: You selected some text and want to tell AI how to modify it.
-> **Usage**: Select text, press hotkey, say "make this more formal" — preview window shows the result.
-
-### Mode C — LLM Q&A
-> **Scenario**: You want to ask AI a question.
-> **Usage**: Press hotkey, say "assistant, what's the weather in Taipei tomorrow" — preview window shows the answer.
+If focus changes during processing, injection is cancelled and clipboard is restored.
 
 ---
 
-## Architecture
+## UI Modules
 
-```
-+----------------------------------------------------------------------+
-|                        TalkFlow Application                           |
-|                                                                       |
-|  +------------------------------------------------------------------+|
-|  |                    Frontend (React + TypeScript)                   ||
-|  |                                                                    ||
-|  |  +----------+  +---------------+  +----------+  +-----------+    ||
-|  |  | Settings |  | Quick Action  |  | Preview  |  | Recording |    ||
-|  |  | Window   |  | Icon + Panel  |  | Window   |  | Indicator |    ||
-|  |  +----------+  +---------------+  +----------+  +-----------+    ||
-|  |                                                                    ||
-|  |  +----------------------+  +----------------------------------+  ||
-|  |  | Zustand State Store  |  | i18n (10 Languages)              |  ||
-|  |  +----------------------+  +----------------------------------+  ||
-|  +----------------------------+--------------------------------------+|
-|                               | Tauri IPC (invoke / event)            |
-|  +----------------------------+--------------------------------------+|
-|  |                      Backend (Rust / Tauri v2)                     ||
-|  |                                                                    ||
-|  |  +-------------+  +--------------+  +------------------------+   ||
-|  |  | hotkey.rs   |  | mode_router  |  | selection.rs           |   ||
-|  |  | Global Key  |->| Mode Router  |<-| UI Automation detect   |   ||
-|  |  +-------------+  +------+-------+  +------------------------+   ||
-|  |                          |                                         ||
-|  |           +--------------+--------------+                         ||
-|  |           v              v              v                         ||
-|  |  +--------------+ +-----------+ +--------------+                  ||
-|  |  | audio_capture| | stt.rs    | | llm.rs       |                  ||
-|  |  | Mic capture  |->| STT      |->| LLM API call|                  ||
-|  |  +--------------+ +-----------+ +------+-------+                  ||
-|  |                                        |                           ||
-|  |           +----------------------------+                           ||
-|  |           v                            v                           ||
-|  |  +------------------+  +------------------------------+           ||
-|  |  | clipboard.rs     |  | injection.rs                 |           ||
-|  |  | Cache / restore  |->| Text inject (Ctrl+V sim)     |           ||
-|  |  +------------------+  +------------------------------+           ||
-|  |                                                                    ||
-|  |  +------------------+  +------------------------------+           ||
-|  |  | window_focus.rs  |  | undo.rs                      |           ||
-|  |  | Focus lock       |  | Undo last injection (Alt+Z)  |           ||
-|  |  +------------------+  +------------------------------+           ||
-|  +--------------------------------------------------------------------+|
-|                                                                       |
-+-----------------------------------------------------------------------+
-                               |
-              +----------------+----------------+
-              v                v                v
-     +----------------+ +-----------+ +-----------------+
-     | Windows APIs   | | Cloud AI  | | Local Models    |
-     |                | |           | |                 |
-     | - UI Automation| | - OpenAI  | | - Whisper.cpp   |
-     | - GetForeground| | - Gemini  | |   (small/medium/|
-     |   Window       | | - Claude  | |    large/turbo) |
-     | - Clipboard    | | - Grok    | | - Ollama        |
-     | - SendInput    | | - Qwen    | |                 |
-     |                | | - Doubao  | |                 |
-     |                | | - DeepSeek| |                 |
-     +----------------+ +-----------+ +-----------------+
-```
-
-### Text Injection Flow
-
-```
- 1. Hotkey triggered
-    |
-    v
- 2. Cache clipboard contents ---------------------------------+
-    |                                                          |
-    v                                                          |
- 3. Lock foreground window (GetForegroundWindow)               |
-    |                                                          |
-    v                                                          |
- 4. [Mode B] Simulate Ctrl+C to read selection                 |
-    |                                                          |
-    v                                                          |
- 5. STT recognition / LLM processing                          |
-    |                                                          |
-    v                                                          |
- 6. Verify focus window unchanged                              |
-    |     |                                                    |
-    |    Focus changed -> Cancel injection, show warning        |
-    |                                                          |
-    v                                                          |
- 7. Write result to clipboard -> Simulate Ctrl+V               |
-    |                                                          |
-    v                                                          |
- 8. Restore original clipboard <-------------------------------+
-```
-
----
-
-## UI Components
-
-### Settings Window
-Left sidebar with category navigation (General, Voice & STT, Quick Actions, LLM, History). Right side scrollable content area. Fixed "Cancel / Save" buttons at the bottom.
-
-### Quick Action Icon
-A floating icon that fades in when text is selected. Hover to expand the panel:
-- Preset commands (Translate to English, Translate to Japanese, Summarize, Fix grammar, Formalize)
-- Custom input field (type any instruction and submit)
-- Users can customize the command list in settings
-
-### Output Preview Window
-
-```
-+------------------------------------------+
-|  LLM output (streaming / scrollable)      |
-|                                           |
-|  The quick brown fox jumps over the...    |
-|                                           |
-+-------------------------------------------+
-|  [Follow-up: make it shorter...]  [Send]  |
-+-------------------------------------------+
-|        [Copy]    [Replace]    [Close]      |
-+-------------------------------------------+
-```
-
-- **Copy**: Copy result to clipboard
-- **Replace**: Replace original selected text (Mode B) or inject at cursor (Mode C)
-- **Close**: Discard result, original text unchanged
-- **Follow-up**: Add instructions on current result, LLM responds with context
-
-### Recording Indicator
-A floating indicator at the bottom center of the screen showing recording status and elapsed time, positioned before showing to avoid center flash.
+- **Settings Window**: General, STT, Quick Actions, LLM, TTS, and History sections with persisted preferences.
+- **Quick Action Icon**: Floating menu on selected text with user-editable preset commands and custom instruction input.
+- **Output Preview Window**: Streaming markdown output, follow-up prompts, copy/replace controls, and screenshot attachment preview.
+- **Recording Indicator**: Lightweight overlay for recording state and elapsed time.
+- **History Panel**: Search, copy, and delete prior outputs (local storage).
+- **Screenshot Overlay**: Region selector used by screenshot-to-LLM workflows.
 
 ---
 
@@ -267,6 +120,12 @@ A floating indicator at the bottom center of the screen showing recording status
 | Whisper Medium | ~1.5 GB | Medium | Better |
 | Whisper Large | ~2.9 GB | Slow | Best |
 | Whisper Turbo | ~1.5 GB | Fast | Better |
+
+### TTS
+
+| Engine | Notes |
+|--------|-------|
+| Edge TTS | Local playback with configurable voice/rate/pitch and multi-language voice mapping |
 
 ---
 
