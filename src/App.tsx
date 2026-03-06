@@ -214,6 +214,7 @@ function MainWindow() {
     let qaInteracting = false;
     let lastSelectionFingerprint = "";
     let suppressedSelectionFingerprint = "";
+    let selectionWatchSuppressedUntil = 0;
     let pendingHotkeyReleaseAt = 0;
     let qaHideTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -321,6 +322,9 @@ function MainWindow() {
             clearTimeout(qaHideTimer);
             qaHideTimer = null;
           }
+          if (Date.now() < selectionWatchSuppressedUntil) {
+            return;
+          }
           if (!qaInteracting) {
             const sel = await invoke<{ has_selection: boolean }>("get_selection");
             if (!sel.has_selection) {
@@ -335,8 +339,9 @@ function MainWindow() {
         }
       );
 
-      await safeRegister("talkflow://qa-suppress-current-selection", async () => {
+      await safeRegister<{ cooldownMs?: number }>("talkflow://qa-suppress-current-selection", async (event) => {
         suppressedSelectionFingerprint = lastSelectionFingerprint;
+        selectionWatchSuppressedUntil = Date.now() + Math.max(300, event.payload.cooldownMs ?? 1200);
         const qaWin = await WebviewWindow.getByLabel("quick-action");
         if (qaWin) {
           await qaWin.hide().catch(() => {});
@@ -455,6 +460,9 @@ function MainWindow() {
         async (event) => {
           const { has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y } = event.payload;
           const store = useAppStore.getState();
+          if (Date.now() < selectionWatchSuppressedUntil) {
+            return;
+          }
 
           // Don't show Quick Action Icon while recording
           if (store.isRecording) return;

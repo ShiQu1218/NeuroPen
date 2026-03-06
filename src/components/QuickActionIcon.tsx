@@ -164,7 +164,7 @@ export default function QuickActionIcon() {
     }
 
     await invoke("restore_clipboard");
-    await emit("talkflow://qa-suppress-current-selection");
+    await emit("talkflow://qa-suppress-current-selection", { cooldownMs: 1600 });
     await setQaInteracting(false);
     await getCurrentWindow().hide();
     setExpanded(false);
@@ -201,7 +201,6 @@ export default function QuickActionIcon() {
         );
         await previewWin.setPosition(new PhysicalPosition(clampedPreviewPos.x, clampedPreviewPos.y));
         await previewWin.show();
-        await previewWin.setFocus();
       }
     }
 
