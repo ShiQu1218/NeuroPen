@@ -18,6 +18,7 @@ export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
   const [screenshotBase64, setScreenshotBase64] = useState("");
   const [sessionKey, setSessionKey] = useState(0);
+  const [isScreenshotSession, setIsScreenshotSession] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const outputContentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -228,6 +229,7 @@ export default function PreviewWindow() {
         "talkflow://screenshot-attached",
         (event) => {
           setScreenshotBase64(event.payload.imageBase64 || "");
+          setIsScreenshotSession(true);
           useAppStore.getState().setLlmOutput("");
           useAppStore.getState().setIsLlmLoading(false);
           useAppStore.getState().setLlmError("");
@@ -311,6 +313,7 @@ export default function PreviewWindow() {
     setIsLlmLoading(false);
     setLlmError("");
     setScreenshotBase64("");
+    setIsScreenshotSession(false);
   };
 
   const handleStartDrag = async () => {
@@ -340,9 +343,12 @@ export default function PreviewWindow() {
         preferredLanguage,
       });
     } else {
-      // Backend CONVERSATION_HISTORY tracks multi-turn context automatically
+      // Backend CONVERSATION_HISTORY tracks multi-turn context automatically.
+      // In screenshot sessions, pass empty selectedText so the LLM uses
+      // conversation history (which already contains the image context)
+      // instead of injecting stale selection text from a previous interaction.
       await invoke("call_llm", {
-        selectedText: lastSelectedText,
+        selectedText: isScreenshotSession ? "" : lastSelectedText,
         instruction: input,
         outputMode: "PreviewStream",
         provider: llmProvider,

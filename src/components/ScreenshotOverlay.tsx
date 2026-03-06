@@ -179,6 +179,9 @@ export default function ScreenshotOverlay() {
         void ensureFocus();
       });
       unlistenBlur = await listen(TauriEvent.WINDOW_BLUR, () => {
+        // Don't cancel while the user is actively dragging (pointer is captured).
+        // On Windows, transparent overlays briefly lose focus on pointer-down.
+        if (activePointerIdRef.current !== null) return;
         if (!dragStartRef.current) return;
         void cancelSelection();
       });
