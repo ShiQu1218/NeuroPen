@@ -29,6 +29,15 @@ export interface QuickActionCommand {
   instruction: string;
 }
 
+export const normalizeLlmModelOptions = (models: string[], activeModel?: string) =>
+  Array.from(
+    new Set(
+      [...models, activeModel ?? ""]
+        .map((model) => model.trim())
+        .filter(Boolean)
+    )
+  );
+
 const DEFAULT_QUICK_ACTION_COMMANDS: QuickActionCommand[] = [
   { id: "translate", label: "翻譯成英文", instruction: "Translate the selected text to English." },
   { id: "summarize", label: "摘要", instruction: "Summarize the selected text concisely." },
@@ -149,7 +158,7 @@ export const useAppStore = create<AppState>()(
       outputMode: "PreviewStream",
       llmProvider: "openAi",
       llmModel: "gpt-4o-mini",
-      llmModelOptions: DEFAULT_LLM_MODEL_OPTIONS,
+      llmModelOptions: normalizeLlmModelOptions(DEFAULT_LLM_MODEL_OPTIONS, "gpt-4o-mini"),
       incognito: false,
       hotkey: "Alt+`",
       screenshotHotkey: "Alt+S",
@@ -193,8 +202,21 @@ export const useAppStore = create<AppState>()(
       setSttModelPath: (path) => set({ sttModelPath: path }),
       setOutputMode: (mode) => set({ outputMode: mode }),
       setLlmProvider: (provider) => set({ llmProvider: provider }),
-      setLlmModel: (model) => set({ llmModel: model }),
-      setLlmModelOptions: (llmModelOptions) => set({ llmModelOptions }),
+      setLlmModel: (model) =>
+        set((state) => {
+          const nextModel = model.trim();
+          if (!nextModel) {
+            return state;
+          }
+          return {
+            llmModel: nextModel,
+            llmModelOptions: normalizeLlmModelOptions(state.llmModelOptions, nextModel),
+          };
+        }),
+      setLlmModelOptions: (llmModelOptions) =>
+        set((state) => ({
+          llmModelOptions: normalizeLlmModelOptions(llmModelOptions, state.llmModel),
+        })),
       setIncognito: (on) => set({ incognito: on }),
       setHotkey: (hotkey) => set({ hotkey }),
       setScreenshotHotkey: (screenshotHotkey) => set({ screenshotHotkey }),
@@ -249,6 +271,22 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: "talkflow-settings",
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as Partial<AppState> | undefined) ?? {};
+        const nextModel =
+          typeof persisted.llmModel === "string" && persisted.llmModel.trim()
+            ? persisted.llmModel.trim()
+            : currentState.llmModel;
+        return {
+          ...currentState,
+          ...persisted,
+          llmModel: nextModel,
+          llmModelOptions: normalizeLlmModelOptions(
+            Array.isArray(persisted.llmModelOptions) ? persisted.llmModelOptions : currentState.llmModelOptions,
+            nextModel,
+          ),
+        };
+      },
       // Only persist user preferences, not runtime state
       partialize: (state) => ({
         wakeWord: state.wakeWord,

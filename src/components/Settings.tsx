@@ -19,6 +19,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n, type TranslationKey } from "../i18n";
 import {
+  normalizeLlmModelOptions,
   useAppStore,
   type AppLanguage,
   type LlmProvider,
@@ -350,7 +351,7 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
-    setDraftLlmModelOptions(llmModelOptions);
+    setDraftLlmModelOptions(normalizeLlmModelOptions(llmModelOptions, llmModel));
     setDraftTtsVoice(ttsVoice);
     setDraftTtsRate(ttsRate);
     setDraftTtsPitch(ttsPitch);
@@ -527,12 +528,7 @@ export default function Settings() {
 
     const nextWakeWord = draftWakeWord.trim();
     const nextModel = draftLlmModel.trim();
-    const nextLlmModelOptions = Array.from(
-      new Set([
-        ...draftLlmModelOptions.map((model) => model.trim()).filter(Boolean),
-        nextModel,
-      ]),
-    );
+    const nextLlmModelOptions = normalizeLlmModelOptions(draftLlmModelOptions, nextModel);
     const isExternalModelChoice = draftSttModelChoice === OPENAI_STT_MODEL;
     if (!isExternalModelChoice && !localModels.some((model) => model.id === draftSttModelChoice && model.installed)) {
       setSettingsSaveStatus("error");
@@ -668,7 +664,7 @@ export default function Settings() {
     setDraftVocabularyTerms(vocabularyTerms.join("\n"));
     setDraftLlmProvider(llmProvider);
     setDraftLlmModel(llmModel);
-    setDraftLlmModelOptions(llmModelOptions);
+    setDraftLlmModelOptions(normalizeLlmModelOptions(llmModelOptions, llmModel));
     setDraftTtsVoice(ttsVoice);
     setDraftTtsRate(ttsRate);
     setDraftTtsPitch(ttsPitch);
@@ -735,7 +731,7 @@ export default function Settings() {
   const handleAddLlmModelOption = () => {
     const candidate = draftLlmModel.trim();
     if (!candidate) return;
-    setDraftLlmModelOptions((prev) => (prev.includes(candidate) ? prev : [...prev, candidate]));
+    setDraftLlmModelOptions((prev) => normalizeLlmModelOptions(prev, candidate));
     setDraftLlmModel(candidate);
   };
 

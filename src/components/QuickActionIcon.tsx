@@ -10,7 +10,7 @@ import { clampToMonitorBounds } from "../utils/windowBounds";
 
 const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 260 };
-const PREVIEW_INITIAL_SIZE = { width: 340, height: 240 };
+const PREVIEW_INITIAL_SIZE = { width: 420, height: 320 };
 
 export default function QuickActionIcon() {
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
@@ -18,6 +18,7 @@ export default function QuickActionIcon() {
   const setOutputMode = useAppStore((s) => s.setOutputMode);
   const setLlmProvider = useAppStore((s) => s.setLlmProvider);
   const setLlmModel = useAppStore((s) => s.setLlmModel);
+  const setLlmModelOptions = useAppStore((s) => s.setLlmModelOptions);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const { t } = useI18n();
@@ -68,6 +69,7 @@ export default function QuickActionIcon() {
         outputMode?: "DirectInject" | "PreviewStream";
         llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
         llmModel?: string;
+        llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
@@ -82,6 +84,9 @@ export default function QuickActionIcon() {
           }
           if (event.payload.llmModel) {
             setLlmModel(event.payload.llmModel);
+          }
+          if (event.payload.llmModelOptions) {
+            setLlmModelOptions(event.payload.llmModelOptions);
           }
           if (event.payload.language) {
             setLanguage(event.payload.language);
@@ -108,7 +113,7 @@ export default function QuickActionIcon() {
       void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setLanguage, setLlmModel, setLlmProvider, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
 
   useEffect(() => {
     void setWindowFocusable(false);

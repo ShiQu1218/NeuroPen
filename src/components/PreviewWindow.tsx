@@ -6,13 +6,13 @@ import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useI18n } from "../i18n";
-import { useAppStore, type AppLanguage, type PreferredLanguage } from "../store/useAppStore";
+import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
-const PREVIEW_WIDTH = 400;
-const PREVIEW_MIN_HEIGHT = 260;
-const PREVIEW_MAX_HEIGHT = 500;
-const PREVIEW_CHROME_HEIGHT = 180;
+const PREVIEW_WIDTH = 480;
+const PREVIEW_MIN_HEIGHT = 340;
+const PREVIEW_MAX_HEIGHT = 620;
+const PREVIEW_CHROME_HEIGHT = 240;
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
@@ -31,6 +31,7 @@ export default function PreviewWindow() {
   const llmError = useAppStore((s) => s.llmError);
   const lastSelectedText = useAppStore((s) => s.lastSelectedText);
   const isTtsPlaying = useAppStore((s) => s.isTtsPlaying);
+  const quickActionCommands = useAppStore((s) => s.quickActionCommands);
   const sttDurationMs = useAppStore((s) => s.sttDurationMs);
   const llmDurationMs = useAppStore((s) => s.llmDurationMs);
   const setLlmOutput = useAppStore((s) => s.setLlmOutput);
@@ -38,12 +39,14 @@ export default function PreviewWindow() {
   const setLlmError = useAppStore((s) => s.setLlmError);
   const setLlmProvider = useAppStore((s) => s.setLlmProvider);
   const setLlmModel = useAppStore((s) => s.setLlmModel);
+  const setLlmModelOptions = useAppStore((s) => s.setLlmModelOptions);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const setTtsVoice = useAppStore((s) => s.setTtsVoice);
   const setTtsRate = useAppStore((s) => s.setTtsRate);
   const setTtsPitch = useAppStore((s) => s.setTtsPitch);
   const setIsTtsPlaying = useAppStore((s) => s.setIsTtsPlaying);
+  const setQuickActionCommands = useAppStore((s) => s.setQuickActionCommands);
 
   const parseRate = (value?: string | null) => {
     if (!value) return 1;
@@ -133,6 +136,47 @@ export default function PreviewWindow() {
     }
   }, []);
 
+  const runPreviewInstruction = useCallback(
+    async (instruction: string) => {
+      const state = useAppStore.getState();
+      const input = instruction.trim();
+      if (!input) return;
+      const screenshotToSend = screenshotBase64;
+      if (screenshotToSend) {
+        setScreenshotBase64("");
+      }
+      setLlmOutput("");
+      setIsLlmLoading(true);
+      setLlmError("");
+      try {
+        if (screenshotToSend) {
+          await invoke("call_llm_with_image", {
+            imageBase64: screenshotToSend,
+            instruction: input,
+            outputMode: "PreviewStream",
+            provider: state.llmProvider,
+            model: state.llmModel,
+            preferredLanguage: state.preferredLanguage,
+          });
+        } else {
+          await invoke("call_llm", {
+            selectedText: isScreenshotSession ? "" : lastSelectedText,
+            instruction: input,
+            outputMode: "PreviewStream",
+            provider: state.llmProvider,
+            model: state.llmModel,
+            preferredLanguage: state.preferredLanguage,
+          });
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        setIsLlmLoading(false);
+        setLlmError(reason);
+      }
+    },
+    [isScreenshotSession, lastSelectedText, screenshotBase64, setIsLlmLoading, setLlmError, setLlmOutput]
+  );
+
   // Listen to LLM streaming events + TTS events
   useEffect(() => {
     let cancelled = false;
@@ -193,11 +237,13 @@ export default function PreviewWindow() {
       await register<{
         llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
         llmModel?: string;
+        llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
         ttsVoice?: string;
         ttsRate?: string;
         ttsPitch?: string;
+        quickActionCommands?: QuickActionCommand[];
       }>(
         "talkflow://settings-saved",
         (event) => {
@@ -206,6 +252,9 @@ export default function PreviewWindow() {
           }
           if (event.payload.llmModel) {
             setLlmModel(event.payload.llmModel);
+          }
+          if (event.payload.llmModelOptions) {
+            setLlmModelOptions(event.payload.llmModelOptions);
           }
           if (event.payload.language) {
             setLanguage(event.payload.language);
@@ -221,6 +270,9 @@ export default function PreviewWindow() {
           }
           if (typeof event.payload.ttsPitch === "string") {
             setTtsPitch(event.payload.ttsPitch);
+          }
+          if (event.payload.quickActionCommands) {
+            setQuickActionCommands(event.payload.quickActionCommands);
           }
         }
       );
@@ -257,7 +309,7 @@ export default function PreviewWindow() {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [setIsTtsPlaying, setLanguage, setLlmModel, setLlmProvider, setPreferredLanguage, setTtsPitch, setTtsRate, setTtsVoice, speakWithFallback]);
+  }, [setIsTtsPlaying, setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setPreferredLanguage, setQuickActionCommands, setTtsPitch, setTtsRate, setTtsVoice, speakWithFallback]);
 
   useEffect(() => {
     void setPreviewFocusable(false);
@@ -342,48 +394,10 @@ export default function PreviewWindow() {
   };
 
   const handleRefinement = async () => {
-    const state = useAppStore.getState();
     const input = refinementInput.trim();
     if (!input) return;
-    const screenshotToSend = screenshotBase64;
-    // Clear the attachment before sending
-    if (screenshotToSend) {
-      setScreenshotBase64("");
-    }
-    setLlmOutput("");
-    setIsLlmLoading(true);
-    setLlmError("");
     setRefinementInput("");
-    try {
-      if (screenshotToSend) {
-        // Send screenshot + user instruction to LLM
-        await invoke("call_llm_with_image", {
-          imageBase64: screenshotToSend,
-          instruction: input,
-          outputMode: "PreviewStream",
-          provider: state.llmProvider,
-          model: state.llmModel,
-          preferredLanguage: state.preferredLanguage,
-        });
-      } else {
-        // Backend CONVERSATION_HISTORY tracks multi-turn context automatically.
-        // In screenshot sessions, pass empty selectedText so the LLM uses
-        // conversation history (which already contains the image context)
-        // instead of injecting stale selection text from a previous interaction.
-        await invoke("call_llm", {
-          selectedText: isScreenshotSession ? "" : lastSelectedText,
-          instruction: input,
-          outputMode: "PreviewStream",
-          provider: state.llmProvider,
-          model: state.llmModel,
-          preferredLanguage: state.preferredLanguage,
-        });
-      }
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      setIsLlmLoading(false);
-      setLlmError(reason);
-    }
+    await runPreviewInstruction(input);
   };
 
   const handleTtsToggle = async () => {
@@ -557,6 +571,24 @@ export default function PreviewWindow() {
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
+        </div>
+      )}
+
+      {quickActionCommands.length > 0 && (
+        <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
+          <div className="text-[11px] font-medium text-zinc-500 mb-1.5">{t("preview.quickActions")}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {quickActionCommands.map((command) => (
+              <button
+                key={`preview-command-${command.id}`}
+                className="btn-secondary px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={isLlmLoading}
+                onClick={() => void runPreviewInstruction(command.instruction)}
+              >
+                {command.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

@@ -185,6 +185,7 @@ function MainWindow() {
     setVocabularyTerms,
     setLlmProvider,
     setLlmModel,
+    setLlmModelOptions,
     setQuickActionCommands,
     setLanguage,
     setPreferredLanguage,
@@ -361,6 +362,7 @@ function MainWindow() {
         vocabularyTerms?: string[];
         llmProvider: LlmProvider;
         llmModel: string;
+        llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
         microphoneSource?: string;
@@ -417,6 +419,9 @@ function MainWindow() {
           }
           if (payload.llmModel) {
             setLlmModel(payload.llmModel);
+          }
+          if (payload.llmModelOptions) {
+            setLlmModelOptions(payload.llmModelOptions);
           }
           if (payload.language) {
             setLanguage(payload.language);

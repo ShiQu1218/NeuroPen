@@ -30,8 +30,8 @@
       {
         "label": "preview",
         "title": "Output Preview",
-        "width": 400,
-        "height": 260,
+        "width": 480,
+        "height": 340,
         "visible": false,
         "focusable": false,
         "alwaysOnTop": true,
