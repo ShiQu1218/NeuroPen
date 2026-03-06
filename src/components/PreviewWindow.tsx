@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -26,6 +26,8 @@ export default function PreviewWindow() {
   const inputRef = useRef<HTMLInputElement>(null);
   const fallbackUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const fallbackTtsActiveRef = useRef(false);
+  const dragLockUntilRef = useRef(0);
+  const dragResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { t } = useI18n();
 
   const llmOutput = useAppStore((s) => s.llmOutput);
@@ -417,8 +419,35 @@ export default function PreviewWindow() {
     setPreviewSession(null);
   };
 
+  const isDragInteractionLocked = useCallback(
+    () => Date.now() < dragLockUntilRef.current,
+    []
+  );
+
+  const swallowDragRelease = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (!isDragInteractionLocked()) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, [isDragInteractionLocked]);
+
   const handleStartDrag = async () => {
-    await getCurrentWindow().startDragging();
+    dragLockUntilRef.current = Date.now() + 1500;
+    if (dragResetTimerRef.current) {
+      clearTimeout(dragResetTimerRef.current);
+      dragResetTimerRef.current = null;
+    }
+    try {
+      await setPreviewFocusable(true, true);
+      await getCurrentWindow().startDragging();
+    } finally {
+      dragLockUntilRef.current = Date.now() + 220;
+      dragResetTimerRef.current = setTimeout(() => {
+        dragResetTimerRef.current = null;
+        if (Date.now() >= dragLockUntilRef.current) {
+          void setPreviewFocusable(false);
+        }
+      }, 260);
+    }
   };
 
   const handleRefinement = async () => {
@@ -488,12 +517,20 @@ export default function PreviewWindow() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
+  useEffect(() => () => {
+    if (dragResetTimerRef.current) {
+      clearTimeout(dragResetTimerRef.current);
+    }
+  }, []);
+
   const hasOutput = llmOutput.length > 0;
 
   return (
     <div
       key={animKey}
       className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp"
+      onMouseUpCapture={swallowDragRelease}
+      onClickCapture={swallowDragRelease}
       onMouseDownCapture={(e) => {
         if ((e.target as HTMLElement).closest("button,input,textarea")) {
           void setPreviewFocusable(true, true);
@@ -505,6 +542,8 @@ export default function PreviewWindow() {
         className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"
         onMouseDown={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
+          e.preventDefault();
+          e.stopPropagation();
           void handleStartDrag();
         }}
       >
@@ -530,7 +569,10 @@ export default function PreviewWindow() {
                 ? "bg-blue-100 text-blue-600"
                 : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
                 }`}
-              onClick={handleTtsToggle}
+              onClick={() => {
+                if (isDragInteractionLocked()) return;
+                void handleTtsToggle();
+              }}
               title={isTtsPlaying ? t("preview.ttsStop") : t("preview.ttsPlay")}
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -551,7 +593,10 @@ export default function PreviewWindow() {
           )}
           <button
             className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
-            onClick={handleClose}
+            onClick={() => {
+              if (isDragInteractionLocked()) return;
+              void handleClose();
+            }}
             title={`${t("preview.close")} (Esc)`}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -615,7 +660,10 @@ export default function PreviewWindow() {
                 key={`preview-command-${command.id}`}
                 className="btn-secondary px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed"
                 disabled={isLlmLoading}
-                onClick={() => void runPreviewInstruction(command.instruction)}
+                onClick={() => {
+                  if (isDragInteractionLocked()) return;
+                  void runPreviewInstruction(command.instruction);
+                }}
               >
                 {command.label}
               </button>
@@ -644,7 +692,10 @@ export default function PreviewWindow() {
         <button
           className="btn-primary px-2.5 py-1.5 text-sm"
           disabled={isLlmLoading || !refinementInput.trim()}
-          onClick={handleRefinement}
+          onClick={() => {
+            if (isDragInteractionLocked()) return;
+            void handleRefinement();
+          }}
         >
           {"\u2192"}
         </button>
@@ -655,7 +706,10 @@ export default function PreviewWindow() {
         <button
           className="btn-secondary px-3 py-1.5 text-xs"
           disabled={!hasOutput}
-          onClick={handleCopy}
+          onClick={() => {
+            if (isDragInteractionLocked()) return;
+            void handleCopy();
+          }}
           title="Ctrl+C"
         >
           {t("preview.copy")}
@@ -663,14 +717,20 @@ export default function PreviewWindow() {
         <button
           className="btn-primary px-3 py-1.5 text-xs"
           disabled={!hasOutput || isLlmLoading}
-          onClick={handleReplace}
+          onClick={() => {
+            if (isDragInteractionLocked()) return;
+            void handleReplace();
+          }}
           title="Ctrl+Enter"
         >
           {t("preview.replace")}
         </button>
         <button
           className="btn-secondary px-3 py-1.5 text-xs"
-          onClick={handleClose}
+          onClick={() => {
+            if (isDragInteractionLocked()) return;
+            void handleClose();
+          }}
           title="Esc"
         >
           {t("preview.close")}

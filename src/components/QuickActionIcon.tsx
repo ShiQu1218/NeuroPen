@@ -163,6 +163,7 @@ export default function QuickActionIcon() {
     pointer?: { x: number; y: number }
   ) => {
     const currentState = useAppStore.getState();
+    const llmOutputMode = "PreviewStream";
     let selectedText = stableSelectionRef.current.trim();
     try {
       if (!selectedText) {
@@ -197,52 +198,47 @@ export default function QuickActionIcon() {
     const qaSize = await getCurrentWindow().outerSize();
     const scaleFactor = await getCurrentWindow().scaleFactor();
 
-    if (currentState.outputMode === "PreviewStream") {
-      // Emit session event BEFORE showing the window so the animation
-      // key changes while the window is still hidden.
-      await emit("talkflow://preview-session", {
-        sessionType: "text",
-        sourceMode: "B1",
-        selectedText,
-        instruction,
-      });
+    // Selection-based flows always use the preview workflow; the global
+    // LLM output mode only applies to direct voice input and wake-word mode.
+    await emit("talkflow://preview-session", {
+      sessionType: "text",
+      sourceMode: "B1",
+      selectedText,
+      instruction,
+    });
 
-      const previewWin = await WebviewWindow.getByLabel("preview");
-      if (previewWin) {
-        await previewWin.setFocusable(false).catch(() => { });
-        await previewWin.setSize(
-          new LogicalSize(PREVIEW_INITIAL_SIZE.width, PREVIEW_INITIAL_SIZE.height)
-        );
-        const previewX = pointer
-          ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
-          : qaPos.x;
-        const previewY = pointer
-          ? Math.round(qaPos.y + pointer.y * scaleFactor + 12)
-          : qaPos.y + qaSize.height + 4;
-        const previewSize = await previewWin.outerSize();
-        const clampedPreviewPos = await clampToMonitorBounds(
-          previewX,
-          previewY,
-          previewSize.width || PREVIEW_INITIAL_SIZE.width,
-          previewSize.height || PREVIEW_INITIAL_SIZE.height
-        );
-        await previewWin.setPosition(new PhysicalPosition(clampedPreviewPos.x, clampedPreviewPos.y));
-        await previewWin.show();
-      }
+    const previewWin = await WebviewWindow.getByLabel("preview");
+    if (previewWin) {
+      await previewWin.setFocusable(false).catch(() => { });
+      await previewWin.setSize(
+        new LogicalSize(PREVIEW_INITIAL_SIZE.width, PREVIEW_INITIAL_SIZE.height)
+      );
+      const previewX = pointer
+        ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
+        : qaPos.x;
+      const previewY = pointer
+        ? Math.round(qaPos.y + pointer.y * scaleFactor + 12)
+        : qaPos.y + qaSize.height + 4;
+      const previewSize = await previewWin.outerSize();
+      const clampedPreviewPos = await clampToMonitorBounds(
+        previewX,
+        previewY,
+        previewSize.width || PREVIEW_INITIAL_SIZE.width,
+        previewSize.height || PREVIEW_INITIAL_SIZE.height
+      );
+      await previewWin.setPosition(new PhysicalPosition(clampedPreviewPos.x, clampedPreviewPos.y));
+      await previewWin.show();
     }
 
     try {
       await invoke("call_llm", {
         selectedText,
         instruction,
-        outputMode: currentState.outputMode,
+        outputMode: llmOutputMode,
         provider: currentState.llmProvider,
         model: currentState.llmModel,
         preferredLanguage: currentState.preferredLanguage,
       });
-      if (currentState.outputMode === "DirectInject") {
-        await invoke("restore_clipboard");
-      }
     } catch (err) {
       console.error("[QuickAction] call_llm failed:", err);
     }

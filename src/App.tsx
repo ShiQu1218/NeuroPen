@@ -973,20 +973,18 @@ function MainWindow() {
             store.setLlmError("");
             store.setLastSelectedText(store.selectedText);
             store.setLastInstruction(result.transcript);
-            if (store.outputMode === "PreviewStream") {
-              await emit("talkflow://preview-session", {
-                sessionType: "text",
-                sourceMode: "B2",
-                selectedText: store.selectedText,
-                instruction: result.transcript,
-              });
+            await emit("talkflow://preview-session", {
+              sessionType: "text",
+              sourceMode: "B2",
+              selectedText: store.selectedText,
+              instruction: result.transcript,
+            });
 
-              const previewWin = await WebviewWindow.getByLabel("preview");
-              if (previewWin) {
-                await previewWin.setFocusable(true).catch(() => {});
-                await previewWin.show();
-                await previewWin.setFocus();
-              }
+            const previewWin = await WebviewWindow.getByLabel("preview");
+            if (previewWin) {
+              await previewWin.setFocusable(true).catch(() => {});
+              await previewWin.show();
+              await previewWin.setFocus();
             }
 
             setStatusMsg(t("status.llmProcessing"));
@@ -994,16 +992,11 @@ function MainWindow() {
               await invoke("call_llm", {
                 selectedText: store.selectedText,
                 instruction: result.transcript,
-                outputMode: store.outputMode,
+                outputMode: "PreviewStream",
                 provider: store.llmProvider,
                 model: store.llmModel,
                 preferredLanguage: store.preferredLanguage,
               });
-              if (store.outputMode === "DirectInject") {
-                await invoke("restore_clipboard");
-                setStatusMsg(t("status.textInjected"));
-                setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
-              }
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);
               store.setIsLlmLoading(false);
