@@ -61,9 +61,9 @@
 
 | Mode | Trigger | Output |
 |------|---------|--------|
-| **A — Direct Voice Input** | No selection + `Alt + Backtick` + no wake word | STT result injected at cursor |
-| **B1 — Quick Action on Selection** | Text selected + Quick Action click | LLM result in preview window or direct inject |
-| **B2 — Voice Command on Selection** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite in preview window or direct inject |
+| **A — Direct Voice Input** | No selection + `Alt + Backtick` + no wake word | STT result shown in preview window or injected at cursor |
+| **B1 — Quick Action on Selection** | Text selected + Quick Action click | LLM result in preview window |
+| **B2 — Voice Command on Selection** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite in preview window |
 | **C — LLM Query** | No selection + wake word detected in transcript | LLM answer in preview window or direct inject |
 
 ## Core Workflow Safeguards

@@ -14,7 +14,7 @@ const PREVIEW_MIN_HEIGHT = 340;
 const PREVIEW_MAX_HEIGHT = 620;
 const PREVIEW_CHROME_HEIGHT = 240;
 type PreviewSession =
-  | { type: "text"; selectedText: string; sourceMode: "B1" | "B2" | "C" }
+  | { type: "text"; selectedText: string; sourceMode: "A" | "B1" | "B2" | "C" }
   | { type: "screenshot"; imageBase64: string; sourceMode: "C" };
 
 export default function PreviewWindow() {
@@ -223,7 +223,7 @@ export default function PreviewWindow() {
         selectedText?: string;
         instruction?: string;
         sessionType?: "text" | "screenshot";
-        sourceMode?: "B1" | "B2" | "C";
+        sourceMode?: "A" | "B1" | "B2" | "C";
       }>(
         "talkflow://preview-session",
         (event) => {
@@ -262,6 +262,11 @@ export default function PreviewWindow() {
           }
         }
       );
+      await register<{ text: string }>("talkflow://preview-static-output", (event) => {
+        useAppStore.getState().setLlmOutput(event.payload.text ?? "");
+        useAppStore.getState().setIsLlmLoading(false);
+        useAppStore.getState().setLlmError("");
+      });
       await register<{
         llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
         llmModel?: string;

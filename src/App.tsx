@@ -353,7 +353,7 @@ function MainWindow() {
       });
 
       await safeRegister<{
-        mode: "B1" | "B2" | "C";
+        mode: "A" | "B1" | "B2" | "C";
         selectedText?: string;
         instruction?: string;
       }>("talkflow://llm-session-context", (event) => {
@@ -854,7 +854,7 @@ function MainWindow() {
           store.setCurrentMode(mode);
 
           if (mode === "A") {
-            // ── Mode A — inject STT text directly ──
+            // ── Mode A — inject STT text directly or show preview ──
             let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
             let usedLlmForModeA = false;
             let postInjectWarning = "";
@@ -933,6 +933,47 @@ function MainWindow() {
               postInjectWarning = t("status.llmApiMissingOriginalOutput");
             }
 
+            if (store.outputMode === "PreviewStream") {
+              store.setLastSelectedText(finalText);
+              store.setLastInstruction("");
+              await emit("talkflow://preview-session", {
+                sessionType: "text",
+                sourceMode: "A",
+                selectedText: finalText,
+                instruction: "",
+              });
+
+              const previewWin = await WebviewWindow.getByLabel("preview");
+              if (previewWin) {
+                await previewWin.setFocusable(true).catch(() => {});
+                await previewWin.show();
+                await previewWin.setFocus();
+              }
+
+              await emit("talkflow://preview-static-output", {
+                text: finalText,
+              });
+
+              if (store.historyEnabled && !store.incognito) {
+                void invoke("history_save", {
+                  mode: "A",
+                  inputText: result.transcript,
+                  instruction: "",
+                  output: finalText,
+                  provider: usedLlmForModeA ? store.llmProvider : "",
+                  model: usedLlmForModeA ? store.llmModel : "",
+                });
+              }
+
+              if (postInjectWarning) {
+                setStatusMsg(postInjectWarning);
+                setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 3500);
+              } else {
+                setStatusMsg(t("status.readyHoldHotkey"));
+              }
+              return;
+            }
+
             setStatusMsg(t("status.injectingText"));
             const ok = await invoke<boolean>("verify_focus");
             if (!ok) {
@@ -960,7 +1001,10 @@ function MainWindow() {
               });
             }
 
-            setStatusMsg(postInjectWarning || t("status.textInjected"));
+            const injectSuccessStatus = usedLlmForModeA
+              ? t("status.llmProcessedInjected")
+              : t("status.textInjected");
+            setStatusMsg(postInjectWarning || injectSuccessStatus);
             setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), postInjectWarning ? 3500 : 2000);
           } else if (mode === "B2") {
             // ── Mode B2 — voice command on selected text ──
