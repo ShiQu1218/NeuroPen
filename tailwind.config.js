@@ -10,7 +10,7 @@ export default {
         },
       },
       animation: {
-        scaleUp: 'scaleUp 450ms cubic-bezier(0.34, 1.56, 0.64, 1) both',
+        scaleUp: 'scaleUp 400ms cubic-bezier(0.16, 1, 0.3, 1) both',
       },
     },
   },
