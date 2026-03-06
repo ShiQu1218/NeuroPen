@@ -1,6 +1,6 @@
 [package]
 name = "talkflow"
-version = "0.1.2"
+version = "0.1.3"
 description = "TalkFlow - Windows Desktop AI Voice Assistant"
 authors = ["you"]
 edition = "2021"
