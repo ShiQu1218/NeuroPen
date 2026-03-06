@@ -19,6 +19,7 @@ export default function RecordingIndicator() {
   const [elapsed, setElapsed] = useState(0);
   const [partialText, setPartialText] = useState("");
   const [statusText, setStatusText] = useState("");
+  const [animKey, setAnimKey] = useState(0);
   const statusTextRef = useRef("");
   const isRecordingRef = useRef(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -81,6 +82,7 @@ export default function RecordingIndicator() {
         setStatusText("");
         statusTextRef.current = "";
         setPartialTranscript("");
+        setAnimKey((k) => k + 1);
         await showAtBottomCenter();
       });
       if (cancelled) { u1(); } else { unlisten.push(u1); }
@@ -152,11 +154,11 @@ export default function RecordingIndicator() {
 
   return (
     <div className="flex items-center justify-center w-full h-full bg-transparent">
-      <div className="flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full text-sm shadow-lg backdrop-blur-sm max-w-[400px] animate-scaleUp">
+      <div key={animKey} className="flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full text-sm shadow-lg backdrop-blur-sm max-w-[400px] animate-scaleUp">
         <span
           className={`w-2.5 h-2.5 rounded-full shrink-0 ${isRecording
-              ? "bg-red-500 animate-pulse"
-              : "bg-gray-400"
+            ? "bg-red-500 animate-pulse"
+            : "bg-gray-400"
             }`}
         />
         {isRecording && partialText ? (

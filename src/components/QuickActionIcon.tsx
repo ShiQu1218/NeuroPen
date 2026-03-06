@@ -24,6 +24,7 @@ export default function QuickActionIcon() {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
+  const [animKey, setAnimKey] = useState(0);
   const [customInput, setCustomInput] = useState("");
   const [isInputFocused, setIsInputFocused] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -51,6 +52,7 @@ export default function QuickActionIcon() {
           cancelAnimationFrame(fadeRaf.current);
         }
         setIconVisible(false);
+        setAnimKey((k) => k + 1);
         fadeRaf.current = requestAnimationFrame(() => {
           setIconVisible(true);
           fadeRaf.current = null;
@@ -234,6 +236,7 @@ export default function QuickActionIcon() {
   if (!expanded) {
     return (
       <div
+        key={animKey}
         className={`flex items-center justify-center w-[36px] h-[36px] bg-white/85 backdrop-blur-md border border-white/80 rounded-full shadow-[0_10px_28px_rgba(0,0,0,0.18)] cursor-pointer transition-all duration-200 ease-out animate-scaleUp ${iconVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
           }`}
         onMouseEnter={expand}
