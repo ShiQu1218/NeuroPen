@@ -426,7 +426,11 @@ function MainWindow() {
             // Position QA icon below selection end (fallback to cursor).
             const x = typeof anchor_x === "number" ? anchor_x : cursor_x;
             const y = typeof anchor_y === "number" ? anchor_y : cursor_y;
-            const currentFingerprint = `${selectionText || "__selection__"}::${x}::${y}`;
+            const currentFingerprint = `${selectionText || "__selection__"}::${
+              typeof anchor_x === "number" && typeof anchor_y === "number"
+                ? `${Math.round(anchor_x)}::${Math.round(anchor_y)}`
+                : "__anchor__"
+            }`;
             // Lock target window + cache clipboard once per unique selection.
             if (currentFingerprint !== lastSelectionFingerprint) {
               // Auto-close old Preview Window only when the selection actually changed.
@@ -838,18 +842,27 @@ function MainWindow() {
             }
 
             setStatusMsg(t("status.llmProcessing"));
-            await invoke("call_llm", {
-              selectedText: store.selectedText,
-              instruction: result.transcript,
-              outputMode: store.outputMode,
-              provider: store.llmProvider,
-              model: store.llmModel,
-              preferredLanguage: store.preferredLanguage,
-            });
-            if (store.outputMode === "DirectInject") {
-              await invoke("restore_clipboard");
-              setStatusMsg(t("status.textInjected"));
-              setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+            try {
+              await invoke("call_llm", {
+                selectedText: store.selectedText,
+                instruction: result.transcript,
+                outputMode: store.outputMode,
+                provider: store.llmProvider,
+                model: store.llmModel,
+                preferredLanguage: store.preferredLanguage,
+              });
+              if (store.outputMode === "DirectInject") {
+                await invoke("restore_clipboard");
+                setStatusMsg(t("status.textInjected"));
+                setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+              }
+            } catch (err) {
+              const reason = err instanceof Error ? err.message : String(err);
+              store.setIsLlmLoading(false);
+              store.setLlmError(reason);
+              await invoke("restore_clipboard").catch(() => {});
+              setStatusMsg(t("status.routeFailed", { reason }));
+              setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
             }
           } else if (mode === "C") {
             // ── Mode C — LLM query ──
@@ -875,18 +888,27 @@ function MainWindow() {
             }
 
             setStatusMsg(t("status.llmProcessing"));
-            await invoke("call_llm", {
-              selectedText: "",
-              instruction: result.transcript,
-              outputMode: store.outputMode,
-              provider: store.llmProvider,
-              model: store.llmModel,
-              preferredLanguage: store.preferredLanguage,
-            });
-            if (store.outputMode === "DirectInject") {
-              await invoke("restore_clipboard");
-              setStatusMsg(t("status.textInjected"));
-              setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+            try {
+              await invoke("call_llm", {
+                selectedText: "",
+                instruction: result.transcript,
+                outputMode: store.outputMode,
+                provider: store.llmProvider,
+                model: store.llmModel,
+                preferredLanguage: store.preferredLanguage,
+              });
+              if (store.outputMode === "DirectInject") {
+                await invoke("restore_clipboard");
+                setStatusMsg(t("status.textInjected"));
+                setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+              }
+            } catch (err) {
+              const reason = err instanceof Error ? err.message : String(err);
+              store.setIsLlmLoading(false);
+              store.setLlmError(reason);
+              await invoke("restore_clipboard").catch(() => {});
+              setStatusMsg(t("status.routeFailed", { reason }));
+              setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
             }
           }
         } catch (err) {

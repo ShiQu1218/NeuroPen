@@ -13,12 +13,11 @@ const EXPANDED_SIZE = { width: 220, height: 260 };
 const PREVIEW_INITIAL_SIZE = { width: 340, height: 240 };
 
 export default function QuickActionIcon() {
-  const outputMode = useAppStore((s) => s.outputMode);
-  const llmProvider = useAppStore((s) => s.llmProvider);
-  const llmModel = useAppStore((s) => s.llmModel);
-  const preferredLanguage = useAppStore((s) => s.preferredLanguage);
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
   const setQuickActionCommands = useAppStore((s) => s.setQuickActionCommands);
+  const setOutputMode = useAppStore((s) => s.setOutputMode);
+  const setLlmProvider = useAppStore((s) => s.setLlmProvider);
+  const setLlmModel = useAppStore((s) => s.setLlmModel);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const { t } = useI18n();
@@ -59,12 +58,24 @@ export default function QuickActionIcon() {
         });
       });
       unlistenSettings = await listen<{
+        outputMode?: "DirectInject" | "PreviewStream";
+        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
+        llmModel?: string;
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
         "talkflow://settings-saved",
         (event) => {
+          if (event.payload.outputMode) {
+            setOutputMode(event.payload.outputMode);
+          }
+          if (event.payload.llmProvider) {
+            setLlmProvider(event.payload.llmProvider);
+          }
+          if (event.payload.llmModel) {
+            setLlmModel(event.payload.llmModel);
+          }
           if (event.payload.language) {
             setLanguage(event.payload.language);
           }
@@ -89,7 +100,7 @@ export default function QuickActionIcon() {
       unlistenSettings?.();
       void setQaInteracting(false);
     };
-  }, [setLanguage, setPreferredLanguage, setQaInteracting, setQuickActionCommands]);
+  }, [setLanguage, setLlmModel, setLlmProvider, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands]);
 
   const expand = useCallback(() => {
     if (collapseTimer.current) {
@@ -126,13 +137,14 @@ export default function QuickActionIcon() {
       getCurrentWindow()
         .setSize(new LogicalSize(ICON_SIZE.width, ICON_SIZE.height))
         .catch(() => { });
-    }, 200);
+    }, 80);
   }, [isInputFocused, setQaInteracting]);
 
   const showPreviewAndCallLlm = async (
     instruction: string,
     pointer?: { x: number; y: number }
   ) => {
+    const currentState = useAppStore.getState();
     let selectedText = stableSelectionRef.current.trim();
     try {
       if (!selectedText) {
@@ -162,7 +174,7 @@ export default function QuickActionIcon() {
     const qaSize = await getCurrentWindow().outerSize();
     const scaleFactor = await getCurrentWindow().scaleFactor();
 
-    if (outputMode === "PreviewStream") {
+    if (currentState.outputMode === "PreviewStream") {
       // Emit session event BEFORE showing the window so the animation
       // key changes while the window is still hidden.
       await emit("talkflow://preview-session", {
@@ -194,16 +206,20 @@ export default function QuickActionIcon() {
       }
     }
 
-    await invoke("call_llm", {
-      selectedText,
-      instruction,
-      outputMode,
-      provider: llmProvider,
-      model: llmModel,
-      preferredLanguage,
-    });
-    if (outputMode === "DirectInject") {
-      await invoke("restore_clipboard");
+    try {
+      await invoke("call_llm", {
+        selectedText,
+        instruction,
+        outputMode: currentState.outputMode,
+        provider: currentState.llmProvider,
+        model: currentState.llmModel,
+        preferredLanguage: currentState.preferredLanguage,
+      });
+      if (currentState.outputMode === "DirectInject") {
+        await invoke("restore_clipboard");
+      }
+    } catch (err) {
+      console.error("[QuickAction] call_llm failed:", err);
     }
   };
 
@@ -231,7 +247,7 @@ export default function QuickActionIcon() {
           if (!panelRef.current?.matches(":hover")) {
             collapse();
           }
-        }, 220);
+        }, 120);
       }
     }
   };

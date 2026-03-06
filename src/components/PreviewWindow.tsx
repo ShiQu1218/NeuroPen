@@ -30,15 +30,14 @@ export default function PreviewWindow() {
   const isLlmLoading = useAppStore((s) => s.isLlmLoading);
   const llmError = useAppStore((s) => s.llmError);
   const lastSelectedText = useAppStore((s) => s.lastSelectedText);
-  const llmProvider = useAppStore((s) => s.llmProvider);
-  const llmModel = useAppStore((s) => s.llmModel);
-  const preferredLanguage = useAppStore((s) => s.preferredLanguage);
   const isTtsPlaying = useAppStore((s) => s.isTtsPlaying);
   const sttDurationMs = useAppStore((s) => s.sttDurationMs);
   const llmDurationMs = useAppStore((s) => s.llmDurationMs);
   const setLlmOutput = useAppStore((s) => s.setLlmOutput);
   const setIsLlmLoading = useAppStore((s) => s.setIsLlmLoading);
   const setLlmError = useAppStore((s) => s.setLlmError);
+  const setLlmProvider = useAppStore((s) => s.setLlmProvider);
+  const setLlmModel = useAppStore((s) => s.setLlmModel);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const setTtsVoice = useAppStore((s) => s.setTtsVoice);
@@ -184,6 +183,8 @@ export default function PreviewWindow() {
         }
       );
       await register<{
+        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
+        llmModel?: string;
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
         ttsVoice?: string;
@@ -192,6 +193,12 @@ export default function PreviewWindow() {
       }>(
         "talkflow://settings-saved",
         (event) => {
+          if (event.payload.llmProvider) {
+            setLlmProvider(event.payload.llmProvider);
+          }
+          if (event.payload.llmModel) {
+            setLlmModel(event.payload.llmModel);
+          }
           if (event.payload.language) {
             setLanguage(event.payload.language);
           }
@@ -242,7 +249,7 @@ export default function PreviewWindow() {
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [setLanguage, setPreferredLanguage, setTtsVoice, setTtsRate, setTtsPitch, setIsTtsPlaying, speakWithFallback]);
+  }, [setIsTtsPlaying, setLanguage, setLlmModel, setLlmProvider, setPreferredLanguage, setTtsPitch, setTtsRate, setTtsVoice, speakWithFallback]);
 
   // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {
@@ -322,6 +329,7 @@ export default function PreviewWindow() {
   };
 
   const handleRefinement = async () => {
+    const state = useAppStore.getState();
     const input = refinementInput.trim();
     if (!input) return;
     const screenshotToSend = screenshotBase64;
@@ -333,29 +341,35 @@ export default function PreviewWindow() {
     setIsLlmLoading(true);
     setLlmError("");
     setRefinementInput("");
-    if (screenshotToSend) {
-      // Send screenshot + user instruction to LLM
-      await invoke("call_llm_with_image", {
-        imageBase64: screenshotToSend,
-        instruction: input,
-        outputMode: "PreviewStream",
-        provider: llmProvider,
-        model: llmModel,
-        preferredLanguage,
-      });
-    } else {
-      // Backend CONVERSATION_HISTORY tracks multi-turn context automatically.
-      // In screenshot sessions, pass empty selectedText so the LLM uses
-      // conversation history (which already contains the image context)
-      // instead of injecting stale selection text from a previous interaction.
-      await invoke("call_llm", {
-        selectedText: isScreenshotSession ? "" : lastSelectedText,
-        instruction: input,
-        outputMode: "PreviewStream",
-        provider: llmProvider,
-        model: llmModel,
-        preferredLanguage,
-      });
+    try {
+      if (screenshotToSend) {
+        // Send screenshot + user instruction to LLM
+        await invoke("call_llm_with_image", {
+          imageBase64: screenshotToSend,
+          instruction: input,
+          outputMode: "PreviewStream",
+          provider: state.llmProvider,
+          model: state.llmModel,
+          preferredLanguage: state.preferredLanguage,
+        });
+      } else {
+        // Backend CONVERSATION_HISTORY tracks multi-turn context automatically.
+        // In screenshot sessions, pass empty selectedText so the LLM uses
+        // conversation history (which already contains the image context)
+        // instead of injecting stale selection text from a previous interaction.
+        await invoke("call_llm", {
+          selectedText: isScreenshotSession ? "" : lastSelectedText,
+          instruction: input,
+          outputMode: "PreviewStream",
+          provider: state.llmProvider,
+          model: state.llmModel,
+          preferredLanguage: state.preferredLanguage,
+        });
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      setIsLlmLoading(false);
+      setLlmError(reason);
     }
   };
 
