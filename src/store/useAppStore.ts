@@ -178,7 +178,7 @@ export const useAppStore = create<AppState>()(
       ttsRate: "+0%",
       ttsPitch: "+0Hz",
       translationTarget: "off",
-      historyEnabled: true,
+      historyEnabled: false,
 
       isRecording: false,
       selectedText: "",

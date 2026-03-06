@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
@@ -13,12 +13,14 @@ const PREVIEW_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 340;
 const PREVIEW_MAX_HEIGHT = 620;
 const PREVIEW_CHROME_HEIGHT = 240;
+type PreviewSession =
+  | { type: "text"; selectedText: string; sourceMode: "B1" | "B2" | "C" }
+  | { type: "screenshot"; imageBase64: string; sourceMode: "C" };
 
 export default function PreviewWindow() {
   const [refinementInput, setRefinementInput] = useState("");
-  const [screenshotBase64, setScreenshotBase64] = useState("");
+  const [previewSession, setPreviewSession] = useState<PreviewSession | null>(null);
   const [animKey, setAnimKey] = useState(0);
-  const [isScreenshotSession, setIsScreenshotSession] = useState(false);
   const outputRef = useRef<HTMLDivElement>(null);
   const outputContentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -29,7 +31,6 @@ export default function PreviewWindow() {
   const llmOutput = useAppStore((s) => s.llmOutput);
   const isLlmLoading = useAppStore((s) => s.isLlmLoading);
   const llmError = useAppStore((s) => s.llmError);
-  const lastSelectedText = useAppStore((s) => s.lastSelectedText);
   const isTtsPlaying = useAppStore((s) => s.isTtsPlaying);
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
   const sttDurationMs = useAppStore((s) => s.sttDurationMs);
@@ -141,9 +142,16 @@ export default function PreviewWindow() {
       const state = useAppStore.getState();
       const input = instruction.trim();
       if (!input) return;
-      const screenshotToSend = screenshotBase64;
-      if (screenshotToSend) {
-        setScreenshotBase64("");
+      const selectedText = previewSession?.type === "text" ? previewSession.selectedText : "";
+      const sourceMode = previewSession?.sourceMode ?? "C";
+      const screenshotToSend = previewSession?.type === "screenshot" ? previewSession.imageBase64 : "";
+      await emit("talkflow://llm-session-context", {
+        mode: sourceMode,
+        selectedText,
+        instruction: input,
+      });
+      if (screenshotToSend && previewSession?.type === "screenshot") {
+        setPreviewSession({ ...previewSession, imageBase64: "" });
       }
       setLlmOutput("");
       setIsLlmLoading(true);
@@ -160,7 +168,7 @@ export default function PreviewWindow() {
           });
         } else {
           await invoke("call_llm", {
-            selectedText: isScreenshotSession ? "" : lastSelectedText,
+            selectedText,
             instruction: input,
             outputMode: "PreviewStream",
             provider: state.llmProvider,
@@ -174,7 +182,7 @@ export default function PreviewWindow() {
         setLlmError(reason);
       }
     },
-    [isScreenshotSession, lastSelectedText, screenshotBase64, setIsLlmLoading, setLlmError, setLlmOutput]
+    [previewSession, setIsLlmLoading, setLlmError, setLlmOutput]
   );
 
   // Listen to LLM streaming events + TTS events
@@ -209,7 +217,12 @@ export default function PreviewWindow() {
         useAppStore.getState().setLlmError(event.payload.message);
         useAppStore.getState().setIsLlmLoading(false);
       });
-      await register<{ selectedText?: string; instruction?: string }>(
+      await register<{
+        selectedText?: string;
+        instruction?: string;
+        sessionType?: "text" | "screenshot";
+        sourceMode?: "B1" | "B2" | "C";
+      }>(
         "talkflow://preview-session",
         (event) => {
           llmStartTime = Date.now();
@@ -232,6 +245,19 @@ export default function PreviewWindow() {
           useAppStore.getState().setLastSelectedText(event.payload.selectedText ?? "");
           useAppStore.getState().setLastInstruction(event.payload.instruction ?? "");
           useAppStore.getState().setLlmDurationMs(0);
+          if (event.payload.sessionType === "screenshot") {
+            setPreviewSession({
+              type: "screenshot",
+              imageBase64: "",
+              sourceMode: "C",
+            });
+          } else {
+            setPreviewSession({
+              type: "text",
+              selectedText: event.payload.selectedText ?? "",
+              sourceMode: event.payload.sourceMode ?? "C",
+            });
+          }
         }
       );
       await register<{
@@ -295,8 +321,11 @@ export default function PreviewWindow() {
       await register<{ imageBase64: string }>(
         "talkflow://screenshot-attached",
         (event) => {
-          setScreenshotBase64(event.payload.imageBase64 || "");
-          setIsScreenshotSession(true);
+          setPreviewSession({
+            type: "screenshot",
+            imageBase64: event.payload.imageBase64 || "",
+            sourceMode: "C",
+          });
           setAnimKey((k) => k + 1);
           useAppStore.getState().setLlmOutput("");
           useAppStore.getState().setIsLlmLoading(false);
@@ -385,8 +414,7 @@ export default function PreviewWindow() {
     setLlmOutput("");
     setIsLlmLoading(false);
     setLlmError("");
-    setScreenshotBase64("");
-    setIsScreenshotSession(false);
+    setPreviewSession(null);
   };
 
   const handleStartDrag = async () => {
@@ -553,17 +581,21 @@ export default function PreviewWindow() {
       </div>
 
       {/* Screenshot attachment preview */}
-      {screenshotBase64 && (
+      {previewSession?.type === "screenshot" && previewSession.imageBase64 && (
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80">
           <img
-            src={`data:image/png;base64,${screenshotBase64}`}
+            src={`data:image/png;base64,${previewSession.imageBase64}`}
             alt={t("preview.screenshotAttached")}
             className="h-12 w-auto rounded border border-zinc-300 object-contain"
           />
           <span className="text-xs text-zinc-500 flex-1">{t("preview.screenshotAttached")}</span>
           <button
             className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
-            onClick={() => setScreenshotBase64("")}
+            onClick={() =>
+              setPreviewSession((current) =>
+                current?.type === "screenshot" ? { ...current, imageBase64: "" } : current
+              )
+            }
             title={t("preview.removeScreenshot")}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -597,7 +629,11 @@ export default function PreviewWindow() {
         <input
           ref={inputRef}
           className="flex-1 input-field px-2.5 py-1.5 text-sm"
-          placeholder={screenshotBase64 ? t("preview.askAboutScreenshot") : t("preview.refinementPlaceholder")}
+          placeholder={
+            previewSession?.type === "screenshot"
+              ? t("preview.askAboutScreenshot")
+              : t("preview.refinementPlaceholder")
+          }
           value={refinementInput}
           onChange={(e) => setRefinementInput(e.target.value)}
           onKeyDown={(e) => {

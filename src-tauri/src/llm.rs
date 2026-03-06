@@ -700,7 +700,7 @@ pub async fn call_llm(
     }
 
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
-        if let Err(e) = crate::injection::inject_text(&full_output) {
+        if let Err(e) = crate::injection::inject_text_with_undo(&full_output, true) {
             let msg = format!("Injection failed: {e}");
             let _ = app.emit("llm://error", LlmError { message: msg.clone() });
             return Err(msg);

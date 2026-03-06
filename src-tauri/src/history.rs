@@ -32,6 +32,7 @@ pub struct HistoryEntry {
 }
 
 const MAX_ENTRIES: usize = 200;
+const HISTORY_RETENTION_DAYS: i64 = 30;
 
 static HISTORY_FILE: Lazy<PathBuf> = Lazy::new(|| {
     let mut p = data_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -44,7 +45,15 @@ static HISTORY: Mutex<Option<Vec<HistoryEntry>>> = Mutex::new(None);
 
 fn ensure_loaded(guard: &mut Option<Vec<HistoryEntry>>) {
     if guard.is_none() {
-        *guard = Some(load_from_disk());
+        let mut entries = load_from_disk();
+        if prune_expired(&mut entries) {
+            save_to_disk(&entries);
+        }
+        *guard = Some(entries);
+    } else if let Some(entries) = guard.as_mut() {
+        if prune_expired(entries) {
+            save_to_disk(entries);
+        }
     }
 }
 
@@ -85,6 +94,13 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
+fn prune_expired(entries: &mut Vec<HistoryEntry>) -> bool {
+    let cutoff = unix_now() - HISTORY_RETENTION_DAYS * 24 * 60 * 60;
+    let before = entries.len();
+    entries.retain(|entry| entry.timestamp >= cutoff);
+    entries.len() != before
+}
+
 /// Append a new history entry. Automatically truncates to `MAX_ENTRIES`.
 pub fn save(
     mode: &str,
@@ -108,6 +124,7 @@ pub fn save(
     let mut guard = HISTORY.lock().expect("history lock poisoned");
     ensure_loaded(&mut *guard);
     let entries = guard.as_mut().unwrap();
+    prune_expired(entries);
     entries.insert(0, entry); // newest first
     if entries.len() > MAX_ENTRIES {
         entries.truncate(MAX_ENTRIES);

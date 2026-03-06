@@ -89,12 +89,7 @@ fn read_selection_clipboard() -> Result<String, String> {
 /// Inject text into the locked foreground window.
 #[tauri::command]
 fn inject_text(text: String, record_for_undo: bool) -> Result<(), String> {
-    let hwnd = window_focus::get_locked_hwnd();
-    injection::inject_text(&text).map_err(|e| e.to_string())?;
-    if record_for_undo {
-        undo::record_injection(hwnd, text);
-    }
-    Ok(())
+    injection::inject_text_with_undo(&text, record_for_undo).map_err(|e| e.to_string())
 }
 
 /// Undo the last direct injection (Alt+Z handler).

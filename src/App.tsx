@@ -350,6 +350,17 @@ function MainWindow() {
       });
 
       await safeRegister<{
+        mode: "B1" | "B2" | "C";
+        selectedText?: string;
+        instruction?: string;
+      }>("talkflow://llm-session-context", (event) => {
+        const store = useAppStore.getState();
+        store.setCurrentMode(event.payload.mode);
+        store.setLastSelectedText(event.payload.selectedText ?? "");
+        store.setLastInstruction(event.payload.instruction ?? "");
+      });
+
+      await safeRegister<{
         wakeWord: string;
         hotkey: string;
         sttEngine: "openAi" | "localWhisper";
@@ -746,6 +757,12 @@ function MainWindow() {
             store.setLastSelectedText("");
             store.setLastInstruction("");
             void invoke("clear_conversation");
+            await emit("talkflow://preview-session", {
+              sessionType: "screenshot",
+              sourceMode: "C",
+              selectedText: "",
+              instruction: "",
+            });
             const previewWin = await WebviewWindow.getByLabel("preview");
             if (previewWin) {
               await previewWin.setFocusable(true).catch(() => {});
@@ -914,6 +931,8 @@ function MainWindow() {
             store.setLastInstruction(result.transcript);
             if (store.outputMode === "PreviewStream") {
               await emit("talkflow://preview-session", {
+                sessionType: "text",
+                sourceMode: "B2",
                 selectedText: store.selectedText,
                 instruction: result.transcript,
               });
@@ -961,6 +980,8 @@ function MainWindow() {
             store.setLastInstruction(result.transcript);
             if (store.outputMode === "PreviewStream") {
               await emit("talkflow://preview-session", {
+                sessionType: "text",
+                sourceMode: "C",
                 selectedText: "",
                 instruction: result.transcript,
               });

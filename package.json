@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "cargo test --quiet --manifest-path src-tauri\\Cargo.toml",
+    "check": "npm run build && npm run test",
     "preview": "vite preview",
     "tauri": "tauri",
     "version": "node scripts/sync-version.js && git add src-tauri/Cargo.toml src-tauri/tauri.conf.json"

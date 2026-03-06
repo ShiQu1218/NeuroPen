@@ -183,6 +183,11 @@ export default function QuickActionIcon() {
 
     await invoke("restore_clipboard");
     await emit("talkflow://qa-suppress-current-selection", { cooldownMs: 1600 });
+    await emit("talkflow://llm-session-context", {
+      mode: "B1",
+      selectedText,
+      instruction,
+    });
     await setWindowFocusable(false);
     await setQaInteracting(false);
     await getCurrentWindow().hide();
@@ -196,6 +201,8 @@ export default function QuickActionIcon() {
       // Emit session event BEFORE showing the window so the animation
       // key changes while the window is still hidden.
       await emit("talkflow://preview-session", {
+        sessionType: "text",
+        sourceMode: "B1",
         selectedText,
         instruction,
       });

@@ -218,6 +218,15 @@ pub fn inject_text(text: &str) -> Result<(), InjectionError> {
     Ok(())
 }
 
+pub fn inject_text_with_undo(text: &str, record_for_undo: bool) -> Result<(), InjectionError> {
+    let hwnd = window_focus::get_locked_hwnd();
+    inject_text(text)?;
+    if record_for_undo {
+        crate::undo::record_injection(hwnd, text.to_string());
+    }
+    Ok(())
+}
+
 /// Reads selected text from the target window by simulating Ctrl+C.
 /// Assumes clipboard has already been cached.
 pub fn read_selection_via_clipboard() -> Result<String, InjectionError> {
