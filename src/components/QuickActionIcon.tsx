@@ -31,6 +31,13 @@ export default function QuickActionIcon() {
   const dragLockUntil = useRef(0);
   const stableSelectionRef = useRef("");
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const setWindowFocusable = useCallback(async (focusable: boolean, focus = false) => {
+    const win = getCurrentWindow();
+    await win.setFocusable(focusable).catch(() => { });
+    if (focusable && focus) {
+      await win.setFocus().catch(() => { });
+    }
+  }, []);
   const setQaInteracting = useCallback(async (active: boolean) => {
     await emit("talkflow://qa-interacting", { active });
   }, []);
@@ -98,9 +105,14 @@ export default function QuickActionIcon() {
       unlistenSelection?.();
       unlistenQaShow?.();
       unlistenSettings?.();
+      void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setLanguage, setLlmModel, setLlmProvider, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands]);
+  }, [setLanguage, setLlmModel, setLlmProvider, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+
+  useEffect(() => {
+    void setWindowFocusable(false);
+  }, [setWindowFocusable]);
 
   const expand = useCallback(() => {
     if (collapseTimer.current) {
@@ -133,12 +145,13 @@ export default function QuickActionIcon() {
     collapseTimer.current = setTimeout(() => {
       setExpanded(false);
       setCustomInput("");
+      void setWindowFocusable(false);
       void setQaInteracting(false);
       getCurrentWindow()
         .setSize(new LogicalSize(ICON_SIZE.width, ICON_SIZE.height))
         .catch(() => { });
     }, 80);
-  }, [isInputFocused, setQaInteracting]);
+  }, [isInputFocused, setQaInteracting, setWindowFocusable]);
 
   const showPreviewAndCallLlm = async (
     instruction: string,
@@ -165,6 +178,7 @@ export default function QuickActionIcon() {
 
     await invoke("restore_clipboard");
     await emit("talkflow://qa-suppress-current-selection", { cooldownMs: 1600 });
+    await setWindowFocusable(false);
     await setQaInteracting(false);
     await getCurrentWindow().hide();
     setExpanded(false);
@@ -183,6 +197,7 @@ export default function QuickActionIcon() {
 
       const previewWin = await WebviewWindow.getByLabel("preview");
       if (previewWin) {
+        await previewWin.setFocusable(false).catch(() => { });
         await previewWin.setSize(
           new LogicalSize(PREVIEW_INITIAL_SIZE.width, PREVIEW_INITIAL_SIZE.height)
         );
@@ -303,12 +318,16 @@ export default function QuickActionIcon() {
           placeholder={t("quickAction.customPlaceholder")}
           value={customInput}
           onChange={(e) => setCustomInput(e.target.value)}
+          onMouseDown={() => {
+            void setWindowFocusable(true, true);
+          }}
           onFocus={() => {
             setIsInputFocused(true);
             void setQaInteracting(true);
           }}
           onBlur={() => {
             setIsInputFocused(false);
+            void setWindowFocusable(false);
             if (!panelRef.current?.matches(":hover")) {
               collapse(true);
             }

@@ -125,6 +125,14 @@ export default function PreviewWindow() {
     }
   };
 
+  const setPreviewFocusable = useCallback(async (focusable: boolean, focus = false) => {
+    const win = getCurrentWindow();
+    await win.setFocusable(focusable).catch(() => { });
+    if (focusable && focus) {
+      await win.setFocus().catch(() => { });
+    }
+  }, []);
+
   // Listen to LLM streaming events + TTS events
   useEffect(() => {
     let cancelled = false;
@@ -251,6 +259,10 @@ export default function PreviewWindow() {
     };
   }, [setIsTtsPlaying, setLanguage, setLlmModel, setLlmProvider, setPreferredLanguage, setTtsPitch, setTtsRate, setTtsVoice, speakWithFallback]);
 
+  useEffect(() => {
+    void setPreviewFocusable(false);
+  }, [setPreviewFocusable]);
+
   // Keep preview compact and grow vertically as wrapped output increases.
   useEffect(() => {
     if (outputRef.current) {
@@ -315,6 +327,7 @@ export default function PreviewWindow() {
     await invoke("tts_stop").catch(() => { });
     await invoke("clear_conversation");
     await invoke("restore_clipboard");
+    await setPreviewFocusable(false);
     await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT));
     await getCurrentWindow().hide();
     setLlmOutput("");
@@ -436,7 +449,15 @@ export default function PreviewWindow() {
   const hasOutput = llmOutput.length > 0;
 
   return (
-    <div key={animKey} className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp">
+    <div
+      key={animKey}
+      className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp"
+      onMouseDownCapture={(e) => {
+        if ((e.target as HTMLElement).closest("button,input,textarea")) {
+          void setPreviewFocusable(true, true);
+        }
+      }}
+    >
       {/* Custom title bar (draggable) */}
       <div
         className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"

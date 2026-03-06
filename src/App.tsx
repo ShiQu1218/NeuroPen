@@ -743,6 +743,7 @@ function MainWindow() {
             void invoke("clear_conversation");
             const previewWin = await WebviewWindow.getByLabel("preview");
             if (previewWin) {
+              await previewWin.setFocusable(true).catch(() => {});
               await previewWin.show();
               await previewWin.setFocus();
             }
@@ -914,6 +915,7 @@ function MainWindow() {
 
               const previewWin = await WebviewWindow.getByLabel("preview");
               if (previewWin) {
+                await previewWin.setFocusable(true).catch(() => {});
                 await previewWin.show();
                 await previewWin.setFocus();
               }
@@ -960,6 +962,7 @@ function MainWindow() {
 
               const previewWin = await WebviewWindow.getByLabel("preview");
               if (previewWin) {
+                await previewWin.setFocusable(true).catch(() => {});
                 await previewWin.show();
                 await previewWin.setFocus();
               }
