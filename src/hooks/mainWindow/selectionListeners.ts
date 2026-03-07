@@ -83,10 +83,15 @@ export async function registerSelectionListeners({
           selectionState.qaHideTimer = null;
         }
         const selectionText = (text ?? "").trim();
-        store.setSelectedText(selectionText);
-        if (selectionText) {
-          await emit("neuropen://stable-selection", { text: selectionText });
+        if (!selectionText) {
+          store.setSelectedText("");
+          selectionState.lastSelectionFingerprint = "";
+          selectionState.suppressedSelectionFingerprint = "";
+          await qaWin.hide();
+          return;
         }
+        store.setSelectedText(selectionText);
+        await emit("talkflow://stable-selection", { text: selectionText });
 
         // Position QA icon below selection end (fallback to cursor).
         const x = typeof anchor_x === "number" ? anchor_x : cursor_x;
@@ -144,7 +149,7 @@ export async function registerSelectionListeners({
           void (async () => {
             const sel = await mainWindowService.getSelection().catch(() => ({ has_selection: false }));
             if (!sel.has_selection) {
-              await qaWin.hide().catch(() => {});
+              await qaWin.hide().catch(() => { });
             }
           })();
         }, 180);

@@ -167,7 +167,8 @@ export default function QuickActionIcon() {
   }, [expanded, setQaInteracting]);
 
   const collapse = useCallback((force = false) => {
-    if ((isInputFocused || Date.now() < dragLockUntil.current) && !force) return;
+    if (Date.now() < dragLockUntil.current) return;
+    if (isInputFocused && !force) return;
     if (collapseTimer.current) {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
@@ -315,7 +316,7 @@ export default function QuickActionIcon() {
       ref={panelRef}
       className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm animate-scaleUp overflow-hidden h-screen"
       onMouseEnter={expand}
-      onMouseLeave={() => collapse()}
+      onMouseLeave={() => collapse(true)}
     >
       <div
         className="px-1 py-0.5 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide cursor-move select-none"
