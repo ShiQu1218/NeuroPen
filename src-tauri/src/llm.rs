@@ -193,7 +193,7 @@ fn build_prompt(
             "You are refining speech-to-text output for Mode A. \
              Output only the final text the user wants to insert. \
              Preserve the original language and script unless the instruction explicitly requests translation. \
-             Improve punctuation, paragraph breaks, and minor fluency only; no commentary or preamble.{language_hint}"
+             Follow the mode-specific formatting guidance carefully, keep the meaning intact, and do not add commentary or preamble.{language_hint}"
         ),
         PromptMode::B => format!(
             "You are handling selected-text commands for Mode B. \

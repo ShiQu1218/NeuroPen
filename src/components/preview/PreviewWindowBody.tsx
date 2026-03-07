@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { useI18n } from "../../i18n";
 import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
-import { formatModeAText, normalizePreviewMarkdown } from "../../utils/appText";
+import { formatModeAText, normalizePreviewMarkdown, normalizeStructuredText } from "../../utils/appText";
 
 interface PreviewWindowBodyProps {
   animKey: number;
@@ -66,11 +66,14 @@ export default function PreviewWindowBody({
   t,
 }: PreviewWindowBodyProps) {
   const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
+  const isModeALlmPreview = isModeAPreview && !!previewSession?.instruction.trim();
   const isModeCPreview =
     (previewSession?.type === "text" && previewSession.sourceMode === "C") ||
     previewSession?.type === "screenshot";
   const renderedOutput =
-    isModeAPreview
+    isModeALlmPreview
+      ? normalizeStructuredText(llmOutput)
+      : isModeAPreview
       ? formatModeAText(llmOutput)
       : isModeCPreview
         ? normalizePreviewMarkdown(llmOutput)

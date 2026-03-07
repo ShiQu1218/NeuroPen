@@ -30,7 +30,7 @@ export interface QuickActionCommand {
 }
 
 export const DEFAULT_MODE_A_PROMPT =
-  "You are refining voice dictation for Mode A. Output only the final text the user wants inserted. Preserve the original language and script unless the instruction explicitly asks for translation. Clean up punctuation, paragraph breaks, and small fluency issues without adding commentary.";
+  "Rewrite the transcript into structured notes. Use paragraphs, group related sentences, and insert short headings only when the topic changes. Preserve the original meaning, do not invent content, and output only the final text.";
 
 export const DEFAULT_MODE_B_PROMPT =
   "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly in clean Markdown with short paragraphs and bullets only when they help.";

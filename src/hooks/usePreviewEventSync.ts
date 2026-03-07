@@ -10,7 +10,7 @@ const PREVIEW_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 340;
 
 export type PreviewSession =
-  | { type: "text"; selectedText: string; sourceMode: PreviewSourceMode }
+  | { type: "text"; selectedText: string; sourceMode: PreviewSourceMode; instruction: string }
   | { type: "screenshot"; imageBase64: string; sourceMode: "C" };
 
 interface UsePreviewEventSyncOptions {
@@ -103,6 +103,7 @@ export function usePreviewEventSync({
           type: "text",
           selectedText: event.payload.selectedText ?? "",
           sourceMode: event.payload.sourceMode ?? "C",
+          instruction: event.payload.instruction ?? "",
         });
       });
 

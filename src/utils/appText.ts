@@ -135,6 +135,14 @@ export const formatModeAText = (text: string) => {
     .trim();
 };
 
+export const normalizeStructuredText = (text: string) =>
+  text
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
 export const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" =>
   engine === "localWhisper" ? "localWhisper" : "openAi";
 

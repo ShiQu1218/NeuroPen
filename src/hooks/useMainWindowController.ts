@@ -19,6 +19,7 @@ import {
   formatModeAText,
   inferAppToneHint,
   isLikelyUnexpectedEnglishTranslation,
+  normalizeStructuredText,
   normalizeSttEngine,
   normalizeSttLanguage,
   stripWrappingQuotes,
@@ -760,9 +761,9 @@ export function useMainWindowController() {
               ? `Prefer these domain terms exactly when relevant: ${store.vocabularyTerms.join(", ")}.`
               : "";
             const refineInstruction =
-              `Only do light in-place polishing for this speech-to-text transcript (punctuation, formatting, and minor fluency fixes). Keep the exact same language and script as the original transcript, and never translate it. ${toneHint} ${vocabHint}`;
+              `Rewrite this speech-to-text transcript into a clean final version using the Mode A formatting guidance from the system prompt. Preserve meaning, fix obvious transcription issues, keep the same language and script, and output only the final text. ${toneHint} ${vocabHint}`;
             const translateInstruction =
-              `Translate to ${store.translationTarget}. Output ONLY the translation, nothing else.`;
+              `Translate this speech-to-text transcript to ${store.translationTarget}. Preserve the intended structure from the system prompt and output only the final text.`;
             const canStreamModeAPreview =
               store.outputMode === "PreviewStream" &&
               store.modeAStreamOutput &&
@@ -869,7 +870,9 @@ export function useMainWindowController() {
               postInjectWarning = t("status.llmApiMissingOriginalOutput");
             }
 
-            finalText = formatModeAText(finalText);
+            finalText = usedLlmForModeA
+              ? normalizeStructuredText(finalText)
+              : formatModeAText(finalText);
 
             if (store.outputMode === "PreviewStream") {
               store.setLastSelectedText(finalText);
