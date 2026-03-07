@@ -5,6 +5,7 @@ import { listen, emit, emitTo } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
+import { mainWindowService } from "../services/mainWindowService";
 import { useAppStore } from "../store/useAppStore";
 import type {
   AppLanguage,
@@ -35,13 +36,6 @@ import {
   isAnyTalkFlowWindowFocused,
   preventCloseDestroy,
 } from "../utils/windowLifecycle";
-
-interface RegisteredHotkeys {
-  triggerHotkey: string;
-  triggerPersisted: boolean;
-  screenshotHotkey: string;
-  screenshotPersisted: boolean;
-}
 
 const isLikelyAuthError = (err: unknown) =>
   /(401|unauthorized|api\s*key|authentication|invalid key)/i.test(String(err));
@@ -124,7 +118,7 @@ export function useMainWindowController() {
       }
 
       const hydratedStore = useAppStore.getState();
-      const backendHotkeys = await invoke<RegisteredHotkeys>("get_registered_hotkeys").catch((err) => {
+      const backendHotkeys = await mainWindowService.getRegisteredHotkeys().catch((err) => {
         console.warn("[App] get_registered_hotkeys failed:", err);
         return null;
       });
@@ -139,25 +133,23 @@ export function useMainWindowController() {
         setScreenshotHotkey(initialScreenshotHotkey);
       }
       if (!backendHotkeys || backendHotkeys.triggerHotkey !== initialTriggerHotkey) {
-        await invoke("change_hotkey", { hotkeyStr: initialTriggerHotkey }).catch((err) => {
+        await mainWindowService.changeHotkey(initialTriggerHotkey).catch((err) => {
           console.warn("[App] change_hotkey init failed, keeping stored value:", err);
         });
       }
       if (!backendHotkeys || backendHotkeys.screenshotHotkey !== initialScreenshotHotkey) {
-        await invoke("change_screenshot_hotkey", { hotkeyStr: initialScreenshotHotkey }).catch((err) => {
+        await mainWindowService.changeScreenshotHotkey(initialScreenshotHotkey).catch((err) => {
           console.warn("[App] change_screenshot_hotkey init failed:", err);
         });
       }
-      await invoke("set_runtime_stt_config", {
-        engine: normalizeSttEngine(String(hydratedStore.sttEngine)),
-        modelPath: hydratedStore.sttModelPath,
-        sttLanguage: normalizeSttLanguage(hydratedStore.sttLanguage),
-      }).catch((err) => {
+      await mainWindowService.setRuntimeSttConfig(
+        normalizeSttEngine(String(hydratedStore.sttEngine)),
+        hydratedStore.sttModelPath,
+        normalizeSttLanguage(hydratedStore.sttLanguage),
+      ).catch((err) => {
         console.warn("[App] set_runtime_stt_config init failed:", err);
       });
-      await invoke("set_audio_device", {
-        name: hydratedStore.microphoneSource ?? "",
-      }).catch((err) => {
+      await mainWindowService.setAudioDevice(hydratedStore.microphoneSource ?? "").catch((err) => {
         console.warn("[App] set_audio_device init failed:", err);
       });
 
@@ -179,11 +171,11 @@ export function useMainWindowController() {
         if (!store.isRecording) return;
         try {
           const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
-          await invoke("stop_recording", {
-            engine: normalizedSttEngine,
-            modelPath: normalizedSttEngine === "localWhisper" ? store.sttModelPath : "",
-            sttLanguage: normalizeSttLanguage(store.sttLanguage),
-          });
+          await mainWindowService.stopRecording(
+            normalizedSttEngine,
+            normalizedSttEngine === "localWhisper" ? store.sttModelPath : "",
+            normalizeSttLanguage(store.sttLanguage),
+          );
           store.setIsRecording(false);
           pendingHotkeyReleaseAt = 0;
           setStatusMsg(t("status.recognizing"));
@@ -304,11 +296,11 @@ export function useMainWindowController() {
             setSttModelPath(payload.sttModelPath);
           }
           if (payload.sttEngine || payload.sttLanguage || typeof payload.sttModelPath === "string") {
-            void invoke("set_runtime_stt_config", {
-              engine: normalizeSttEngine(payload.sttEngine ?? "openAi"),
-              modelPath: typeof payload.sttModelPath === "string" ? payload.sttModelPath : "",
-              sttLanguage: normalizeSttLanguage(payload.sttLanguage),
-            }).catch((err) => {
+            void mainWindowService.setRuntimeSttConfig(
+              normalizeSttEngine(payload.sttEngine ?? "openAi"),
+              typeof payload.sttModelPath === "string" ? payload.sttModelPath : "",
+              normalizeSttLanguage(payload.sttLanguage),
+            ).catch((err) => {
               console.warn("[App] set_runtime_stt_config sync failed:", err);
             });
           }
@@ -450,7 +442,7 @@ export function useMainWindowController() {
                 }
               }
               try {
-                await invoke("trigger_hotkey");
+                await mainWindowService.triggerHotkey();
                 lastSelectionFingerprint = currentFingerprint;
               } catch (err) {
                 console.warn("[App] trigger_hotkey failed:", err);
@@ -529,7 +521,7 @@ export function useMainWindowController() {
           // Check API key before starting (for OpenAI engine)
           const sttEngine = normalizeSttEngine(store.sttEngine);
           if (sttEngine === "openAi") {
-            const hasKey = await invoke<boolean>("has_stt_api_key");
+            const hasKey = await mainWindowService.hasSttApiKey();
             if (!hasKey) {
               pendingHotkeyReleaseAt = 0;
               setSttError(t("error.sttApiKeyRequired"));
@@ -539,12 +531,12 @@ export function useMainWindowController() {
           }
 
           try {
-            await invoke("start_recording");
+            await mainWindowService.startRecording();
             // Start streaming partial transcription
-            invoke("start_streaming_stt", {
-              engine: sttEngine,
-              modelPath: sttEngine === "localWhisper" ? store.sttModelPath : "",
-            }).catch((e) => console.warn("[App] streaming STT start failed:", e));
+            mainWindowService.startStreamingStt(
+              sttEngine,
+              sttEngine === "localWhisper" ? store.sttModelPath : "",
+            ).catch((e) => console.warn("[App] streaming STT start failed:", e));
             setIsRecording(true);
             if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
               await stopRecordingNow();
@@ -562,7 +554,7 @@ export function useMainWindowController() {
           // Check API key before starting (for OpenAI engine)
           const sttEngine = normalizeSttEngine(store.sttEngine);
           if (sttEngine === "openAi") {
-            const hasKey = await invoke<boolean>("has_stt_api_key");
+            const hasKey = await mainWindowService.hasSttApiKey();
             if (!hasKey) {
               pendingHotkeyReleaseAt = 0;
               setSttError(t("error.sttApiKeyRequired"));
@@ -574,12 +566,12 @@ export function useMainWindowController() {
           setCurrentMode("A");
           setStatusMsg(t("status.recordingReleaseToStop"));
           try {
-            await invoke("start_recording");
+            await mainWindowService.startRecording();
             // Start streaming partial transcription
-            invoke("start_streaming_stt", {
-              engine: sttEngine,
-              modelPath: sttEngine === "localWhisper" ? store.sttModelPath : "",
-            }).catch((e) => console.warn("[App] streaming STT start failed:", e));
+            mainWindowService.startStreamingStt(
+              sttEngine,
+              sttEngine === "localWhisper" ? store.sttModelPath : "",
+            ).catch((e) => console.warn("[App] streaming STT start failed:", e));
             setIsRecording(true);
             if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
               await stopRecordingNow();
@@ -706,7 +698,7 @@ export function useMainWindowController() {
             store.setLlmError("");
             store.setLastSelectedText("");
             store.setLastInstruction("");
-            void invoke("clear_conversation");
+            void mainWindowService.clearConversation();
             await emitPreviewSession({
               sessionType: "screenshot",
               sourceMode: "C",

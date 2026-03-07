@@ -21,6 +21,9 @@ use tauri::{Emitter, Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
+use commands::history_commands::{history_clear, history_delete, history_list, history_save, history_search};
+use commands::llm_commands::{call_llm, call_llm_text, call_llm_with_image, clear_conversation};
+use commands::media_commands::{take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop};
 use commands::stt_commands::{
     cancel_local_stt_download, delete_local_stt_model, get_stt_capabilities, has_api_key,
     has_stt_api_key, install_local_stt_model, is_recording, list_audio_devices,
@@ -299,70 +302,6 @@ fn get_launch_on_startup() -> Result<bool, String> {
     get_windows_launch_on_startup()
 }
 
-/// Call the LLM with streaming and emit token events.
-#[tauri::command]
-async fn call_llm(
-    app: tauri::AppHandle,
-    selected_text: String,
-    instruction: String,
-    output_mode: llm::OutputMode,
-    stream_output: Option<bool>,
-    provider: llm::LlmProvider,
-    model: String,
-    preferred_language: Option<String>,
-    prompt_mode: Option<String>,
-    prompt_override: Option<String>,
-) -> Result<(), String> {
-    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
-        String::new()
-    } else {
-        stt::get_api_key()?
-    };
-    llm::call_llm(
-        &api_key,
-        &selected_text,
-        &instruction,
-        output_mode,
-        stream_output.unwrap_or(true),
-        provider,
-        &model,
-        preferred_language,
-        prompt_mode,
-        prompt_override,
-        app,
-    )
-    .await
-}
-
-/// Call the LLM and return final text (non-streaming helper for STT refinement).
-#[tauri::command]
-async fn call_llm_text(
-    selected_text: String,
-    instruction: String,
-    provider: llm::LlmProvider,
-    model: String,
-    preferred_language: Option<String>,
-    prompt_mode: Option<String>,
-    prompt_override: Option<String>,
-) -> Result<String, String> {
-    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
-        String::new()
-    } else {
-        stt::get_api_key()?
-    };
-    llm::call_llm_text(
-        &api_key,
-        &selected_text,
-        &instruction,
-        provider,
-        &model,
-        preferred_language,
-        prompt_mode,
-        prompt_override,
-    )
-    .await
-}
-
 /// Route a completed STT transcript to determine the operating mode.
 #[tauri::command]
 fn route_transcript(
@@ -418,118 +357,6 @@ fn get_registered_hotkeys() -> RegisteredHotkeys {
         screenshot_hotkey,
         screenshot_persisted,
     }
-}
-
-// ── History commands ────────────────────────────────────────────────────
-
-#[tauri::command]
-fn history_list() -> Vec<history::HistoryEntry> {
-    history::list()
-}
-
-#[tauri::command]
-fn history_save(
-    mode: String,
-    input_text: String,
-    instruction: String,
-    output: String,
-    provider: String,
-    model: String,
-) {
-    history::save(&mode, &input_text, &instruction, &output, &provider, &model);
-}
-
-#[tauri::command]
-fn history_delete(id: String) -> bool {
-    history::delete(&id)
-}
-
-#[tauri::command]
-fn history_clear() {
-    history::clear_all();
-}
-
-#[tauri::command]
-fn history_search(query: String) -> Vec<history::HistoryEntry> {
-    history::search(&query)
-}
-
-// ── TTS commands ────────────────────────────────────────────────────────
-
-#[tauri::command]
-async fn tts_speak(
-    app: tauri::AppHandle,
-    text: String,
-    voice: Option<String>,
-    rate: Option<String>,
-    pitch: Option<String>,
-) -> Result<(), String> {
-    tts::speak(app, text, voice, rate, pitch).await
-}
-
-#[tauri::command]
-fn tts_stop() {
-    tts::stop_playback();
-}
-
-#[tauri::command]
-fn tts_is_playing() -> bool {
-    tts::is_playing()
-}
-
-// ── Screenshot commands ─────────────────────────────────────────────────
-
-#[tauri::command]
-fn take_screenshot() -> Result<screenshot::ScreenshotResult, String> {
-    screenshot::capture_full_screen()
-}
-
-#[tauri::command]
-fn take_screenshot_region(x: i32, y: i32, w: u32, h: u32) -> Result<screenshot::ScreenshotResult, String> {
-    screenshot::capture_region(x, y, w, h)
-}
-
-// ── Multimodal LLM (image + text) ──────────────────────────────────────
-
-#[tauri::command]
-async fn call_llm_with_image(
-    app: tauri::AppHandle,
-    image_base64: String,
-    instruction: String,
-    output_mode: llm::OutputMode,
-    stream_output: Option<bool>,
-    provider: llm::LlmProvider,
-    model: String,
-    preferred_language: Option<String>,
-    prompt_mode: Option<String>,
-    prompt_override: Option<String>,
-) -> Result<(), String> {
-    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
-        String::new()
-    } else {
-        stt::get_api_key()?
-    };
-    llm::call_llm_with_image(
-        &api_key,
-        &image_base64,
-        &instruction,
-        output_mode,
-        stream_output.unwrap_or(true),
-        provider,
-        &model,
-        preferred_language,
-        prompt_mode,
-        prompt_override,
-        app,
-    )
-    .await
-}
-
-// ── Conversation context ────────────────────────────────────────────────
-
-#[tauri::command]
-fn clear_conversation() {
-    llm::clear_conversation();
 }
 
 // ── Context-aware window title ──────────────────────────────────────────
