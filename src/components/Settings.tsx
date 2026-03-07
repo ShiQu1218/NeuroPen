@@ -563,7 +563,7 @@ export default function Settings() {
         modelPath: nextSttModelPath,
         sttLanguage: nextSttLanguage,
       });
-      await emit("talkflow://settings-saved", {
+      await emit("neuropen://settings-saved", {
         wakeWord: nextWakeWord,
         sttEnabled: draftSttEnabled,
         selectionEnabled: draftSelectionEnabled,
@@ -789,7 +789,7 @@ export default function Settings() {
             modelPath: "",
             sttLanguage: draftSttLanguage,
           });
-          await emit("talkflow://settings-saved", {
+          await emit("neuropen://settings-saved", {
             wakeWord: draftWakeWord.trim() || wakeWord,
             sttEnabled: draftSttEnabled,
             selectionEnabled: draftSelectionEnabled,

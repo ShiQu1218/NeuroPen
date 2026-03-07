@@ -19,7 +19,7 @@ fn capture_selection_snapshot_via_clipboard() -> Option<String> {
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
     let sentinel = format!(
-        "__TALKFLOW_SELECTION_SNAPSHOT_{}_{}__",
+        "__NEUROPEN_SELECTION_SNAPSHOT_{}_{}__",
         std::process::id(),
         nonce
     );
@@ -163,7 +163,7 @@ fn is_left_button_down() -> bool {
 }
 
 /// Start a background thread that polls for text selection changes.
-/// Emits `talkflow://selection-changed` with
+/// Emits `neuropen://selection-changed` with
 /// `{ has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y }`.
 #[cfg(target_os = "windows")]
 pub fn start_selection_watcher(app: tauri::AppHandle) {
@@ -278,7 +278,7 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                     })
                 };
 
-                let _ = app.emit("talkflow://selection-changed", payload);
+                let _ = app.emit("neuropen://selection-changed", payload);
             }
 
             last_left_down = left_down;

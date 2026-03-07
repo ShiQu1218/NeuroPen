@@ -68,7 +68,7 @@ export default function ScreenshotOverlay() {
 
     try {
       await getCurrentWindow().hide().catch(() => { });
-      await emitTo("main", "talkflow://screenshot-region", payload);
+      await emitTo("main", "neuropen://screenshot-region", payload);
     } finally {
       // Allow retry if close/emit path fails for any reason.
       closingRef.current = false;
@@ -176,7 +176,7 @@ export default function ScreenshotOverlay() {
     };
 
     void (async () => {
-      unlistenStart = await listen<ScreenshotStartPayload>("talkflow://screenshot-start", (event) => {
+      unlistenStart = await listen<ScreenshotStartPayload>("neuropen://screenshot-start", (event) => {
         resetSession();
         setSnapshotBase64(event.payload?.snapshotBase64?.trim() ?? "");
         void ensureFocus();

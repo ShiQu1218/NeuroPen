@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-TalkFlow is a **Windows Desktop AI Voice Assistant** currently in the specification/initialization phase. The full product spec is in `TalkFlow_產品規格與架構書.md` (v1.4). No source code has been implemented yet.
+NeuroPen is a **Windows Desktop AI Voice Assistant** currently in the specification/initialization phase. The full product spec is in `NeuroPen_產品規格與架構書.md` (v1.4). No source code has been implemented yet.
 
 ## Planned Tech Stack
 

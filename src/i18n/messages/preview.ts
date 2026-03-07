@@ -1,6 +1,6 @@
 export const previewMessages = {
   "zh-TW": {
-    "preview.title": "TalkFlow Preview",
+    "preview.title": "NeuroPen Preview",
     "preview.subtitle": "可拖曳、複製或直接取代原文",
     "preview.loading": "處理中…",
     "preview.empty": "輸出將在此顯示…",
@@ -19,7 +19,7 @@ export const previewMessages = {
     "preview.askAboutScreenshot": "輸入你想問的問題…"
   },
   "en-US": {
-    "preview.title": "TalkFlow Preview",
+    "preview.title": "NeuroPen Preview",
     "preview.subtitle": "Drag, copy, or replace original text",
     "preview.loading": "Processing…",
     "preview.empty": "Output will appear here…",
@@ -38,7 +38,7 @@ export const previewMessages = {
     "preview.askAboutScreenshot": "Type your question about the screenshot…"
   },
   "ja-JP": {
-    "preview.title": "TalkFlow プレビュー",
+    "preview.title": "NeuroPen プレビュー",
     "preview.subtitle": "ドラッグ・コピー・置換ができます",
     "preview.loading": "処理中…",
     "preview.empty": "出力がここに表示されます…",

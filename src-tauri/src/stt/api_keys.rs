@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use super::talkflow_dir;
+use super::neuropen_dir;
 
-const KEYRING_SERVICE: &str = "talkflow";
+const KEYRING_SERVICE: &str = "neuropen";
 const KEYRING_LLM_USER: &str = "llm-api-key";
 const KEYRING_STT_USER: &str = "stt-api-key";
 
@@ -11,11 +11,11 @@ static API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
 static STT_API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
 fn api_key_file_path() -> Result<PathBuf, String> {
-    Ok(talkflow_dir()?.join("api_key"))
+    Ok(neuropen_dir()?.join("api_key"))
 }
 
 fn stt_api_key_file_path() -> Result<PathBuf, String> {
-    Ok(talkflow_dir()?.join("stt_api_key"))
+    Ok(neuropen_dir()?.join("stt_api_key"))
 }
 
 fn keyring_set(user: &str, key: &str) -> Result<(), String> {

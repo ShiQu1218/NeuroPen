@@ -68,7 +68,7 @@ export function useMainWindowController() {
       statusReadyRef.current = true;
       return;
     }
-    void emit("talkflow://status", { message: statusMsg });
+    void emit("neuropen://status", { message: statusMsg });
   }, [statusMsg]);
 
   useEffect(() => {
@@ -175,7 +175,7 @@ export function useMainWindowController() {
         mode: "A" | "B1" | "B2" | "C";
         selectedText?: string;
         instruction?: string;
-      }>("talkflow://llm-session-context", (event) => {
+      }>("neuropen://llm-session-context", (event) => {
         const store = useAppStore.getState();
         store.setCurrentMode(event.payload.mode);
         store.setLastSelectedText(event.payload.selectedText ?? "");
@@ -213,7 +213,7 @@ export function useMainWindowController() {
         translationTarget?: TranslationTarget;
         screenshotHotkey?: string;
       }>(
-        "talkflow://settings-saved",
+        "neuropen://settings-saved",
         (event) => {
           const payload = event.payload;
           if (payload.wakeWord) {
@@ -338,7 +338,7 @@ export function useMainWindowController() {
         selected_text: string | null;
         initial_mode: string;
         hwnd: number;
-      }>("talkflow://mode-start", async (event) => {
+      }>("neuropen://mode-start", async (event) => {
         const store = useAppStore.getState();
 
         // Already recording → ignore (key repeat)
@@ -353,7 +353,7 @@ export function useMainWindowController() {
 
         // ── New session ──
         const { has_selection, selected_text } = event.payload;
-        if (import.meta.env.DEV) console.log("[App] talkflow://mode-start", event.payload);
+        if (import.meta.env.DEV) console.log("[App] neuropen://mode-start", event.payload);
 
         resetSession();
 
@@ -440,7 +440,7 @@ export function useMainWindowController() {
       });
 
       // ── 2. hotkey RELEASE → stop recording ──
-      await safeRegister("talkflow://hotkey-release", async () => {
+      await safeRegister("neuropen://hotkey-release", async () => {
         pendingHotkeyReleaseAt = Date.now();
         console.log("[App] hotkey released → stopping recording");
         await stopRecordingNow();
@@ -495,7 +495,7 @@ export function useMainWindowController() {
 
       // ── 5. Undo result ──
       await safeRegister<{ success: boolean; reason?: string }>(
-        "talkflow://undo-result",
+        "neuropen://undo-result",
         (event) => {
           if (event.payload.success) {
             setStatusMsg(t("status.undoSuccess"));

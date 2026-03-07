@@ -1,6 +1,6 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-export const TALKFLOW_WINDOW_LABELS = [
+export const NEUROPEN_WINDOW_LABELS = [
   "main",
   "quick-action",
   "preview",
@@ -19,9 +19,9 @@ export const preventCloseDestroy = async (label: string) => {
   }
 };
 
-export const isAnyTalkFlowWindowFocused = async () => {
+export const isAnyNeuroPenWindowFocused = async () => {
   const results = await Promise.all(
-    TALKFLOW_WINDOW_LABELS.map(async (label) => {
+    NEUROPEN_WINDOW_LABELS.map(async (label) => {
       const win = await WebviewWindow.getByLabel(label);
       return win ? win.isFocused() : false;
     })

@@ -34,7 +34,7 @@ fn default_screenshot_shortcut() -> Shortcut {
 
 fn trigger_hotkey_file() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    let dir = home.join(".talkflow");
+    let dir = home.join(".neuropen");
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }
@@ -43,7 +43,7 @@ fn trigger_hotkey_file() -> Option<PathBuf> {
 
 fn screenshot_hotkey_file() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    let dir = home.join(".talkflow");
+    let dir = home.join(".neuropen");
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }

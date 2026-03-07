@@ -1,6 +1,6 @@
-//! History module — persists TalkFlow session records to disk.
+//! History module — persists NeuroPen session records to disk.
 //!
-//! Storage: `%APPDATA%/com.talkflow.app/history.json` (max 200 entries).
+//! Storage: `%APPDATA%/com.neuropen.app/history.json` (max 200 entries).
 //! Each entry captures mode, input, instruction, output, provider/model, timestamp.
 
 use dirs::data_dir;
@@ -36,7 +36,7 @@ const HISTORY_RETENTION_DAYS: i64 = 30;
 
 static HISTORY_FILE: Lazy<PathBuf> = Lazy::new(|| {
     let mut p = data_dir().unwrap_or_else(|| PathBuf::from("."));
-    p.push("com.talkflow.app");
+    p.push("com.neuropen.app");
     p.push("history.json");
     p
 });

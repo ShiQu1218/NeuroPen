@@ -45,7 +45,7 @@ export default function QuickActionIcon() {
     }
   }, []);
   const setQaInteracting = useCallback(async (active: boolean) => {
-    await emit("talkflow://qa-interacting", { active });
+    await emit("neuropen://qa-interacting", { active });
   }, []);
 
   useEffect(() => {
@@ -54,12 +54,12 @@ export default function QuickActionIcon() {
     let unlistenSettings: (() => void) | null = null;
     void (async () => {
       unlistenSelection = await listen<{ text: string }>(
-        "talkflow://stable-selection",
+        "neuropen://stable-selection",
         (event) => {
           stableSelectionRef.current = event.payload.text ?? "";
         }
       );
-      unlistenQaShow = await listen("talkflow://qa-show", () => {
+      unlistenQaShow = await listen("neuropen://qa-show", () => {
         if (fadeRaf.current !== null) {
           cancelAnimationFrame(fadeRaf.current);
         }
@@ -84,7 +84,7 @@ export default function QuickActionIcon() {
         modeBStreamOutput?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
-        "talkflow://settings-saved",
+        "neuropen://settings-saved",
         (event) => {
           if (event.payload.outputMode) {
             setOutputMode(event.payload.outputMode);
@@ -208,8 +208,8 @@ export default function QuickActionIcon() {
     }
 
     await invoke("restore_clipboard");
-    await emit("talkflow://qa-suppress-current-selection", { cooldownMs: 1600 });
-    await emit("talkflow://llm-session-context", {
+    await emit("neuropen://qa-suppress-current-selection", { cooldownMs: 1600 });
+    await emit("neuropen://llm-session-context", {
       mode: "B1",
       selectedText,
       instruction,

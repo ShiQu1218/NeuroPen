@@ -33,11 +33,11 @@ interface ShowPreviewWindowOptions {
 }
 
 export const emitPreviewSession = async (payload: PreviewSessionPayload) => {
-  await emit("talkflow://preview-session", payload);
+  await emit("neuropen://preview-session", payload);
 };
 
 export const emitPreviewStaticOutput = async (text: string) => {
-  await emit("talkflow://preview-static-output", { text });
+  await emit("neuropen://preview-static-output", { text });
 };
 
 export const showPreviewWindow = async (options: ShowPreviewWindowOptions = {}) => {

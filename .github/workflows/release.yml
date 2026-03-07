@@ -35,8 +35,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__ # tauri-action replaces this with the app version
-          releaseName: "TalkFlow v__VERSION__"
-          releaseBody: "See the assets below to download the latest version of TalkFlow."
+          releaseName: "NeuroPen v__VERSION__"
+          releaseBody: "See the assets below to download the latest version of NeuroPen."
           releaseDraft: true
           prerelease: false
           args: --features local-stt

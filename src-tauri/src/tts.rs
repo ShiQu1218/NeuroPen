@@ -160,7 +160,7 @@ fn synthesize_and_play(
 ) -> Result<(), String> {
     // Use edge-tts CLI via subprocess (Python package).
     // This is the most reliable approach as edge-tts handles the WebSocket protocol.
-    let tmp_dir = std::env::temp_dir().join("talkflow_tts");
+    let tmp_dir = std::env::temp_dir().join("neuropen_tts");
     let _ = std::fs::create_dir_all(&tmp_dir);
     let tmp_file = tmp_dir.join(format!("tts_{}.mp3", std::process::id()));
 

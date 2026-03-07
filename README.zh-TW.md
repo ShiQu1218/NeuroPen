@@ -1,6 +1,6 @@
 > **[English](./README.md)** | 繁體中文
 
-<h1 align="center">TalkFlow</h1>
+<h1 align="center">NeuroPen</h1>
 
 <p align="center">
   <strong>Windows 桌面 AI 語音全能助手</strong><br/>
@@ -68,7 +68,7 @@
 
 ## Core Workflow Safeguards / 核心流程保護
 
-TalkFlow 的注入流程採用固定保護機制，避免誤貼到錯誤視窗：
+NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗：
 
 1. 鎖定前景視窗並暫存剪貼簿。
 2. 執行 STT / LLM 處理。
@@ -154,7 +154,7 @@ TalkFlow 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 
 1. 前往 [Releases](../../releases) 頁面下載最新 `.exe` 安裝檔
 2. 執行安裝程式（NSIS installer）
-3. 啟動 TalkFlow — 程式會常駐在系統匣
+3. 啟動 NeuroPen — 程式會常駐在系統匣
 
 ### First-Time Setup / 首次設定
 
@@ -190,8 +190,8 @@ TalkFlow 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/TalkFlow.git
-cd TalkFlow
+git clone https://github.com/your-username/NeuroPen.git
+cd NeuroPen
 
 # Install frontend dependencies
 npm install
@@ -244,13 +244,13 @@ npm run tauri dev
    - **方法 B**：用 `subst` 映射短路徑（不需重開機）
      ```powershell
      # 路徑請替換為你的專案實際位置（須為 ASCII 路徑）
-     subst T: "C:\Users\YourUsername\path\to\TalkFlow"
+     subst T: "C:\Users\YourUsername\path\to\NeuroPen"
      cd T:\
      npm run tauri build -- --features local-stt-gpu
      ```
 
 Build output:
-- Executable: `src-tauri/target/release/talkflow.exe`
+- Executable: `src-tauri/target/release/neuropen.exe`
 - Installer (NSIS): `src-tauri/target/release/bundle/nsis/`
 
 ### Key Technologies / 關鍵技術
@@ -278,7 +278,7 @@ Build output:
 ## Project Structure / 專案結構
 
 ```
-TalkFlow/
+NeuroPen/
 ├── src/                                  # Frontend (React + TypeScript)
 │   ├── App.tsx                           #   Main app entry & window router
 │   ├── i18n.ts                           #   i18n public API (translate/useI18n)
@@ -376,10 +376,10 @@ CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
 
 | Problem | Solution |
 |---------|----------|
-| 更新後 UI 沒變 | 確認執行的是 `src-tauri/target/release/talkflow.exe`，或重新安裝 NSIS 包覆蓋舊版 |
+| 更新後 UI 沒變 | 確認執行的是 `src-tauri/target/release/neuropen.exe`，或重新安裝 NSIS 包覆蓋舊版 |
 | 本地 Whisper 顯示未啟用 | 需以 `--features local-stt` 或 `--features local-stt-gpu` 重新建置 |
 | Ollama 無法連線 | 確認 Ollama 正在執行且 `localhost:11434` 可存取，模型名稱與已安裝模型一致 |
-| 取代失敗 / 焦點錯誤 | TalkFlow 僅對快捷鍵觸發時的焦點視窗注入；若焦點在處理期間改變，會取消並警告 |
+| 取代失敗 / 焦點錯誤 | NeuroPen 僅對快捷鍵觸發時的焦點視窗注入；若焦點在處理期間改變，會取消並警告 |
 | Quick Action 圖示未出現 | 部分應用（遊戲、自繪介面）不支援 UI Automation API，改用 Mode B2 語音路徑 |
 | 模擬輸入被封鎖 | 部分 Electron app / 遊戲封鎖 Ctrl+V 模擬，請手動貼上 |
 

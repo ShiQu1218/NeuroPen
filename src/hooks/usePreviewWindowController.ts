@@ -112,7 +112,7 @@ export function usePreviewWindowController() {
       const screenshotToSend = previewSession?.type === "screenshot" ? previewSession.imageBase64 : "";
       const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
-      await emit("talkflow://llm-session-context", {
+      await emit("neuropen://llm-session-context", {
         mode: sourceMode,
         selectedText,
         instruction: input,

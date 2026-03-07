@@ -105,7 +105,7 @@ export default function RecordingIndicator() {
       if (cancelled) { u4(); } else { unlisten.push(u4); }
 
       const u3 = await listen<{ language?: AppLanguage }>(
-        "talkflow://settings-saved",
+        "neuropen://settings-saved",
         (event) => {
           if (event.payload.language) {
             setLanguage(event.payload.language);
@@ -114,7 +114,7 @@ export default function RecordingIndicator() {
       );
       if (cancelled) { u3(); } else { unlisten.push(u3); }
 
-      const u5 = await listen<{ message?: string }>("talkflow://status", async (event) => {
+      const u5 = await listen<{ message?: string }>("neuropen://status", async (event) => {
         const message = (event.payload.message ?? "").trim();
         if (!message) {
           return;

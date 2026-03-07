@@ -50,8 +50,8 @@ pub fn get_capabilities() -> SttCapabilities {
         local_available: true,
         #[cfg(not(feature = "local-stt"))]
         local_available: false,
-        parakeet_available: has_external_engine_command("TALKFLOW_PARAKEET_CMD"),
-        moonshine_available: has_external_engine_command("TALKFLOW_MOONSHINE_CMD"),
+        parakeet_available: has_external_engine_command("NEUROPEN_PARAKEET_CMD"),
+        moonshine_available: has_external_engine_command("NEUROPEN_MOONSHINE_CMD"),
     }
 }
 
@@ -79,11 +79,11 @@ struct LocalWhisperContextCache {
 #[cfg(feature = "local-stt")]
 static LOCAL_WHISPER_CONTEXT: Mutex<Option<LocalWhisperContextCache>> = Mutex::new(None);
 
-fn talkflow_dir() -> Result<PathBuf, String> {
+fn neuropen_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Cannot find home directory")?;
-    let dir = home.join(".talkflow");
+    let dir = home.join(".neuropen");
     if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create .talkflow dir: {e}"))?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create .neuropen dir: {e}"))?;
     }
     Ok(dir)
 }
@@ -326,10 +326,10 @@ pub fn start_streaming_stt(
                         transcribe_local(&model_path, &accumulated, &stt_language).await
                     }
                     SttEngine::Parakeet => {
-                        transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &accumulated).await
+                        transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", &model_path, &accumulated).await
                     }
                     SttEngine::Moonshine => {
-                        transcribe_external_command("Moonshine", "TALKFLOW_MOONSHINE_CMD", &model_path, &accumulated).await
+                        transcribe_external_command("Moonshine", "NEUROPEN_MOONSHINE_CMD", &model_path, &accumulated).await
                     }
                 };
                 if let Ok(raw_text) = result {
@@ -367,10 +367,10 @@ pub fn start_streaming_stt(
                     transcribe_local(&model_path, &accumulated, &stt_language).await
                 }
                 SttEngine::Parakeet => {
-                    transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &accumulated).await
+                    transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", &model_path, &accumulated).await
                 }
                 SttEngine::Moonshine => {
-                    transcribe_external_command("Moonshine", "TALKFLOW_MOONSHINE_CMD", &model_path, &accumulated).await
+                    transcribe_external_command("Moonshine", "NEUROPEN_MOONSHINE_CMD", &model_path, &accumulated).await
                 }
             };
             let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
@@ -480,10 +480,10 @@ pub fn stop_recording(
             SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples, &stt_language).await,
             SttEngine::LocalWhisper => transcribe_local(&model_path, &samples, &stt_language).await,
             SttEngine::Parakeet => {
-                transcribe_external_command("Parakeet", "TALKFLOW_PARAKEET_CMD", &model_path, &samples).await
+                transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", &model_path, &samples).await
             }
             SttEngine::Moonshine => {
-                transcribe_external_command("Moonshine", "TALKFLOW_MOONSHINE_CMD", &model_path, &samples).await
+                transcribe_external_command("Moonshine", "NEUROPEN_MOONSHINE_CMD", &model_path, &samples).await
             }
         };
         let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
@@ -687,7 +687,7 @@ async fn transcribe_external_command(
         validate_shell_safe_path(&model_raw, "模型路徑")?;
     }
 
-    let temp_dir = talkflow_dir()?.join("temp");
+    let temp_dir = neuropen_dir()?.join("temp");
     if !temp_dir.exists() {
         std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
     }

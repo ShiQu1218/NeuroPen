@@ -1,6 +1,6 @@
 > English | **[繁體中文](./README.zh-TW.md)**
 
-<h1 align="center">TalkFlow</h1>
+<h1 align="center">NeuroPen</h1>
 
 <p align="center">
   <strong>Windows Desktop AI Voice Assistant</strong><br/>
@@ -68,7 +68,7 @@
 
 ## Core Workflow Safeguards
 
-TalkFlow uses a strict injection sequence to reduce unintended edits:
+NeuroPen uses a strict injection sequence to reduce unintended edits:
 
 1. Lock foreground window and cache clipboard.
 2. Process STT/LLM request.
@@ -154,7 +154,7 @@ Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration �
 
 1. Go to the [Releases](../../releases) page and download the latest `.exe` installer
 2. Run the installer (NSIS)
-3. Launch TalkFlow — it will reside in the system tray
+3. Launch NeuroPen — it will reside in the system tray
 
 ### First-Time Setup
 
@@ -190,8 +190,8 @@ Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration �
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/TalkFlow.git
-cd TalkFlow
+git clone https://github.com/your-username/NeuroPen.git
+cd NeuroPen
 
 # Install frontend dependencies
 npm install
@@ -244,13 +244,13 @@ Three build modes are available:
    - **Option B**: Use `subst` to map a shorter path (no reboot needed)
      ```powershell
      # Replace with your actual project path (must be ASCII)
-     subst T: "C:\Users\YourUsername\path\to\TalkFlow"
+     subst T: "C:\Users\YourUsername\path\to\NeuroPen"
      cd T:\
      npm run tauri build -- --features local-stt-gpu
      ```
 
 Build output:
-- Executable: `src-tauri/target/release/talkflow.exe`
+- Executable: `src-tauri/target/release/neuropen.exe`
 - Installer (NSIS): `src-tauri/target/release/bundle/nsis/`
 
 ### Key Technologies
@@ -278,7 +278,7 @@ Build output:
 ## Project Structure
 
 ```
-TalkFlow/
+NeuroPen/
 ├── src/                                  # Frontend (React + TypeScript)
 │   ├── App.tsx                           #   Main app entry & window router
 │   ├── i18n.ts                           #   i18n public API (translate/useI18n)
@@ -376,10 +376,10 @@ After CI completes, a Draft Release with the installer will appear on the **Rele
 
 | Problem | Solution |
 |---------|----------|
-| UI unchanged after update | Make sure you're running `src-tauri/target/release/talkflow.exe`, or reinstall via the NSIS package |
+| UI unchanged after update | Make sure you're running `src-tauri/target/release/neuropen.exe`, or reinstall via the NSIS package |
 | Local Whisper shows as disabled | Rebuild with `--features local-stt` or `--features local-stt-gpu` |
 | Ollama won't connect | Ensure Ollama is running and `localhost:11434` is accessible; model name must match an installed model |
-| Replace failed / focus error | TalkFlow only injects into the window that was focused at hotkey trigger time; if focus changes during processing, it cancels and warns |
+| Replace failed / focus error | NeuroPen only injects into the window that was focused at hotkey trigger time; if focus changes during processing, it cancels and warns |
 | Quick Action icon not appearing | Some apps (games, custom-drawn UIs) don't support UI Automation API — use Mode B2 voice path instead |
 | Simulated input blocked | Some Electron apps / games block Ctrl+V simulation — paste manually |
 

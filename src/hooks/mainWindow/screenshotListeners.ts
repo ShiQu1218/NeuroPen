@@ -57,7 +57,7 @@ export async function registerScreenshotListeners({
         );
         await overlayWin.show();
         await overlayWin.setFocus();
-        await emitTo("screenshot-overlay", "talkflow://screenshot-start", {
+        await emitTo("screenshot-overlay", "neuropen://screenshot-start", {
           snapshotBase64,
         });
         setStatusMsg(t("status.screenshotDragHint"));
@@ -71,7 +71,7 @@ export async function registerScreenshotListeners({
   });
 
   await safeRegister<{ x: number; y: number; w: number; h: number; cancelled?: boolean }>(
-    "talkflow://screenshot-region",
+    "neuropen://screenshot-region",
     async (event) => {
       const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
       if (overlayWin) {
@@ -125,7 +125,7 @@ export async function registerScreenshotListeners({
           instruction: "",
         });
         await showPreviewWindow({ focusable: true, focus: true });
-        await emit("talkflow://screenshot-attached", { imageBase64 });
+        await emit("neuropen://screenshot-attached", { imageBase64 });
         setStatusMsg(t("status.screenshotAttachedAsk"));
       } catch (err) {
         console.error("[App] screenshot flow failed:", err);

@@ -286,7 +286,7 @@ export const useAppStore = create<AppState>()(
         }),
     }),
     {
-      name: "talkflow-settings",
+      name: "neuropen-settings",
       merge: (persistedState, currentState) => {
         const persisted = (persistedState as Partial<AppState> | undefined) ?? {};
         const nextModel =

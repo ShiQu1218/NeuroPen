@@ -235,7 +235,7 @@ pub fn read_selection_via_clipboard() -> Result<String, InjectionError> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
-    let sentinel = format!("__TALKFLOW_SELECTION_SENTINEL_{}_{}__", std::process::id(), now);
+    let sentinel = format!("__NEUROPEN_SELECTION_SENTINEL_{}_{}__", std::process::id(), now);
     clipboard::write_clipboard(&sentinel).map_err(InjectionError::ClipboardError)?;
     simulate_ctrl_c()?;
     let text = clipboard::read_clipboard().map_err(InjectionError::ClipboardError)?;

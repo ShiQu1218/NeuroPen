@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for all TalkFlow windows",
+  "description": "Capability for all NeuroPen windows",
   "windows": [
     "main",
     "settings",

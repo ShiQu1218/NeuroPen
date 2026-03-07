@@ -71,7 +71,7 @@ fn acquire_single_instance_lock() -> Result<(), String> {
     const SINGLE_INSTANCE_ADDR: &str = "127.0.0.1:48173";
     let listener = std::net::TcpListener::bind(SINGLE_INSTANCE_ADDR).map_err(|e| {
         if e.kind() == std::io::ErrorKind::AddrInUse {
-            "TalkFlow is already running.".to_string()
+            "NeuroPen is already running.".to_string()
         } else {
             format!("Failed to acquire single-instance lock: {e}")
         }
@@ -228,7 +228,7 @@ fn set_runtime_stt_config(
 }
 
 const WINDOWS_RUN_KEY_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-const WINDOWS_RUN_VALUE_NAME: &str = "TalkFlow";
+const WINDOWS_RUN_VALUE_NAME: &str = "NeuroPen";
 
 #[cfg(target_os = "windows")]
 fn set_windows_launch_on_startup(enabled: bool) -> Result<(), String> {
@@ -455,9 +455,9 @@ pub fn run() {
                 let tray_menu =
                     Menu::with_items(app, &[&settings_item, &quit_item]).map_err(|e| e.to_string())?;
 
-                let mut tray_builder = TrayIconBuilder::with_id("talkflow-tray")
+                let mut tray_builder = TrayIconBuilder::with_id("neuropen-tray")
                     .menu(&tray_menu)
-                    .tooltip("TalkFlow")
+                    .tooltip("NeuroPen")
                     .show_menu_on_left_click(false)
                     .on_menu_event(|app, event| match event.id().as_ref() {
                         "tray_open_settings" => {
@@ -518,7 +518,7 @@ pub fn run() {
 
                 let initial_mode = mode_router::route_on_trigger(has_selection);
 
-                let _ = handle_press.emit("talkflow://mode-start", serde_json::json!({
+                let _ = handle_press.emit("neuropen://mode-start", serde_json::json!({
                     "has_selection": has_selection,
                     "selected_text": selected_text,
                     "initial_mode": initial_mode,
@@ -530,7 +530,7 @@ pub fn run() {
             let handle_release = app.handle().clone();
             app.listen("hotkey://release", move |_event| {
                 println!("[event] hotkey://release received");
-                let _ = handle_release.emit("talkflow://hotkey-release", ());
+                let _ = handle_release.emit("neuropen://hotkey-release", ());
             });
 
             // Listen for hotkey://undo → undo last injection
@@ -539,13 +539,13 @@ pub fn run() {
                 println!("[event] hotkey://undo received");
                 match undo::undo_last_injection() {
                     Ok(true) => {
-                        let _ = handle_undo.emit("talkflow://undo-result", serde_json::json!({ "success": true }));
+                        let _ = handle_undo.emit("neuropen://undo-result", serde_json::json!({ "success": true }));
                     }
                     Ok(false) => {
-                        let _ = handle_undo.emit("talkflow://undo-result", serde_json::json!({ "success": false, "reason": "nothing_to_undo" }));
+                        let _ = handle_undo.emit("neuropen://undo-result", serde_json::json!({ "success": false, "reason": "nothing_to_undo" }));
                     }
                     Err(e) => {
-                        let _ = handle_undo.emit("talkflow://undo-result", serde_json::json!({ "success": false, "reason": e }));
+                        let _ = handle_undo.emit("neuropen://undo-result", serde_json::json!({ "success": false, "reason": e }));
                     }
                 }
             });

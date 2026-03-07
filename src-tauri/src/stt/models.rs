@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
-use super::talkflow_dir;
+use super::neuropen_dir;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,7 +69,7 @@ const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 4] = [
 ];
 
 fn local_models_dir() -> Result<PathBuf, String> {
-    let dir = talkflow_dir()?.join("models");
+    let dir = neuropen_dir()?.join("models");
     if !dir.exists() {
         std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model dir: {e}"))?;
     }
@@ -77,7 +77,7 @@ fn local_models_dir() -> Result<PathBuf, String> {
 }
 
 fn active_model_file_path() -> Result<PathBuf, String> {
-    Ok(talkflow_dir()?.join("active_local_stt_model"))
+    Ok(neuropen_dir()?.join("active_local_stt_model"))
 }
 
 pub(crate) fn catalog_entry_by_id(model_id: &str) -> Option<&'static LocalSttCatalogEntry> {

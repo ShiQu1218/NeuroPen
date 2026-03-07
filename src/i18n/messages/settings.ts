@@ -1,6 +1,6 @@
 export const settingsMessages = {
   "zh-TW": {
-    "settings.title": "TalkFlow 設定",
+    "settings.title": "NeuroPen 設定",
     "settings.subtitle": "調整語音、快捷指令與模型設定，變更後按「儲存」生效。",
     "settings.directory": "設定目錄",
     "settings.section.general": "一般",
@@ -129,7 +129,7 @@ export const settingsMessages = {
     "settings.preferredLanguage.auto": "跟隨輸入語言（自動）",
     "settings.preferredLanguage.hint": "控制 LLM 回覆預設語言（除非指令明確要求翻譯）。",
     "settings.launchOnStartup.label": "開機自動啟動",
-    "settings.launchOnStartup.hint": "登入 Windows 後自動啟動 TalkFlow",
+    "settings.launchOnStartup.hint": "登入 Windows 後自動啟動 NeuroPen",
     "settings.features.title": "功能開關",
     "settings.features.hint": "可停用不需要的模組；停用後對應功能不會觸發。",
     "settings.feature.stt": "啟用語音 / STT",
@@ -148,7 +148,7 @@ export const settingsMessages = {
     "settings.history.hint": "預設為關閉；啟用後才會寫入新紀錄，且系統會自動清除超過 30 天的紀錄。既有紀錄仍可查閱與手動清除。"
   },
   "en-US": {
-    "settings.title": "TalkFlow Settings",
+    "settings.title": "NeuroPen Settings",
     "settings.subtitle": "Adjust voice, quick actions, and model options. Click Save to apply changes.",
     "settings.directory": "Sections",
     "settings.section.general": "General",
@@ -277,7 +277,7 @@ export const settingsMessages = {
     "settings.preferredLanguage.auto": "Follow input language (Auto)",
     "settings.preferredLanguage.hint": "Controls default LLM reply language unless a translation is explicitly requested.",
     "settings.launchOnStartup.label": "Launch on Startup",
-    "settings.launchOnStartup.hint": "Start TalkFlow automatically after signing into Windows.",
+    "settings.launchOnStartup.hint": "Start NeuroPen automatically after signing into Windows.",
     "settings.features.title": "Feature Toggles",
     "settings.features.hint": "Disable modules you do not use; disabled features will not trigger.",
     "settings.feature.stt": "Enable Voice / STT",
@@ -296,7 +296,7 @@ export const settingsMessages = {
     "settings.history.hint": "History is off by default. New records are only written after enabling it, and entries older than 30 days are cleared automatically."
   },
   "ja-JP": {
-    "settings.title": "TalkFlow 設定",
+    "settings.title": "NeuroPen 設定",
     "settings.subtitle": "音声・クイックアクション・モデル設定を調整し、「保存」で反映します。",
     "settings.directory": "設定メニュー",
     "settings.section.general": "一般",

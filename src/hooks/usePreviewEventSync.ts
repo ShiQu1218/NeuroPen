@@ -70,7 +70,7 @@ export function usePreviewEventSync({
         instruction?: string;
         sessionType?: "text" | "screenshot";
         sourceMode?: PreviewSourceMode;
-      }>("talkflow://preview-session", (event) => {
+      }>("neuropen://preview-session", (event) => {
         llmStartTime = Date.now();
         void invoke("clear_conversation");
         void (async () => {
@@ -110,7 +110,7 @@ export function usePreviewEventSync({
         });
       });
 
-      await register<{ text: string }>("talkflow://preview-static-output", (event) => {
+      await register<{ text: string }>("neuropen://preview-static-output", (event) => {
         const currentState = useAppStore.getState();
         currentState.setLlmOutput(event.payload.text ?? "");
         currentState.setIsLlmLoading(false);
@@ -132,7 +132,7 @@ export function usePreviewEventSync({
         ttsRate?: string;
         ttsPitch?: string;
         quickActionCommands?: QuickActionCommand[];
-      }>("talkflow://settings-saved", (event) => {
+      }>("neuropen://settings-saved", (event) => {
         if (event.payload.llmProvider) {
           state.setLlmProvider(event.payload.llmProvider);
         }
@@ -192,7 +192,7 @@ export function usePreviewEventSync({
         useAppStore.getState().setIsTtsPlaying(false);
       });
 
-      await register<{ imageBase64: string }>("talkflow://screenshot-attached", (event) => {
+      await register<{ imageBase64: string }>("neuropen://screenshot-attached", (event) => {
         setPreviewSession({
           type: "screenshot",
           imageBase64: event.payload.imageBase64 || "",

@@ -5,7 +5,7 @@ import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
 import { buildSelectionFingerprint } from "../../utils/appText";
 import { clampToMonitorBounds } from "../../utils/windowBounds";
-import { hideWindowByLabel, isAnyTalkFlowWindowFocused } from "../../utils/windowLifecycle";
+import { hideWindowByLabel, isAnyNeuroPenWindowFocused } from "../../utils/windowLifecycle";
 import type { SafeRegister, SelectionListenerState } from "./listenerTypes";
 
 interface RegisterSelectionListenersParams {
@@ -18,7 +18,7 @@ export async function registerSelectionListeners({
   selectionState,
 }: RegisterSelectionListenersParams) {
   await safeRegister<{ active: boolean }>(
-    "talkflow://qa-interacting",
+    "neuropen://qa-interacting",
     async (event) => {
       selectionState.qaInteracting = !!event.payload.active;
       if (selectionState.qaInteracting && selectionState.qaHideTimer) {
@@ -39,7 +39,7 @@ export async function registerSelectionListeners({
     },
   );
 
-  await safeRegister<{ cooldownMs?: number }>("talkflow://qa-suppress-current-selection", async (event) => {
+  await safeRegister<{ cooldownMs?: number }>("neuropen://qa-suppress-current-selection", async (event) => {
     selectionState.suppressedSelectionFingerprint = selectionState.lastSelectionFingerprint;
     selectionState.selectionWatchSuppressedUntil = Date.now() + Math.max(300, event.payload.cooldownMs ?? 1200);
     await hideWindowByLabel("quick-action");
@@ -53,7 +53,7 @@ export async function registerSelectionListeners({
     anchor_x?: number | null;
     anchor_y?: number | null;
   }>(
-    "talkflow://selection-changed",
+    "neuropen://selection-changed",
     async (event) => {
       const { has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y } = event.payload;
       const store = useAppStore.getState();
@@ -71,8 +71,8 @@ export async function registerSelectionListeners({
       if (store.isRecording) return;
       // Freeze watcher-driven UI updates while quick-action is interacting.
       if (selectionState.qaInteracting) return;
-      // Ignore internal selections from TalkFlow windows (preview/quick-action/etc).
-      if (await isAnyTalkFlowWindowFocused()) return;
+      // Ignore internal selections from NeuroPen windows (preview/quick-action/etc).
+      if (await isAnyNeuroPenWindowFocused()) return;
 
       const qaWin = await WebviewWindow.getByLabel("quick-action");
       if (!qaWin) return;
@@ -85,7 +85,7 @@ export async function registerSelectionListeners({
         const selectionText = (text ?? "").trim();
         store.setSelectedText(selectionText);
         if (selectionText) {
-          await emit("talkflow://stable-selection", { text: selectionText });
+          await emit("neuropen://stable-selection", { text: selectionText });
         }
 
         // Position QA icon below selection end (fallback to cursor).
@@ -130,7 +130,7 @@ export async function registerSelectionListeners({
         );
         await qaWin.setPosition(new PhysicalPosition(clampedQaPos.x, clampedQaPos.y));
         await qaWin.show();
-        await emit("talkflow://qa-show");
+        await emit("neuropen://qa-show");
       } else {
         selectionState.lastSelectionFingerprint = "";
         selectionState.suppressedSelectionFingerprint = "";
