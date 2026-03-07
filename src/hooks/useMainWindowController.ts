@@ -760,10 +760,18 @@ export function useMainWindowController() {
             const vocabHint = store.vocabularyTerms.length
               ? `Prefer these domain terms exactly when relevant: ${store.vocabularyTerms.join(", ")}.`
               : "";
+            const aggressiveModeAFormattingHint =
+              "Format more actively than balanced mode. If the content naturally contains tasks, agenda items, action points, options, or grouped ideas, rewrite it into concise bullet lists. If the topic shifts, insert short headings. If the content contains time planning, sequence, or schedule-like information, rewrite it into clear concise written form instead of colloquial speech. Keep the meaning accurate and do not invent details.";
+            const balancedModeAFormattingHint =
+              "Keep formatting conservative. Prefer short paragraphs over bullets unless the original content is already clearly list-like.";
+            const modeAFormattingHint =
+              store.punctuationMode === "aggressive"
+                ? aggressiveModeAFormattingHint
+                : balancedModeAFormattingHint;
             const refineInstruction =
-              `Rewrite this speech-to-text transcript into a clean final version using the Mode A formatting guidance from the system prompt. Preserve meaning, fix obvious transcription issues, keep the same language and script, and output only the final text. ${toneHint} ${vocabHint}`;
+              `Rewrite this speech-to-text transcript into a clean final version using the Mode A formatting guidance from the system prompt. Preserve meaning, fix obvious transcription issues, keep the same language and script, and output only the final text. ${modeAFormattingHint} ${toneHint} ${vocabHint}`;
             const translateInstruction =
-              `Translate this speech-to-text transcript to ${store.translationTarget}. Preserve the intended structure from the system prompt and output only the final text.`;
+              `Translate this speech-to-text transcript to ${store.translationTarget}. Preserve the intended structure from the system prompt and output only the final text. ${modeAFormattingHint}`;
             const canStreamModeAPreview =
               store.outputMode === "PreviewStream" &&
               store.modeAStreamOutput &&
