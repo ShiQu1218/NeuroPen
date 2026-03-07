@@ -153,6 +153,9 @@ export function usePreviewWindowController() {
         const reason = err instanceof Error ? err.message : String(err);
         setIsLlmLoading(false);
         setLlmError(reason);
+      } finally {
+        // Fallback: if backend done/error event is missed, ensure UI exits loading state.
+        setIsLlmLoading(false);
       }
     },
     [previewSession, resolvePromptForPreviewMode, resolveStreamingForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput]

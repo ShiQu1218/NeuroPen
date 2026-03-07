@@ -92,6 +92,9 @@ export function usePreviewEventSync({
         currentState.setLastInstruction(event.payload.instruction ?? "");
         currentState.setLlmDurationMs(0);
         if (event.payload.sessionType === "screenshot") {
+          // Screenshot session starts with an attachment preview, not an LLM call yet.
+          // Keep loading false even if the follow-up attachment event is delayed/missed.
+          currentState.setIsLlmLoading(false);
           setPreviewSession({
             type: "screenshot",
             imageBase64: "",

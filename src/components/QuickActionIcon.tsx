@@ -260,6 +260,10 @@ export default function QuickActionIcon() {
       });
     } catch (err) {
       console.error("[QuickAction] call_llm failed:", err);
+      useAppStore.getState().setLlmError(String(err));
+    } finally {
+      // Fallback in case llm://done event is missed.
+      useAppStore.getState().setIsLlmLoading(false);
     }
   };
 

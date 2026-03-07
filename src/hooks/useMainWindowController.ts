@@ -824,15 +824,17 @@ export function useMainWindowController() {
                   promptOverride: store.modeAPrompt,
                   streamOutput: true,
                 });
-                return;
               } catch (err) {
                 const reason = err instanceof Error ? err.message : String(err);
-                store.setIsLlmLoading(false);
                 store.setLlmError(reason);
                 setStatusMsg(t("status.routeFailed", { reason }));
                 setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
                 return;
+              } finally {
+                // Fallback in case llm://done event is missed.
+                store.setIsLlmLoading(false);
               }
+              return;
             }
             if (shouldRefine && llmReady) {
               try {
@@ -997,11 +999,13 @@ export function useMainWindowController() {
               });
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);
-              store.setIsLlmLoading(false);
               store.setLlmError(reason);
               await invoke("restore_clipboard").catch(() => {});
               setStatusMsg(t("status.routeFailed", { reason }));
               setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
+            } finally {
+              // Fallback in case llm://done event is missed.
+              store.setIsLlmLoading(false);
             }
           } else if (mode === "C") {
             // ── Mode C — LLM query ──
@@ -1043,11 +1047,13 @@ export function useMainWindowController() {
               }
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);
-              store.setIsLlmLoading(false);
               store.setLlmError(reason);
               await invoke("restore_clipboard").catch(() => {});
               setStatusMsg(t("status.routeFailed", { reason }));
               setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
+            } finally {
+              // Fallback in case llm://done event is missed.
+              store.setIsLlmLoading(false);
             }
           }
         } catch (err) {
