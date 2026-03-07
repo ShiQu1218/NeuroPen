@@ -83,7 +83,7 @@ If focus changes during processing, injection is cancelled and clipboard is rest
 
 - **Settings Window**: General, STT, Quick Actions, LLM, TTS, and History sections with persisted preferences.
 - **Quick Action Icon**: Floating menu on selected text with user-editable preset commands and custom instruction input.
-- **Output Preview Window**: Streaming markdown output, follow-up prompts, copy/replace controls, and screenshot attachment preview.
+- **Output Preview Window**: Streaming markdown output with LaTeX formula rendering, follow-up prompts, copy/replace controls, and screenshot attachment preview.
 - **Recording Indicator**: Lightweight overlay for recording state and elapsed time.
 - **History Panel**: Search, copy, and delete prior outputs (local storage).
 - **Screenshot Overlay**: Region selector used by screenshot-to-LLM workflows.

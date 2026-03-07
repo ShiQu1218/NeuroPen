@@ -1,6 +1,9 @@
 import type { Dispatch, MouseEvent, RefObject, SetStateAction } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import "katex/dist/katex.min.css";
 import type { useI18n } from "../../i18n";
 import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
@@ -168,7 +171,9 @@ export default function PreviewWindowBody({
           ) : isLlmLoading && !hasOutput ? (
             <span className="text-gray-400">{t("preview.loading")}</span>
           ) : hasOutput ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{renderedOutput}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+              {renderedOutput}
+            </ReactMarkdown>
           ) : (
             <span className="text-gray-400">{t("preview.empty")}</span>
           )}

@@ -176,6 +176,323 @@ fn merge_prompt_override(base_prompt: String, prompt_override: Option<&str>) -> 
     }
 }
 
+fn should_enforce_math_output(mode: PromptMode) -> bool {
+    matches!(mode, PromptMode::B | PromptMode::C)
+}
+
+fn contains_latex_delimiter(text: &str) -> bool {
+    text.contains("$$") || text.contains('$')
+}
+
+fn split_markdown_list_prefix(line: &str) -> (&str, &str) {
+    let indent_len = line
+        .find(|ch: char| ch != ' ' && ch != '\t')
+        .unwrap_or(line.len());
+    let rest = &line[indent_len..];
+
+    if rest.starts_with("- ") || rest.starts_with("* ") || rest.starts_with("+ ") {
+        let prefix_len = indent_len + 2;
+        return (&line[..prefix_len], &line[prefix_len..]);
+    }
+
+    let bytes = rest.as_bytes();
+    let mut idx = 0usize;
+    while idx < bytes.len() && bytes[idx].is_ascii_digit() {
+        idx += 1;
+    }
+    if idx > 0
+        && idx + 1 < bytes.len()
+        && (bytes[idx] == b'.' || bytes[idx] == b')')
+        && bytes[idx + 1] == b' '
+    {
+        let prefix_len = indent_len + idx + 2;
+        return (&line[..prefix_len], &line[prefix_len..]);
+    }
+
+    ("", line)
+}
+
+fn extract_wikipedia_displaystyle_block(line: &str, start: usize) -> Option<(usize, String)> {
+    const DISPLAYSTYLE_PREFIX: &str = "{\\displaystyle";
+    if !line[start..].starts_with(DISPLAYSTYLE_PREFIX) {
+        return None;
+    }
+
+    let bytes = line.as_bytes();
+    let mut depth = 0i32;
+    let mut idx = start;
+    while idx < bytes.len() {
+        match bytes[idx] {
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+        idx += 1;
+    }
+
+    if depth != 0 {
+        return None;
+    }
+    let end_exclusive = idx + 1;
+    let inner = line[start + DISPLAYSTYLE_PREFIX.len()..idx].trim().to_string();
+    Some((end_exclusive, inner))
+}
+
+fn normalize_wikipedia_displaystyle_line(line: &str) -> (String, bool) {
+    let mut cursor = 0usize;
+    let mut output = String::new();
+    let mut changed = false;
+
+    while let Some(rel_idx) = line[cursor..].find("{\\displaystyle") {
+        let start = cursor + rel_idx;
+        output.push_str(&line[cursor..start]);
+
+        if let Some((end_exclusive, inner)) = extract_wikipedia_displaystyle_block(line, start) {
+            if inner.is_empty() {
+                output.push_str(&line[start..end_exclusive]);
+                cursor = end_exclusive;
+                continue;
+            }
+            let suffix = &line[end_exclusive..];
+            let standalone = output.trim().is_empty() && suffix.trim().is_empty();
+            if standalone {
+                output.push_str("$$");
+                output.push_str(inner.trim());
+                output.push_str("$$");
+            } else {
+                output.push('$');
+                output.push_str(inner.trim());
+                output.push('$');
+            }
+            changed = true;
+            cursor = end_exclusive;
+        } else {
+            output.push_str(&line[start..]);
+            cursor = line.len();
+            break;
+        }
+    }
+
+    if cursor < line.len() {
+        output.push_str(&line[cursor..]);
+    }
+
+    if changed {
+        (output, true)
+    } else {
+        (line.to_string(), false)
+    }
+}
+
+fn normalize_wikipedia_displaystyle_notation(output: &str) -> String {
+    let mut in_code_fence = false;
+    let mut changed = false;
+    let mut lines = Vec::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            lines.push(line.to_string());
+            continue;
+        }
+        if in_code_fence {
+            lines.push(line.to_string());
+            continue;
+        }
+        let (normalized_line, line_changed) = normalize_wikipedia_displaystyle_line(line);
+        changed |= line_changed;
+        lines.push(normalized_line);
+    }
+
+    if !changed {
+        return output.to_string();
+    }
+
+    let mut normalized = lines.join("\n");
+    if output.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
+}
+
+fn looks_math_equation_line(content: &str) -> bool {
+    let trimmed = content.trim();
+    if trimmed.len() < 3 || trimmed.len() > 180 {
+        return false;
+    }
+    if contains_latex_delimiter(trimmed)
+        || trimmed.contains('`')
+        || trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+    {
+        return false;
+    }
+
+    let has_operator = trimmed.chars().any(|ch| {
+        matches!(
+            ch,
+            '='
+                | '+'
+                | '-'
+                | '*'
+                | '/'
+                | '^'
+                | '×'
+                | '÷'
+                | '±'
+                | '∑'
+                | '∫'
+                | '√'
+                | '≤'
+                | '≥'
+                | '≠'
+                | '≈'
+                | '∞'
+                | '∂'
+                | '∇'
+                | '→'
+                | '←'
+                | '↔'
+        )
+    });
+    if !has_operator {
+        return false;
+    }
+
+    let has_operand = trimmed.chars().any(|ch| ch.is_ascii_digit())
+        || trimmed.chars().any(|ch| ch.is_ascii_alphabetic())
+        || trimmed.chars().any(|ch| {
+            matches!(
+                ch,
+                'π' | 'θ' | 'λ' | 'μ' | 'α' | 'β' | 'γ' | 'δ' | 'σ' | 'ω'
+            )
+        });
+    if !has_operand {
+        return false;
+    }
+
+    let mut non_math_long_words = 0usize;
+    for token in trimmed.split_whitespace() {
+        let cleaned = token.trim_matches(|ch: char| !ch.is_ascii_alphabetic());
+        if cleaned.len() < 4 {
+            continue;
+        }
+        let lower = cleaned.to_ascii_lowercase();
+        let is_math_word = matches!(
+            lower.as_str(),
+            "sin"
+                | "cos"
+                | "tan"
+                | "cot"
+                | "sec"
+                | "csc"
+                | "log"
+                | "ln"
+                | "lim"
+                | "frac"
+                | "sqrt"
+                | "sum"
+                | "prod"
+                | "int"
+                | "text"
+                | "math"
+                | "alpha"
+                | "beta"
+                | "gamma"
+                | "delta"
+                | "theta"
+                | "sigma"
+                | "omega"
+        );
+        if !is_math_word {
+            non_math_long_words += 1;
+            if non_math_long_words > 1 {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+fn enforce_math_latex_delimiters(output: &str) -> String {
+    let mut in_code_fence = false;
+    let mut changed = false;
+    let mut lines = Vec::new();
+
+    for line in output.lines() {
+        let trimmed_start = line.trim_start();
+        if trimmed_start.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            lines.push(line.to_string());
+            continue;
+        }
+        if in_code_fence {
+            lines.push(line.to_string());
+            continue;
+        }
+        if contains_latex_delimiter(line) {
+            lines.push(line.to_string());
+            continue;
+        }
+
+        let (prefix, content) = split_markdown_list_prefix(line);
+        let trimmed_content = content.trim();
+        if looks_math_equation_line(trimmed_content) {
+            changed = true;
+            lines.push(format!("{prefix}$${trimmed_content}$$"));
+            continue;
+        }
+
+        let mut inline_converted = false;
+        for sep in [':', '：'] {
+            if let Some(idx) = trimmed_content.find(sep) {
+                let head = trimmed_content[..idx].trim();
+                let expr = trimmed_content[idx + sep.len_utf8()..].trim();
+                if !head.is_empty()
+                    && head.chars().count() <= 14
+                    && looks_math_equation_line(expr)
+                    && !contains_latex_delimiter(expr)
+                {
+                    changed = true;
+                    lines.push(format!("{prefix}{head}{sep} ${expr}$"));
+                    inline_converted = true;
+                    break;
+                }
+            }
+        }
+        if inline_converted {
+            continue;
+        }
+
+        lines.push(line.to_string());
+    }
+
+    if !changed {
+        return output.to_string();
+    }
+
+    let mut normalized = lines.join("\n");
+    if output.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
+}
+
+fn normalize_math_output_if_needed(output: &str, mode: PromptMode) -> String {
+    if !should_enforce_math_output(mode) {
+        return output.to_string();
+    }
+    let wikipedia_normalized = normalize_wikipedia_displaystyle_notation(output);
+    enforce_math_latex_delimiters(&wikipedia_normalized)
+}
+
 fn build_prompt(
     selected_text: &str,
     instruction: &str,
@@ -193,19 +510,25 @@ fn build_prompt(
             "You are refining speech-to-text output for Mode A. \
              Output only the final text the user wants to insert. \
              Preserve the original language and script unless the instruction explicitly requests translation. \
-             Follow the mode-specific formatting guidance carefully, keep the meaning intact, and do not add commentary or preamble.{language_hint}"
+             Follow the mode-specific formatting guidance carefully, keep the meaning intact, and do not add commentary or preamble. \
+             If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
+             Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
         PromptMode::B => format!(
             "You are handling selected-text commands for Mode B. \
              The user has highlighted text and given an instruction. \
              If the instruction is a transformation request, output only the transformed text. \
              If the instruction is question-like, answer the question about the highlighted text directly. \
-             When answering, use clean Markdown with short paragraphs and bullets only when helpful.{language_hint}"
+             When answering, use clean Markdown with short paragraphs and bullets only when helpful. \
+             If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
+             Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
         PromptMode::C => format!(
             "You are handling spoken assistant queries for Mode C. \
              Reply in clean Markdown with Typeless-style readability: short paragraphs, meaningful bullet lists when useful, and no filler opening lines. \
-             Avoid unnecessary headings for simple answers, but structure longer answers clearly.{language_hint}"
+             Avoid unnecessary headings for simple answers, but structure longer answers clearly. \
+             If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
+             Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
     };
     let system_prompt = merge_prompt_override(system_prompt, prompt_override);
@@ -682,6 +1005,8 @@ pub async fn call_llm(
     prompt_override: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let resolved_prompt_mode = PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
+    let should_force_math_normalization = should_enforce_math_output(resolved_prompt_mode);
     let (system_prompt, user_message) = build_prompt(
         selected_text,
         instruction,
@@ -711,7 +1036,10 @@ pub async fn call_llm(
         user_message.clone()
     };
 
-    let full_output = if output_mode == OutputMode::PreviewStream && stream_output {
+    let used_native_streaming =
+        output_mode == OutputMode::PreviewStream && stream_output && !should_force_math_normalization;
+
+    let raw_output = if used_native_streaming {
         call_provider_preview_stream(
             api_key,
             &provider,
@@ -721,21 +1049,6 @@ pub async fn call_llm(
             &app,
         )
         .await
-    } else if output_mode == OutputMode::PreviewStream {
-        let full_output = call_provider(
-            api_key,
-            &provider,
-            &chosen_model,
-            &system_prompt,
-            &effective_user_message,
-        )
-        .await?;
-        if !full_output.is_empty() {
-            let _ = app.emit("llm://token", LlmToken {
-                text: full_output.clone(),
-            });
-        }
-        Ok(full_output)
     } else {
         call_provider(
             api_key,
@@ -750,6 +1063,20 @@ pub async fn call_llm(
         let _ = app.emit("llm://error", LlmError { message: e.clone() });
         e
     })?;
+
+    let full_output = normalize_math_output_if_needed(&raw_output, resolved_prompt_mode);
+
+    if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
+        if stream_output {
+            if !used_native_streaming {
+                emit_output_stream(&app, &full_output).await;
+            }
+        } else {
+            let _ = app.emit("llm://token", LlmToken {
+                text: full_output.clone(),
+            });
+        }
+    }
 
     let _ = app.emit("llm://done", ());
 
@@ -793,6 +1120,7 @@ pub async fn call_llm_text(
     prompt_mode: Option<String>,
     prompt_override: Option<String>,
 ) -> Result<String, String> {
+    let resolved_prompt_mode = PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
     let (system_prompt, user_message) = build_prompt(
         selected_text,
         instruction,
@@ -801,7 +1129,8 @@ pub async fn call_llm_text(
         prompt_override.as_deref(),
     );
     let chosen_model = resolve_model(model, &provider);
-    call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await
+    let raw_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await?;
+    Ok(normalize_math_output_if_needed(&raw_output, resolved_prompt_mode))
 }
 
 // ── Multimodal (image + text) support ───────────────────────────────────
@@ -1015,13 +1344,19 @@ pub async fn call_llm_with_image(
         .unwrap_or_default();
     let base_prompt = format!(
         "You are a helpful assistant. The user has sent a screenshot and a question about it. \
-         Answer concisely based on the image content.{language_hint}"
+         Answer concisely based on the image content. \
+         If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
+         Never leave equations as plain text without LaTeX delimiters.{language_hint}"
     );
     let mode = PromptMode::from_input(prompt_mode.as_deref(), false);
     let system_prompt = if mode == PromptMode::C {
         merge_prompt_override(
             format!(
-                "You are handling a Mode C screenshot query. Answer based on the image content in clean Markdown with short paragraphs and bullets only when useful.{language_hint}"
+                "You are handling a Mode C screenshot query. \
+                 Answer based on the image content in clean Markdown with short paragraphs and bullets only when useful. \
+                 OCR may produce imperfect symbols, so normalize detected formulas into valid LaTeX. \
+                 If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
+                 Never leave equations as plain text without LaTeX delimiters.{language_hint}"
             ),
             prompt_override.as_deref(),
         )
@@ -1030,7 +1365,7 @@ pub async fn call_llm_with_image(
     };
     let chosen_model = resolve_model(model, &provider);
 
-    let full_output = call_provider_with_image(
+    let raw_output = call_provider_with_image(
         api_key, &provider, &chosen_model, &system_prompt, instruction, image_base64,
     )
     .await
@@ -1038,6 +1373,7 @@ pub async fn call_llm_with_image(
         let _ = app.emit("llm://error", LlmError { message: e.clone() });
         e
     })?;
+    let full_output = normalize_math_output_if_needed(&raw_output, mode);
 
     if !full_output.is_empty() {
         if stream_output {
@@ -1211,5 +1547,36 @@ mod tests {
     fn maps_b_variants_to_prompt_mode_b() {
         assert_eq!(PromptMode::from_input(Some("B1"), true), PromptMode::B);
         assert_eq!(PromptMode::from_input(Some("B2"), true), PromptMode::B);
+    }
+
+    #[test]
+    fn wraps_plain_equation_line_with_display_latex() {
+        let input = "x^2 + y^2 = z^2";
+        let output = enforce_math_latex_delimiters(input);
+        assert_eq!(output, "$$x^2 + y^2 = z^2$$");
+    }
+
+    #[test]
+    fn preserves_existing_latex_equation() {
+        let input = "$$x^2 + y^2 = z^2$$";
+        let output = enforce_math_latex_delimiters(input);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn normalizes_wikipedia_displaystyle_block() {
+        let input = "{\\displaystyle f(n)=\\Theta \\left(n^{\\log _{b}a}\\log ^{\\epsilon }n\\right)}";
+        let output = normalize_wikipedia_displaystyle_notation(input);
+        assert_eq!(
+            output,
+            "$$f(n)=\\Theta \\left(n^{\\log _{b}a}\\log ^{\\epsilon }n\\right)$$"
+        );
+    }
+
+    #[test]
+    fn normalizes_wikipedia_displaystyle_inline() {
+        let input = "主定理形式：{\\displaystyle f(n)=\\Theta(n)}。";
+        let output = normalize_wikipedia_displaystyle_notation(input);
+        assert_eq!(output, "主定理形式：$f(n)=\\Theta(n)$。");
     }
 }
