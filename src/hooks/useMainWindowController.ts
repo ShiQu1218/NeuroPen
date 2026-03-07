@@ -616,6 +616,21 @@ export function useMainWindowController() {
           const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
           const monitor = await currentMonitor();
           if (overlayWin && monitor) {
+            let snapshotBase64 = "";
+            try {
+              const monitorShot = await invoke<{ base64Png?: string; base64_png?: string }>(
+                "take_screenshot_region",
+                {
+                  x: monitor.position.x,
+                  y: monitor.position.y,
+                  w: monitor.size.width,
+                  h: monitor.size.height,
+                }
+              );
+              snapshotBase64 = monitorShot.base64Png ?? monitorShot.base64_png ?? "";
+            } catch (err) {
+              console.warn("[App] monitor snapshot for overlay failed:", err);
+            }
             const scale = monitor.scaleFactor;
             // monitor.size returns physical pixels; LogicalSize needs logical pixels.
             await overlayWin.setSize(new LogicalSize(
@@ -627,7 +642,9 @@ export function useMainWindowController() {
             );
             await overlayWin.show();
             await overlayWin.setFocus();
-            await emitTo("screenshot-overlay", "talkflow://screenshot-start");
+            await emitTo("screenshot-overlay", "talkflow://screenshot-start", {
+              snapshotBase64,
+            });
             setStatusMsg(t("status.screenshotDragHint"));
           } else {
             setStatusMsg(t("status.screenshotUnavailable"));

@@ -10,11 +10,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "../i18n";
 
 type Point = { x: number; y: number };
+type ScreenshotStartPayload = { snapshotBase64?: string | null };
 
 export default function ScreenshotOverlay() {
   const { t } = useI18n();
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [dragCurrent, setDragCurrent] = useState<Point | null>(null);
+  const [snapshotBase64, setSnapshotBase64] = useState("");
   const rootRef = useRef<HTMLDivElement | null>(null);
   const dragStartRef = useRef<Point | null>(null);
   const dragCurrentRef = useRef<Point | null>(null);
@@ -174,8 +176,9 @@ export default function ScreenshotOverlay() {
     };
 
     void (async () => {
-      unlistenStart = await listen("talkflow://screenshot-start", () => {
+      unlistenStart = await listen<ScreenshotStartPayload>("talkflow://screenshot-start", (event) => {
         resetSession();
+        setSnapshotBase64(event.payload?.snapshotBase64?.trim() ?? "");
         void ensureFocus();
       });
       unlistenBlur = await listen(TauriEvent.WINDOW_BLUR, () => {
@@ -221,7 +224,15 @@ export default function ScreenshotOverlay() {
       onPointerCancel={handlePointerCancel}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="absolute inset-0 bg-black/30" />
+      {snapshotBase64 ? (
+        <img
+          src={`data:image/png;base64,${snapshotBase64}`}
+          alt=""
+          draggable={false}
+          className="absolute inset-0 h-full w-full select-none object-fill pointer-events-none"
+        />
+      ) : null}
+      <div className={`absolute inset-0 ${snapshotBase64 ? "bg-black/20" : "bg-black/30"}`} />
       {rect && (
         <div
           className="absolute border-2 border-blue-500 bg-blue-300/20"
