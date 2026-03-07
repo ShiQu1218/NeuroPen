@@ -266,46 +266,58 @@ Build output:
 | Windows Integration | windows crate (UI Automation, SendInput, Clipboard) |
 | Credential Storage | keyring (Windows Credential Manager) |
 
+### Modularization Status
+
+- **Frontend**: IPC calls are centralized into `src/services/*`, and major `useMainWindowController` event flows are split into `src/hooks/mainWindow/*`.
+- **i18n**: `src/i18n/messages.ts` is now an aggregator, with domain dictionaries split into `src/i18n/messages/{settings,preview,history,common}.ts`.
+- **Store**: `useAppStore` types and defaults were extracted to `appStoreTypes.ts` and `appStoreDefaults.ts` while preserving existing exports.
+- **Rust backend**: command implementations are grouped under `src-tauri/src/commands/*`, and STT/LLM helpers have been moved into focused submodules.
+
 ---
 
 ## Project Structure
 
 ```
 TalkFlow/
-├── src/                          # Frontend (React + TypeScript)
-│   ├── App.tsx                   #   Main app entry & window router
-│   ├── App.css                   #   Global styles
-│   ├── main.tsx                  #   React DOM mount
-│   ├── i18n.ts                   #   Internationalization (10 languages)
-│   ├── components/
-│   │   ├── Settings.tsx          #   Settings window UI
-│   │   ├── QuickActionIcon.tsx   #   Floating quick action widget
-│   │   ├── PreviewWindow.tsx     #   LLM output preview window
-│   │   └── RecordingIndicator.tsx#   Recording status overlay
+├── src/                                  # Frontend (React + TypeScript)
+│   ├── App.tsx                           #   Main app entry & window router
+│   ├── i18n.ts                           #   i18n public API (translate/useI18n)
+│   ├── hooks/
+│   │   ├── useMainWindowController.ts    #   Main orchestrator hook
+│   │   └── mainWindow/                   #   Listener modules (selection/screenshot/STT route)
+│   ├── services/                         #   IPC service layer (Tauri command wrappers)
+│   ├── i18n/
+│   │   ├── catalog.ts
+│   │   ├── messages.ts                   #   Aggregator
+│   │   ├── localeOverrides.ts
+│   │   └── messages/                     #   Domain dictionaries
+│   │       ├── settings.ts
+│   │       ├── preview.ts
+│   │       ├── history.ts
+│   │       └── common.ts
 │   ├── store/
-│   │   └── useAppStore.ts        #   Zustand global state
+│   │   ├── useAppStore.ts
+│   │   ├── appStoreTypes.ts
+│   │   └── appStoreDefaults.ts
+│   ├── components/
+│   │   ├── Settings.tsx
+│   │   └── settings/
 │   └── utils/
-│       └── windowBounds.ts       #   Window positioning helpers
 │
-├── src-tauri/                    # Backend (Rust)
+├── src-tauri/                            # Backend (Rust)
 │   ├── src/
-│   │   ├── main.rs               #   Application entry point
-│   │   ├── lib.rs                #   Tauri setup & plugin registration
-│   │   ├── mode_router.rs        #   Mode A/B1/B2/C routing logic
-│   │   ├── hotkey.rs             #   Global hotkey listener
-│   │   ├── selection.rs          #   UI Automation text selection detection
-│   │   ├── window_focus.rs       #   Foreground window lock & verification
-│   │   ├── audio_capture.rs      #   Microphone audio capture (cpal)
-│   │   ├── stt.rs                #   Speech-to-text (cloud & local Whisper)
-│   │   ├── llm.rs                #   LLM API calls (streaming)
-│   │   ├── clipboard.rs          #   Clipboard cache / restore
-│   │   ├── injection.rs          #   Text injection via Ctrl+V simulation
-│   │   └── undo.rs               #   Undo last injection (Alt+Z)
-│   └── Cargo.toml                #   Rust dependencies & feature flags
+│   │   ├── main.rs
+│   │   ├── lib.rs                        #   Tauri app assembly & command registration
+│   │   ├── commands/                     #   Grouped command handlers
+│   │   ├── stt.rs
+│   │   ├── stt/                          #   STT submodules (models/api_keys)
+│   │   ├── llm.rs
+│   │   └── llm/                          #   LLM helper submodules (formatting)
+│   └── Cargo.toml
 │
-├── public/                       # Static assets
+├── public/                               # Static assets
 ├── .github/workflows/
-│   └── release.yml               # CI/CD: auto-build on tag push
+│   └── release.yml                       # CI/CD: auto-build on tag push
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts

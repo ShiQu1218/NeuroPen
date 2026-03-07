@@ -266,46 +266,58 @@ Build output:
 | Windows Integration | windows crate (UI Automation, SendInput, Clipboard) |
 | Credential Storage | keyring (Windows Credential Manager) |
 
+### Modularization Status / 模組化現況
+
+- **Frontend**：IPC 呼叫已集中到 `src/services/*`，`useMainWindowController` 主要事件流已拆至 `src/hooks/mainWindow/*`。
+- **i18n**：`src/i18n/messages.ts` 已改為聚合層，並依 domain 拆分至 `src/i18n/messages/{settings,preview,history,common}.ts`。
+- **Store**：`useAppStore` 的型別與 defaults 已抽到 `appStoreTypes.ts`、`appStoreDefaults.ts`，同時保留既有匯出相容性。
+- **Rust backend**：command 實作已分組到 `src-tauri/src/commands/*`，STT / LLM helper 也已下沉到子模組。
+
 ---
 
 ## Project Structure / 專案結構
 
 ```
 TalkFlow/
-├── src/                          # Frontend (React + TypeScript)
-│   ├── App.tsx                   #   Main app entry & window router
-│   ├── App.css                   #   Global styles
-│   ├── main.tsx                  #   React DOM mount
-│   ├── i18n.ts                   #   Internationalization (10 languages)
-│   ├── components/
-│   │   ├── Settings.tsx          #   Settings window UI
-│   │   ├── QuickActionIcon.tsx   #   Floating quick action widget
-│   │   ├── PreviewWindow.tsx     #   LLM output preview window
-│   │   └── RecordingIndicator.tsx#   Recording status overlay
+├── src/                                  # Frontend (React + TypeScript)
+│   ├── App.tsx                           #   Main app entry & window router
+│   ├── i18n.ts                           #   i18n public API (translate/useI18n)
+│   ├── hooks/
+│   │   ├── useMainWindowController.ts    #   Main orchestrator hook
+│   │   └── mainWindow/                   #   Listener modules (selection/screenshot/STT route)
+│   ├── services/                         #   IPC service layer (Tauri command wrappers)
+│   ├── i18n/
+│   │   ├── catalog.ts
+│   │   ├── messages.ts                   #   Aggregator
+│   │   ├── localeOverrides.ts
+│   │   └── messages/                     #   Domain dictionaries
+│   │       ├── settings.ts
+│   │       ├── preview.ts
+│   │       ├── history.ts
+│   │       └── common.ts
 │   ├── store/
-│   │   └── useAppStore.ts        #   Zustand global state
+│   │   ├── useAppStore.ts
+│   │   ├── appStoreTypes.ts
+│   │   └── appStoreDefaults.ts
+│   ├── components/
+│   │   ├── Settings.tsx
+│   │   └── settings/
 │   └── utils/
-│       └── windowBounds.ts       #   Window positioning helpers
 │
-├── src-tauri/                    # Backend (Rust)
+├── src-tauri/                            # Backend (Rust)
 │   ├── src/
-│   │   ├── main.rs               #   Application entry point
-│   │   ├── lib.rs                #   Tauri setup & plugin registration
-│   │   ├── mode_router.rs        #   Mode A/B1/B2/C routing logic
-│   │   ├── hotkey.rs             #   Global hotkey listener
-│   │   ├── selection.rs          #   UI Automation text selection detection
-│   │   ├── window_focus.rs       #   Foreground window lock & verification
-│   │   ├── audio_capture.rs      #   Microphone audio capture (cpal)
-│   │   ├── stt.rs                #   Speech-to-text (cloud & local Whisper)
-│   │   ├── llm.rs                #   LLM API calls (streaming)
-│   │   ├── clipboard.rs          #   Clipboard cache / restore
-│   │   ├── injection.rs          #   Text injection via Ctrl+V simulation
-│   │   └── undo.rs               #   Undo last injection (Alt+Z)
-│   └── Cargo.toml                #   Rust dependencies & feature flags
+│   │   ├── main.rs
+│   │   ├── lib.rs                        #   Tauri app assembly & command registration
+│   │   ├── commands/                     #   Grouped command handlers
+│   │   ├── stt.rs
+│   │   ├── stt/                          #   STT submodules (models/api_keys)
+│   │   ├── llm.rs
+│   │   └── llm/                          #   LLM helper submodules (formatting)
+│   └── Cargo.toml
 │
-├── public/                       # Static assets
+├── public/                               # Static assets
 ├── .github/workflows/
-│   └── release.yml               # CI/CD: auto-build on tag push
+│   └── release.yml                       # CI/CD: auto-build on tag push
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
