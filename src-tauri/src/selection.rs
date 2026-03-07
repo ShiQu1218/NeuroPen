@@ -174,6 +174,8 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         let mut last_emitted_text = String::new();
         let mut last_left_down = false;
         let mut drag_start: Option<(i32, i32)> = None;
+        let mut last_release_at: Option<std::time::Instant> = None;
+        let mut last_release_pos: Option<(i32, i32)> = None;
         // Sticky selection: when clipboard fallback succeeds, remember the
         // selection so it persists across polls until the user clicks again.
         let mut sticky_text: Option<String> = None;
@@ -181,10 +183,9 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(50));
 
-            let (raw_has_selection, raw_text, raw_unavailable) = match get_selected_text() {
-                SelectionResult::Selected(t) => (true, t, false),
-                SelectionResult::None => (false, String::new(), false),
-                SelectionResult::Unavailable => (false, String::new(), true),
+            let (raw_has_selection, raw_text) = match get_selected_text() {
+                SelectionResult::Selected(t) => (true, t),
+                SelectionResult::None | SelectionResult::Unavailable => (false, String::new()),
             };
             let left_down = is_left_button_down();
             let just_released = last_left_down && !left_down;
@@ -203,8 +204,22 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
             } else {
                 false
             };
+            let is_double_click_release = if just_released && !was_drag_select {
+                match (last_release_at.as_ref(), last_release_pos.as_ref()) {
+                    (Some(prev_at), Some((px, py))) => {
+                        prev_at.elapsed() <= std::time::Duration::from_millis(450)
+                            && (cx - *px).abs() <= 4
+                            && (cy - *py).abs() <= 4
+                    }
+                    _ => false,
+                }
+            } else {
+                false
+            };
             if just_released {
                 drag_start = None;
+                last_release_at = Some(std::time::Instant::now());
+                last_release_pos = Some((cx, cy));
             }
 
             // Only surface selection after mouse release so icon appears post-selection.
@@ -215,11 +230,14 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 String::new()
             };
 
-            // In UIA-unavailable apps, capture the selection immediately after
+            // If UIA did not return a selection, capture immediately after
             // mouse release while it is still active, then restore clipboard.
             // This keeps Quick Action responsive without reading stale clipboard
             // contents later after the user clicks the popup.
-            if just_released && was_drag_select && !has_selection && raw_unavailable {
+            if just_released
+                && (was_drag_select || is_double_click_release)
+                && !has_selection
+            {
                 if let Some(snapshot) = capture_selection_snapshot_via_clipboard() {
                     has_selection = true;
                     text = snapshot.clone();
