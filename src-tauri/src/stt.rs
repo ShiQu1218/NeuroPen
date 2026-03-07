@@ -19,6 +19,9 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::Emitter;
 
+mod api_keys;
+mod models;
+
 /// Which STT backend to use.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -52,77 +55,10 @@ pub fn get_capabilities() -> SttCapabilities {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalSttModel {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub speed: u8,
-    pub accuracy: u8,
-    pub download_url: String,
-    pub file_name: String,
-    pub installed: bool,
-    pub active: bool,
-    pub model_path: String,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct LocalSttCatalogEntry {
-    id: &'static str,
-    name: &'static str,
-    description: &'static str,
-    speed: u8,
-    accuracy: u8,
-    file_name: &'static str,
-    download_url: &'static str,
-}
-
-const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 4] = [
-    LocalSttCatalogEntry {
-        id: "whisper-small",
-        name: "Whisper Small",
-        description: "速度快，維持良好準確性，適合日常語音輸入。",
-        speed: 4,
-        accuracy: 3,
-        file_name: "ggml-small.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
-    },
-    LocalSttCatalogEntry {
-        id: "whisper-medium",
-        name: "Whisper Medium",
-        description: "速度與準確性平衡，長句辨識更穩定。",
-        speed: 3,
-        accuracy: 4,
-        file_name: "ggml-medium.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
-    },
-    LocalSttCatalogEntry {
-        id: "whisper-large",
-        name: "Whisper Large",
-        description: "準確性高，模型較大，推論較慢。",
-        speed: 2,
-        accuracy: 5,
-        file_name: "ggml-large-v3.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
-    },
-    LocalSttCatalogEntry {
-        id: "whisper-turbo",
-        name: "Whisper Turbo",
-        description: "Large Turbo 版本，兼顧速度與高準確性。",
-        speed: 5,
-        accuracy: 4,
-        file_name: "ggml-large-v3-turbo.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
-    },
-];
+pub use models::LocalSttModel;
 
 /// Global recording handle — only one recording at a time.
 static CAPTURE: Mutex<Option<CaptureHandle>> = Mutex::new(None);
-
-/// In-process cache so we don't read from file on every call.
-static API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
-static STT_API_KEY_CACHE: Mutex<Option<String>> = Mutex::new(None);
 
 // ── Streaming STT state ─────────────────────────────────────────────────
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -158,87 +94,14 @@ fn has_external_engine_command(env_key: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Get the path to the API key file (~/.talkflow/api_key).
-fn api_key_file_path() -> Result<PathBuf, String> {
-    Ok(talkflow_dir()?.join("api_key"))
-}
-
-/// Get the path to the STT API key file (~/.talkflow/stt_api_key).
-fn stt_api_key_file_path() -> Result<PathBuf, String> {
-    Ok(talkflow_dir()?.join("stt_api_key"))
-}
-
-fn local_models_dir() -> Result<PathBuf, String> {
-    let dir = talkflow_dir()?.join("models");
-    if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create model dir: {e}"))?;
-    }
-    Ok(dir)
-}
-
-fn active_model_file_path() -> Result<PathBuf, String> {
-    Ok(talkflow_dir()?.join("active_local_stt_model"))
-}
-
-fn catalog_entry_by_id(model_id: &str) -> Option<&'static LocalSttCatalogEntry> {
-    LOCAL_STT_CATALOG.iter().find(|entry| entry.id == model_id)
-}
-
-fn model_file_path(entry: &LocalSttCatalogEntry) -> Result<PathBuf, String> {
-    Ok(local_models_dir()?.join(entry.file_name))
-}
-
-fn read_active_model_id() -> Option<String> {
-    let path = active_model_file_path().ok()?;
-    let content = std::fs::read_to_string(path).ok()?;
-    let model_id = content.trim().to_string();
-    if model_id.is_empty() {
-        None
-    } else {
-        Some(model_id)
-    }
-}
-
-fn write_active_model_id(model_id: Option<&str>) -> Result<(), String> {
-    let path = active_model_file_path()?;
-    match model_id {
-        Some(id) if !id.is_empty() => {
-            std::fs::write(path, id).map_err(|e| format!("Failed to save active model: {e}"))?
-        }
-        _ => {
-            let _ = std::fs::remove_file(path);
-        }
-    }
-    Ok(())
-}
-
 pub fn list_local_stt_models() -> Result<Vec<LocalSttModel>, String> {
-    let active_model_id = read_active_model_id();
-    LOCAL_STT_CATALOG
-        .iter()
-        .map(|entry| {
-            let path = model_file_path(entry)?;
-            let installed = path.is_file();
-            Ok(LocalSttModel {
-                id: entry.id.to_string(),
-                name: entry.name.to_string(),
-                description: entry.description.to_string(),
-                speed: entry.speed,
-                accuracy: entry.accuracy,
-                download_url: entry.download_url.to_string(),
-                file_name: entry.file_name.to_string(),
-                installed,
-                active: installed && active_model_id.as_deref() == Some(entry.id),
-                model_path: path.to_string_lossy().to_string(),
-            })
-        })
-        .collect()
+    models::list_local_stt_models()
 }
 
 pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) -> Result<LocalSttModel, String> {
-    let entry = catalog_entry_by_id(&model_id)
+    let entry = models::catalog_entry_by_id(&model_id)
         .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
-    let target_path = model_file_path(entry)?;
+    let target_path = models::model_file_path(entry)?;
     if !target_path.exists() {
         if MODEL_DOWNLOAD_ACTIVE.swap(true, Ordering::SeqCst) {
             return Err("Another model download is in progress".to_string());
@@ -323,7 +186,7 @@ pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) ->
         }
     }
 
-    list_local_stt_models()?
+    models::list_local_stt_models()?
         .into_iter()
         .find(|model| model.id == model_id)
         .ok_or_else(|| "Installed model not found in catalog".to_string())
@@ -339,178 +202,35 @@ pub fn cancel_local_stt_download() -> bool {
 }
 
 pub fn delete_local_stt_model(model_id: String) -> Result<(), String> {
-    let entry = catalog_entry_by_id(&model_id)
-        .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
-    let target_path = model_file_path(entry)?;
-    if target_path.exists() {
-        std::fs::remove_file(&target_path).map_err(|e| format!("Failed to delete model file: {e}"))?;
-    }
-    if read_active_model_id().as_deref() == Some(entry.id) {
-        write_active_model_id(None)?;
-    }
-    Ok(())
+    models::delete_local_stt_model(model_id)
 }
 
 pub fn select_local_stt_model(model_id: String) -> Result<String, String> {
-    let entry = catalog_entry_by_id(&model_id)
-        .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
-    let target_path = model_file_path(entry)?;
-    if !target_path.is_file() {
-        return Err("模型尚未安裝，請先安裝後再選擇。".into());
-    }
-    write_active_model_id(Some(entry.id))?;
-    Ok(target_path.to_string_lossy().to_string())
+    models::select_local_stt_model(model_id)
 }
 
-const KEYRING_SERVICE: &str = "talkflow";
-const KEYRING_LLM_USER: &str = "llm-api-key";
-const KEYRING_STT_USER: &str = "stt-api-key";
-
-fn keyring_set(user: &str, key: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, user)
-        .map_err(|e| format!("Credential store error: {e}"))?;
-    entry.set_password(key)
-        .map_err(|e| format!("Failed to save key to credential store: {e}"))
-}
-
-fn keyring_get(user: &str) -> Option<String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, user).ok()?;
-    entry.get_password().ok().filter(|k| !k.trim().is_empty())
-}
-
-fn keyring_delete(user: &str) {
-    if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, user) {
-        let _ = entry.delete_credential();
-    }
-}
-
-/// Migrate a plaintext key file into the credential store and delete the file.
-fn migrate_key_file_to_keyring(file_path: &std::path::Path, keyring_user: &str) {
-    if let Ok(contents) = std::fs::read_to_string(file_path) {
-        let key = contents.trim().to_string();
-        if !key.is_empty() {
-            if keyring_set(keyring_user, &key).is_ok() {
-                let _ = std::fs::remove_file(file_path);
-            }
-        }
-    }
-}
-
-/// Store the LLM API key in the OS credential store and update the in-process cache.
 pub fn set_api_key(key: String) -> Result<(), String> {
-    if key.is_empty() {
-        keyring_delete(KEYRING_LLM_USER);
-        // Also remove legacy file if it exists
-        if let Ok(path) = api_key_file_path() {
-            let _ = std::fs::remove_file(path);
-        }
-        let mut cache = API_KEY_CACHE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
-        *cache = None;
-    } else {
-        keyring_set(KEYRING_LLM_USER, &key)?;
-        let mut cache = API_KEY_CACHE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
-        *cache = Some(key);
-    }
-    Ok(())
+    api_keys::set_api_key(key)
 }
 
-/// Check whether an API key exists (without revealing the value).
 pub fn has_api_key() -> bool {
-    if let Ok(guard) = API_KEY_CACHE.lock() {
-        if guard.is_some() {
-            return true;
-        }
-    }
-    get_api_key().is_ok()
+    api_keys::has_api_key()
 }
 
 pub fn set_stt_api_key(key: String) -> Result<(), String> {
-    if key.is_empty() {
-        keyring_delete(KEYRING_STT_USER);
-        if let Ok(path) = stt_api_key_file_path() {
-            let _ = std::fs::remove_file(path);
-        }
-        let mut cache = STT_API_KEY_CACHE
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {e}"))?;
-        *cache = None;
-    } else {
-        keyring_set(KEYRING_STT_USER, &key)?;
-        let mut cache = STT_API_KEY_CACHE
-            .lock()
-            .map_err(|e| format!("Lock poisoned: {e}"))?;
-        *cache = Some(key);
-    }
-    Ok(())
+    api_keys::set_stt_api_key(key)
 }
 
 pub fn has_stt_api_key() -> bool {
-    if let Ok(guard) = STT_API_KEY_CACHE.lock() {
-        if guard.is_some() {
-            return true;
-        }
-    }
-    get_stt_api_key().is_ok()
+    api_keys::has_stt_api_key()
 }
 
 pub(crate) fn get_stt_api_key() -> Result<String, String> {
-    if let Ok(guard) = STT_API_KEY_CACHE.lock() {
-        if let Some(ref key) = *guard {
-            return Ok(key.clone());
-        }
-    }
-    // Try credential store first
-    if let Some(key) = keyring_get(KEYRING_STT_USER) {
-        if let Ok(mut cache) = STT_API_KEY_CACHE.lock() {
-            *cache = Some(key.clone());
-        }
-        return Ok(key);
-    }
-    // Migrate from legacy plaintext file
-    if let Ok(path) = stt_api_key_file_path() {
-        if path.is_file() {
-            migrate_key_file_to_keyring(&path, KEYRING_STT_USER);
-            if let Some(key) = keyring_get(KEYRING_STT_USER) {
-                if let Ok(mut cache) = STT_API_KEY_CACHE.lock() {
-                    *cache = Some(key.clone());
-                }
-                return Ok(key);
-            }
-        }
-    }
-    Err("未設定 Whisper STT API Key。請在設定中填入 STT API Key。".to_string())
+    api_keys::get_stt_api_key()
 }
 
-/// Read the LLM API key — checks in-process cache first, then credential store.
-/// Migrates legacy plaintext files to the credential store on first access.
-/// Never exposed to frontend.
 pub(crate) fn get_api_key() -> Result<String, String> {
-    // Check cache
-    if let Ok(guard) = API_KEY_CACHE.lock() {
-        if let Some(ref key) = *guard {
-            return Ok(key.clone());
-        }
-    }
-    // Try credential store
-    if let Some(key) = keyring_get(KEYRING_LLM_USER) {
-        if let Ok(mut cache) = API_KEY_CACHE.lock() {
-            *cache = Some(key.clone());
-        }
-        return Ok(key);
-    }
-    // Migrate from legacy plaintext file
-    if let Ok(path) = api_key_file_path() {
-        if path.is_file() {
-            migrate_key_file_to_keyring(&path, KEYRING_LLM_USER);
-            if let Some(key) = keyring_get(KEYRING_LLM_USER) {
-                if let Ok(mut cache) = API_KEY_CACHE.lock() {
-                    *cache = Some(key.clone());
-                }
-                return Ok(key);
-            }
-        }
-    }
-    Err("未設定 OpenAI API Key。請在設定中填入 API Key。".to_string())
+    api_keys::get_api_key()
 }
 
 #[derive(Debug, Clone, Serialize)]

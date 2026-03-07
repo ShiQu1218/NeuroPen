@@ -14,15 +14,14 @@
  * which is stored only in Rust process memory via the set_api_key command.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n, type TranslationKey } from "../i18n";
+import { settingsService } from "../services/settingsService";
 import {
   normalizeLlmModelOptions,
   useAppStore,
   type AppLanguage,
-  type LlmProvider,
   type PreferredLanguage,
   type TranslationTarget,
   type QuickActionCommand,
@@ -31,7 +30,9 @@ import {
   type PunctuationMode,
 } from "../store/useAppStore";
 import SettingsFooter from "./settings/SettingsFooter";
+import SettingsGeneralSection from "./settings/SettingsGeneralSection";
 import SettingsHistorySection from "./settings/SettingsHistorySection";
+import SettingsLlmSection from "./settings/SettingsLlmSection";
 import SettingsQuickActionSection from "./settings/SettingsQuickActionSection";
 import SettingsSidebar from "./settings/SettingsSidebar";
 import SettingsTtsSection from "./settings/SettingsTtsSection";
@@ -42,7 +43,6 @@ import {
   STATUS_RESET_MS,
   type LocalSttModel,
   type ModelDownloadProgressEvent,
-  type RegisteredHotkeys,
   type SettingsSection,
 } from "./settings/settingsShared";
 
@@ -207,10 +207,7 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    invoke<{
-      openAiAvailable: boolean;
-      localAvailable: boolean;
-    }>("get_stt_capabilities")
+    settingsService.getSttCapabilities()
       .then((caps) => {
         setLocalSttAvailable(caps.localAvailable);
       })
@@ -218,21 +215,21 @@ export default function Settings() {
         setLocalSttAvailable(false);
       });
 
-    invoke<boolean>("has_api_key")
+    settingsService.hasApiKey()
       .then((has) => setApiKeySet(has))
       .catch(() => setApiKeySet(false));
 
-    invoke<boolean>("has_stt_api_key")
+    settingsService.hasSttApiKey()
       .then((has) => setSttApiKeySet(has))
       .catch(() => setSttApiKeySet(false));
 
     setAudioDevicesLoading(true);
-    invoke<string[]>("list_audio_devices")
+    settingsService.listAudioDevices()
       .then((devices) => setAudioDevices(devices))
       .catch(() => setAudioDevices([]))
       .finally(() => setAudioDevicesLoading(false));
 
-    invoke<boolean>("get_launch_on_startup")
+    settingsService.getLaunchOnStartup()
       .then((enabled) => {
         setDraftLaunchOnStartup(enabled);
       })
@@ -247,7 +244,7 @@ export default function Settings() {
           });
         });
       }
-      const registeredHotkeys = await invoke<RegisteredHotkeys>("get_registered_hotkeys").catch((err) => {
+      const registeredHotkeys = await settingsService.getRegisteredHotkeys().catch((err) => {
         console.warn("[Settings] get_registered_hotkeys failed:", err);
         return null;
       });
@@ -347,7 +344,7 @@ export default function Settings() {
   const loadLocalModels = useCallback(async () => {
     setLocalModelsLoading(true);
     try {
-      const models = await invoke<LocalSttModel[]>("list_local_stt_models");
+      const models = await settingsService.listLocalSttModels();
       setLocalModels(models);
     } catch (err) {
       console.error("[Settings] list_local_stt_models failed:", err);
@@ -400,7 +397,7 @@ export default function Settings() {
 
   const handleSaveApiKey = () => {
     setApiKeySaveStatus("saving");
-    invoke("set_api_key", { key: apiKeyInput })
+    settingsService.setApiKey(apiKeyInput)
       .then(() => {
         setApiKeySet(apiKeyInput.length > 0);
         setApiKeyInput("");
@@ -415,7 +412,7 @@ export default function Settings() {
 
   const handleSaveSttApiKey = () => {
     setSttApiKeySaveStatus("saving");
-    invoke("set_stt_api_key", { key: sttApiKeyInput })
+    settingsService.setSttApiKey(sttApiKeyInput)
       .then(() => {
         setSttApiKeySet(sttApiKeyInput.length > 0);
         setSttApiKeyInput("");
@@ -517,16 +514,16 @@ export default function Settings() {
     try {
       setHotkeyErrorMessage("");
       if (nextHotkey !== hotkey) {
-        await invoke("change_hotkey", { hotkeyStr: nextHotkey });
+        await settingsService.changeHotkey(nextHotkey);
       }
       if (nextScreenshotHotkey !== screenshotHotkey) {
-        await invoke("change_screenshot_hotkey", { hotkeyStr: nextScreenshotHotkey });
+        await settingsService.changeScreenshotHotkey(nextScreenshotHotkey);
       }
       if (draftLaunchOnStartup !== launchOnStartup) {
-        await invoke("set_launch_on_startup", { enabled: draftLaunchOnStartup });
+        await settingsService.setLaunchOnStartup(draftLaunchOnStartup);
       }
       if (draftMicrophoneSource !== microphoneSource) {
-        await invoke("set_audio_device", { name: draftMicrophoneSource });
+        await settingsService.setAudioDevice(draftMicrophoneSource);
       }
 
       setWakeWord(nextWakeWord);
@@ -561,7 +558,7 @@ export default function Settings() {
       setLanguage(draftLanguage);
       setHistoryEnabled(draftHistoryEnabled);
       setTranslationTarget(nextTranslationTarget);
-      await invoke("set_runtime_stt_config", {
+      await settingsService.setRuntimeSttConfig({
         engine: nextSttEngine,
         modelPath: nextSttModelPath,
         sttLanguage: nextSttLanguage,
@@ -763,7 +760,7 @@ export default function Settings() {
     const success = await withModelBusy(
       modelId,
       "install",
-      () => invoke<void>("install_local_stt_model", { modelId }),
+      () => settingsService.installLocalSttModel(modelId),
       t("settings.status.modelInstalled"),
       t("settings.status.modelInstallFailed"),
     );
@@ -773,7 +770,7 @@ export default function Settings() {
   };
 
   const handleCancelLocalModelDownload = async () => {
-    await invoke("cancel_local_stt_download");
+    await settingsService.cancelLocalSttDownload();
   };
 
   const handleDeleteLocalModel = (modelId: string) =>
@@ -782,12 +779,12 @@ export default function Settings() {
       "delete",
       async () => {
         const deleting = localModels.find((model) => model.id === modelId);
-        await invoke("delete_local_stt_model", { modelId });
+        await settingsService.deleteLocalSttModel(modelId);
         if (deleting && (deleting.modelPath === sttModelPath || draftSttModelChoice === modelId)) {
           setDraftSttModelChoice(OPENAI_STT_MODEL);
           setDraftSttEngine("openAi");
           setSttModelPath("");
-          await invoke("set_runtime_stt_config", {
+          await settingsService.setRuntimeSttConfig({
             engine: "openAi",
             modelPath: "",
             sttLanguage: draftSttLanguage,
@@ -959,192 +956,31 @@ export default function Settings() {
         <div className="glass-panel-md p-4 min-h-0 flex flex-col">
           <div className="space-y-5 min-h-0 overflow-y-auto pr-1">
           {activeSection === "general" && (
-            <>
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.language.label")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftLanguage}
-                  onChange={(e) => setDraftLanguage(e.target.value as AppLanguage)}
-                >
-                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
-                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-                  <option value="en-US">{t("settings.language.en-US")}</option>
-                  <option value="ja-JP">{t("settings.language.ja-JP")}</option>
-                  <option value="es-ES">{t("settings.language.es-ES")}</option>
-                  <option value="ko-KR">{t("settings.language.ko-KR")}</option>
-                  <option value="de-DE">{t("settings.language.de-DE")}</option>
-                  <option value="fr-FR">{t("settings.language.fr-FR")}</option>
-                  <option value="ar-SA">{t("settings.language.ar-SA")}</option>
-                  <option value="ru-RU">{t("settings.language.ru-RU")}</option>
-                </select>
-                <p className="text-xs text-gray-400">{t("settings.language.hint")}</p>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.launchOnStartup.label")}</label>
-                <label className="flex items-center gap-2 text-xs text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={draftLaunchOnStartup}
-                    onChange={(e) => setDraftLaunchOnStartup(e.target.checked)}
-                  />
-                  {t("settings.launchOnStartup.hint")}
-                </label>
-              </div>
-
-              <div className="space-y-2">
-                <label className="font-medium">{t("settings.features.title")}</label>
-                <p className="text-xs text-gray-500">{t("settings.features.hint")}</p>
-                <label className="flex items-center gap-2 text-xs text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={draftSttEnabled}
-                    onChange={(e) => setDraftSttEnabled(e.target.checked)}
-                  />
-                  {t("settings.feature.stt")}
-                </label>
-                <label className="flex items-center gap-2 text-xs text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={draftSelectionEnabled}
-                    onChange={(e) => setDraftSelectionEnabled(e.target.checked)}
-                  />
-                  {t("settings.feature.selection")}
-                </label>
-                <label className="flex items-center gap-2 text-xs text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={draftScreenshotEnabled}
-                    onChange={(e) => setDraftScreenshotEnabled(e.target.checked)}
-                  />
-                  {t("settings.feature.screenshot")}
-                </label>
-              </div>
-
-              {/* Hotkey */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.hotkey.label")}</label>
-                <input
-                  className="w-full input-field px-2 py-1"
-                  value={draftHotkey}
-                  readOnly
-                  placeholder={t("settings.hotkey.placeholder")}
-                  onKeyDown={(e) => {
-                    e.preventDefault();
-                    if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
-
-                    const parts: string[] = [];
-                    if (e.ctrlKey) parts.push("Ctrl");
-                    if (e.altKey) parts.push("Alt");
-                    if (e.shiftKey) parts.push("Shift");
-                    if (e.metaKey) parts.push("Super");
-
-                    let key = e.key;
-                    if (e.code === "Backquote" || key === "Dead") key = "Backquote";
-                    else if (key === " ") key = "Space";
-                    else if (key.length === 1) key = key.toUpperCase();
-                    parts.push(key);
-
-                    setDraftHotkey(parts.join("+"));
-                    setHotkeyStatus("");
-                    setHotkeyErrorMessage("");
-                  }}
-                />
-                <p className="text-xs text-gray-400">{t("settings.hotkey.help")}</p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDraftHotkey("Alt+Backquote");
-                      setHotkeyStatus("");
-                      setHotkeyErrorMessage("");
-                    }}
-                    className="btn-secondary px-2 py-1 text-xs"
-                  >
-                    {t("settings.hotkey.reset")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDraftHotkey("");
-                      setHotkeyStatus("");
-                      setHotkeyErrorMessage("");
-                    }}
-                    className="btn-secondary px-2 py-1 text-xs"
-                  >
-                    {t("settings.hotkey.clear")}
-                  </button>
-                  <span className="text-xs text-gray-400">{t("settings.hotkey.resetHint")}</span>
-                </div>
-                {!draftHotkey && (
-                  <p className="text-xs text-amber-700">{t("settings.hotkey.emptyHint")}</p>
-                )}
-                {hotkeyStatus === "error" && (
-                  <p className="text-xs text-red-600">
-                    {hotkeyErrorMessage
-                      ? t("settings.hotkey.errorWithReason", { reason: hotkeyErrorMessage })
-                      : t("settings.hotkey.error")}
-                  </p>
-                )}
-              </div>
-
-              {/* Screenshot hotkey */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.screenshot.label")} Hotkey</label>
-                <input
-                  className="w-full input-field px-2 py-1"
-                  value={draftScreenshotHotkey}
-                  readOnly
-                  onKeyDown={(e) => {
-                    e.preventDefault();
-                    if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return;
-                    const parts: string[] = [];
-                    if (e.ctrlKey) parts.push("Ctrl");
-                    if (e.altKey) parts.push("Alt");
-                    if (e.shiftKey) parts.push("Shift");
-                    if (e.metaKey) parts.push("Super");
-                    let key = e.key;
-                    if (e.code === "Backquote" || key === "Dead") key = "Backquote";
-                    else if (key === " ") key = "Space";
-                    else if (key.length === 1) key = key.toUpperCase();
-                    parts.push(key);
-                    setDraftScreenshotHotkey(parts.join("+"));
-                    setHotkeyStatus("");
-                    setHotkeyErrorMessage("");
-                  }}
-                />
-                <p className="text-xs text-gray-400">{t("settings.screenshot.hint")}（可自訂）</p>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDraftScreenshotHotkey("");
-                      setHotkeyStatus("");
-                      setHotkeyErrorMessage("");
-                    }}
-                    className="btn-secondary px-2 py-1 text-xs"
-                  >
-                    {t("settings.hotkey.clear")}
-                  </button>
-                  {!draftScreenshotHotkey && (
-                    <span className="text-xs text-amber-700">{t("settings.hotkey.emptyHint")}</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Wake word */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.wakeWord.label")}</label>
-                <input
-                  className="w-full input-field px-2 py-1"
-                  value={draftWakeWord}
-                  onChange={(e) => setDraftWakeWord(e.target.value)}
-                  placeholder={t("settings.wakeWord.placeholder")}
-                />
-                <p className="text-xs text-gray-400">{t("settings.wakeWord.hint")}</p>
-              </div>
-            </>
+            <SettingsGeneralSection
+              draftLanguage={draftLanguage}
+              draftLaunchOnStartup={draftLaunchOnStartup}
+              draftSttEnabled={draftSttEnabled}
+              draftSelectionEnabled={draftSelectionEnabled}
+              draftScreenshotEnabled={draftScreenshotEnabled}
+              draftHotkey={draftHotkey}
+              draftScreenshotHotkey={draftScreenshotHotkey}
+              draftWakeWord={draftWakeWord}
+              hotkeyStatus={hotkeyStatus}
+              hotkeyErrorMessage={hotkeyErrorMessage}
+              onLanguageChange={setDraftLanguage}
+              onLaunchOnStartupChange={setDraftLaunchOnStartup}
+              onSttEnabledChange={setDraftSttEnabled}
+              onSelectionEnabledChange={setDraftSelectionEnabled}
+              onScreenshotEnabledChange={setDraftScreenshotEnabled}
+              onHotkeyChange={setDraftHotkey}
+              onScreenshotHotkeyChange={setDraftScreenshotHotkey}
+              onWakeWordChange={setDraftWakeWord}
+              onClearHotkeyError={() => {
+                setHotkeyStatus("");
+                setHotkeyErrorMessage("");
+              }}
+              t={t}
+            />
           )}
 
           {activeSection === "stt" && (
@@ -1516,212 +1352,35 @@ export default function Settings() {
           )}
 
           {activeSection === "llm" && (
-            <>
-              {/* Output mode */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.llm.outputMode")}</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="outputMode"
-                      value="PreviewStream"
-                      checked={draftOutputMode === "PreviewStream"}
-                      onChange={() => setDraftOutputMode("PreviewStream")}
-                    />
-                    {t("settings.llm.previewStream")}
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="outputMode"
-                      value="DirectInject"
-                      checked={draftOutputMode === "DirectInject"}
-                      onChange={() => setDraftOutputMode("DirectInject")}
-                    />
-                    {t("settings.llm.directInject")}
-                  </label>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="font-medium">{t("settings.llm.streamToggles")}</label>
-                <p className="text-xs text-gray-400">{t("settings.llm.streamTogglesHint")}</p>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={draftModeAStreamOutput}
-                    onChange={(e) => setDraftModeAStreamOutput(e.target.checked)}
-                  />
-                  <span>{t("settings.llm.modeAStreamOutput")}</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={draftModeBStreamOutput}
-                    onChange={(e) => setDraftModeBStreamOutput(e.target.checked)}
-                  />
-                  <span>{t("settings.llm.modeBStreamOutput")}</span>
-                </label>
-              </div>
-
-              {/* LLM Provider + Model */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.llm.provider")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftLlmProvider}
-                  onChange={(e) => setDraftLlmProvider(e.target.value as LlmProvider)}
-                >
-                  <option value="openAi">OpenAI</option>
-                  <option value="gemini">Gemini</option>
-                  <option value="claude">Claude</option>
-                  <option value="grok">Grok</option>
-                  <option value="qwen">Qwen</option>
-                  <option value="doubao">豆包 Doubao</option>
-                  <option value="deepseek">DeepSeek</option>
-                  <option value="ollama">{t("settings.llm.ollamaLocal")}</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.llm.model")}</label>
-                <select
-                  className="w-full input-field px-2 py-1 font-mono text-xs"
-                  value={draftLlmModel}
-                  onChange={(e) => setDraftLlmModel(e.target.value)}
-                >
-                  {draftLlmModelOptions.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="w-full input-field px-2 py-1 font-mono text-xs"
-                  value={draftLlmModel}
-                  onChange={(e) => setDraftLlmModel(e.target.value)}
-                  placeholder="e.g. gpt-4o-mini / qwen-plus / doubao-seed-1-6-250615 / deepseek-chat / llama3.2"
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handleAddLlmModelOption}
-                    disabled={!draftLlmModel.trim()}
-                    className="btn-secondary px-2 py-1 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {t("settings.llm.modelAdd")}
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {draftLlmModelOptions.map((model) => (
-                    <button
-                      key={`saved-model-${model}`}
-                      type="button"
-                      onClick={() => handleDeleteLlmModelOption(model)}
-                      className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] hover:bg-red-100 hover:text-red-700"
-                    >
-                      {model} ×
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-400">{t("settings.llm.modelHint")}</p>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.preferredLanguage.label")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftPreferredLanguage}
-                  onChange={(e) => setDraftPreferredLanguage(e.target.value as PreferredLanguage)}
-                >
-                  <option value="auto">{t("settings.preferredLanguage.auto")}</option>
-                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
-                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-                  <option value="en-US">English</option>
-                  <option value="ja-JP">日本語</option>
-                  <option value="es-ES">Español</option>
-                  <option value="ko-KR">한국어</option>
-                  <option value="de-DE">Deutsch</option>
-                  <option value="fr-FR">Français</option>
-                  <option value="ar-SA">العربية</option>
-                  <option value="ru-RU">Русский</option>
-                </select>
-                <p className="text-xs text-gray-400">{t("settings.preferredLanguage.hint")}</p>
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="font-medium">{t("settings.llm.modePrompts")}</label>
-                  <p className="text-xs text-gray-400">{t("settings.llm.modePromptsHint")}</p>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-600">{t("settings.llm.modeAPrompt")}</label>
-                  <textarea
-                    className="w-full min-h-[92px] input-field px-3 py-2 text-xs leading-5"
-                    value={draftModeAPrompt}
-                    onChange={(e) => setDraftModeAPrompt(e.target.value)}
-                    placeholder={t("settings.llm.modeAPromptPlaceholder")}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-600">{t("settings.llm.modeBPrompt")}</label>
-                  <textarea
-                    className="w-full min-h-[92px] input-field px-3 py-2 text-xs leading-5"
-                    value={draftModeBPrompt}
-                    onChange={(e) => setDraftModeBPrompt(e.target.value)}
-                    placeholder={t("settings.llm.modeBPromptPlaceholder")}
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-zinc-600">{t("settings.llm.modeCPrompt")}</label>
-                  <textarea
-                    className="w-full min-h-[92px] input-field px-3 py-2 text-xs leading-5"
-                    value={draftModeCPrompt}
-                    onChange={(e) => setDraftModeCPrompt(e.target.value)}
-                    placeholder={t("settings.llm.modeCPromptPlaceholder")}
-                  />
-                </div>
-              </div>
-
-              {/* API Key — sent to Rust, never stored in localStorage */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.llm.apiKey")}</label>
-                {draftLlmProvider === "ollama" && (
-                  <p className="text-xs text-gray-500">{t("settings.llm.ollamaNoKey")}</p>
-                )}
-                {apiKeySet && (
-                  <p className="text-xs text-green-600">{t("settings.llm.apiKeySet")}</p>
-                )}
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    className="flex-1 input-field px-2 py-1 font-mono text-xs"
-                    value={apiKeyInput}
-                    onChange={(e) => setApiKeyInput(e.target.value)}
-                    placeholder={apiKeySet ? "••••••••" : t("settings.llm.apiKeyPlaceholder")}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && apiKeyInput) handleSaveApiKey();
-                    }}
-                  />
-                  <button
-                    onClick={handleSaveApiKey}
-                    disabled={!apiKeyInput || apiKeySaveStatus === "saving"}
-                    className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {apiKeySaveStatus === "saving" ? t("settings.llm.saving") : t("settings.llm.save")}
-                  </button>
-                </div>
-                {apiKeySaveStatus === "saved" && (
-                  <p className="text-xs text-green-600">{t("settings.llm.savedToMemory")}</p>
-                )}
-                {apiKeySaveStatus === "error" && (
-                  <p className="text-xs text-red-600">{t("settings.llm.saveFailed")}</p>
-                )}
-              </div>
-            </>
+            <SettingsLlmSection
+              draftOutputMode={draftOutputMode}
+              draftModeAStreamOutput={draftModeAStreamOutput}
+              draftModeBStreamOutput={draftModeBStreamOutput}
+              draftLlmProvider={draftLlmProvider}
+              draftLlmModel={draftLlmModel}
+              draftLlmModelOptions={draftLlmModelOptions}
+              draftPreferredLanguage={draftPreferredLanguage}
+              draftModeAPrompt={draftModeAPrompt}
+              draftModeBPrompt={draftModeBPrompt}
+              draftModeCPrompt={draftModeCPrompt}
+              apiKeySet={apiKeySet}
+              apiKeyInput={apiKeyInput}
+              apiKeySaveStatus={apiKeySaveStatus}
+              onOutputModeChange={setDraftOutputMode}
+              onModeAStreamOutputChange={setDraftModeAStreamOutput}
+              onModeBStreamOutputChange={setDraftModeBStreamOutput}
+              onLlmProviderChange={setDraftLlmProvider}
+              onLlmModelChange={setDraftLlmModel}
+              onAddLlmModelOption={handleAddLlmModelOption}
+              onDeleteLlmModelOption={handleDeleteLlmModelOption}
+              onPreferredLanguageChange={setDraftPreferredLanguage}
+              onModeAPromptChange={setDraftModeAPrompt}
+              onModeBPromptChange={setDraftModeBPrompt}
+              onModeCPromptChange={setDraftModeCPrompt}
+              onApiKeyInputChange={setApiKeyInput}
+              onSaveApiKey={handleSaveApiKey}
+              t={t}
+            />
           )}
 
           {activeSection === "tts" && (

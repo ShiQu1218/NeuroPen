@@ -1,5 +1,6 @@
 mod audio_capture;
 mod clipboard;
+mod commands;
 mod history;
 mod hotkey;
 mod injection;
@@ -20,6 +21,12 @@ use tauri::{Emitter, Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
+use commands::stt_commands::{
+    cancel_local_stt_download, delete_local_stt_model, get_stt_capabilities, has_api_key,
+    has_stt_api_key, install_local_stt_model, is_recording, list_audio_devices,
+    list_local_stt_models, select_local_stt_model, set_api_key, set_audio_device,
+    set_stt_api_key,
+};
 
 // ── Tauri command return types ──────────────────────────────────────────
 
@@ -215,80 +222,6 @@ fn set_runtime_stt_config(
         stt_language: stt_language.unwrap_or_else(|| "auto".to_string()),
     });
     Ok(())
-}
-
-/// Store the OpenAI API key (in OS credential store + in-process cache).
-#[tauri::command]
-fn set_api_key(key: String) -> Result<(), String> {
-    stt::set_api_key(key)
-}
-
-/// Check whether an API key has been configured.
-#[tauri::command]
-fn has_api_key() -> bool {
-    stt::has_api_key()
-}
-
-#[tauri::command]
-fn set_stt_api_key(key: String) -> Result<(), String> {
-    stt::set_stt_api_key(key)
-}
-
-#[tauri::command]
-fn has_stt_api_key() -> bool {
-    stt::has_stt_api_key()
-}
-
-/// Return which STT engines are compiled into this binary.
-#[tauri::command]
-fn get_stt_capabilities() -> stt::SttCapabilities {
-    stt::get_capabilities()
-}
-
-/// List local STT catalog with installed/active status.
-#[tauri::command]
-fn list_local_stt_models() -> Result<Vec<stt::LocalSttModel>, String> {
-    stt::list_local_stt_models()
-}
-
-/// Install a local STT model file.
-#[tauri::command]
-async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) -> Result<stt::LocalSttModel, String> {
-    stt::install_local_stt_model(app, model_id).await
-}
-
-#[tauri::command]
-fn cancel_local_stt_download() -> bool {
-    stt::cancel_local_stt_download()
-}
-
-/// Delete an installed local STT model file.
-#[tauri::command]
-fn delete_local_stt_model(model_id: String) -> Result<(), String> {
-    stt::delete_local_stt_model(model_id)
-}
-
-/// Select one installed local STT model as active and return its path.
-#[tauri::command]
-fn select_local_stt_model(model_id: String) -> Result<String, String> {
-    stt::select_local_stt_model(model_id)
-}
-
-/// Check if currently recording.
-#[tauri::command]
-fn is_recording() -> bool {
-    stt::is_recording()
-}
-
-/// List available audio input devices.
-#[tauri::command]
-fn list_audio_devices() -> Vec<String> {
-    audio_capture::list_input_devices()
-}
-
-#[tauri::command]
-fn set_audio_device(name: String) {
-    audio_capture::set_input_device(name);
 }
 
 const WINDOWS_RUN_KEY_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
