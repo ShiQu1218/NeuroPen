@@ -95,6 +95,8 @@ interface AppState {
   modeAPrompt: string;
   modeBPrompt: string;
   modeCPrompt: string;
+  modeAStreamOutput: boolean;
+  modeBStreamOutput: boolean;
   translationTarget: TranslationTarget;
   historyEnabled: boolean;
 
@@ -160,6 +162,8 @@ interface AppState {
   setModeAPrompt: (prompt: string) => void;
   setModeBPrompt: (prompt: string) => void;
   setModeCPrompt: (prompt: string) => void;
+  setModeAStreamOutput: (enabled: boolean) => void;
+  setModeBStreamOutput: (enabled: boolean) => void;
   setTranslationTarget: (target: TranslationTarget) => void;
   setHistoryEnabled: (enabled: boolean) => void;
   setIsTtsPlaying: (playing: boolean) => void;
@@ -204,6 +208,8 @@ export const useAppStore = create<AppState>()(
       modeAPrompt: DEFAULT_MODE_A_PROMPT,
       modeBPrompt: DEFAULT_MODE_B_PROMPT,
       modeCPrompt: DEFAULT_MODE_C_PROMPT,
+      modeAStreamOutput: false,
+      modeBStreamOutput: true,
       translationTarget: "off",
       historyEnabled: false,
 
@@ -280,6 +286,8 @@ export const useAppStore = create<AppState>()(
       setModeAPrompt: (modeAPrompt) => set({ modeAPrompt }),
       setModeBPrompt: (modeBPrompt) => set({ modeBPrompt }),
       setModeCPrompt: (modeCPrompt) => set({ modeCPrompt }),
+      setModeAStreamOutput: (modeAStreamOutput) => set({ modeAStreamOutput }),
+      setModeBStreamOutput: (modeBStreamOutput) => set({ modeBStreamOutput }),
       setTranslationTarget: (target) => set({ translationTarget: target }),
       setHistoryEnabled: (enabled) => set({ historyEnabled: enabled }),
       setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
@@ -352,6 +360,8 @@ export const useAppStore = create<AppState>()(
         modeAPrompt: state.modeAPrompt,
         modeBPrompt: state.modeBPrompt,
         modeCPrompt: state.modeCPrompt,
+        modeAStreamOutput: state.modeAStreamOutput,
+        modeBStreamOutput: state.modeBStreamOutput,
         translationTarget: state.translationTarget,
         historyEnabled: state.historyEnabled,
       }),

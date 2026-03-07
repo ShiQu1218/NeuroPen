@@ -77,6 +77,8 @@ export function useMainWindowController() {
     setModeAPrompt,
     setModeBPrompt,
     setModeCPrompt,
+    setModeAStreamOutput,
+    setModeBStreamOutput,
     setMicrophoneSource,
     setLaunchOnStartup,
     setHistoryEnabled,
@@ -254,6 +256,8 @@ export function useMainWindowController() {
         modeAPrompt?: string;
         modeBPrompt?: string;
         modeCPrompt?: string;
+        modeAStreamOutput?: boolean;
+        modeBStreamOutput?: boolean;
         microphoneSource?: string;
         launchOnStartup?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
@@ -345,6 +349,12 @@ export function useMainWindowController() {
           }
           if (typeof payload.modeCPrompt === "string") {
             setModeCPrompt(payload.modeCPrompt);
+          }
+          if (typeof payload.modeAStreamOutput === "boolean") {
+            setModeAStreamOutput(payload.modeAStreamOutput);
+          }
+          if (typeof payload.modeBStreamOutput === "boolean") {
+            setModeBStreamOutput(payload.modeBStreamOutput);
           }
           if (typeof payload.microphoneSource === "string") {
             setMicrophoneSource(payload.microphoneSource);
@@ -742,20 +752,69 @@ export function useMainWindowController() {
             if (llmNeedsApiKey && (shouldRefine || shouldTranslate)) {
               llmReady = await invoke<boolean>("has_api_key").catch(() => false);
             }
+            const title = store.contextAwareTone
+              ? await invoke<string>("get_foreground_window_title")
+              : "";
+            const toneHint = store.contextAwareTone ? inferAppToneHint(title) : "Keep original style.";
+            const vocabHint = store.vocabularyTerms.length
+              ? `Prefer these domain terms exactly when relevant: ${store.vocabularyTerms.join(", ")}.`
+              : "";
+            const refineInstruction =
+              `Only do light in-place polishing for this speech-to-text transcript (punctuation, formatting, and minor fluency fixes). Keep the exact same language and script as the original transcript, and never translate it. ${toneHint} ${vocabHint}`;
+            const translateInstruction =
+              `Translate to ${store.translationTarget}. Output ONLY the translation, nothing else.`;
+            const canStreamModeAPreview =
+              store.outputMode === "PreviewStream" &&
+              store.modeAStreamOutput &&
+              ((shouldRefine && !shouldTranslate) || (!shouldRefine && shouldTranslate));
+
+            if (canStreamModeAPreview && llmReady) {
+              const instruction = shouldTranslate ? translateInstruction : refineInstruction;
+              const preferredLanguage = shouldTranslate
+                ? store.translationTarget
+                : store.preferredLanguage;
+              store.setLlmOutput("");
+              store.setIsLlmLoading(true);
+              store.setLlmError("");
+              store.setLastSelectedText(finalText);
+              store.setLastInstruction(instruction);
+              await emitPreviewSession({
+                sessionType: "text",
+                sourceMode: "A",
+                selectedText: finalText,
+                instruction,
+              });
+              await showPreviewWindow({ focusable: true, focus: true });
+              setStatusMsg(shouldTranslate ? t("status.translating") : t("status.llmRefining"));
+              try {
+                await invoke("call_llm", {
+                  selectedText: finalText,
+                  instruction,
+                  outputMode: "PreviewStream",
+                  provider: store.llmProvider,
+                  model: store.llmModel,
+                  preferredLanguage,
+                  promptMode: "A",
+                  promptOverride: store.modeAPrompt,
+                  streamOutput: true,
+                });
+                return;
+              } catch (err) {
+                const reason = err instanceof Error ? err.message : String(err);
+                store.setIsLlmLoading(false);
+                store.setLlmError(reason);
+                setStatusMsg(t("status.routeFailed", { reason }));
+                setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
+                return;
+              }
+            }
             if (shouldRefine && llmReady) {
               try {
                 usedLlmForModeA = true;
                 setStatusMsg(t("status.llmRefining"));
-                const title = store.contextAwareTone
-                  ? await invoke<string>("get_foreground_window_title")
-                  : "";
-                const toneHint = store.contextAwareTone ? inferAppToneHint(title) : "Keep original style.";
-                const vocabHint = store.vocabularyTerms.length
-                  ? `Prefer these domain terms exactly when relevant: ${store.vocabularyTerms.join(", ")}.`
-                  : "";
                 const refined = await invoke<string>("call_llm_text", {
                   selectedText: finalText,
-                  instruction: `Only do light in-place polishing for this speech-to-text transcript (punctuation, formatting, and minor fluency fixes). Keep the exact same language and script as the original transcript, and never translate it. ${toneHint} ${vocabHint}`,
+                  instruction: refineInstruction,
                   provider: store.llmProvider,
                   model: store.llmModel,
                   preferredLanguage: store.preferredLanguage,
@@ -790,7 +849,7 @@ export function useMainWindowController() {
                 setStatusMsg(t("status.translating"));
                 const translated = await invoke<string>("call_llm_text", {
                   selectedText: finalText,
-                  instruction: `Translate to ${store.translationTarget}. Output ONLY the translation, nothing else.`,
+                  instruction: translateInstruction,
                   provider: store.llmProvider,
                   model: store.llmModel,
                   preferredLanguage: store.translationTarget,
@@ -906,6 +965,7 @@ export function useMainWindowController() {
                 preferredLanguage: store.preferredLanguage,
                 promptMode: "B",
                 promptOverride: store.modeBPrompt,
+                streamOutput: store.modeBStreamOutput,
               });
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);
@@ -946,6 +1006,7 @@ export function useMainWindowController() {
                 preferredLanguage: store.preferredLanguage,
                 promptMode: "C",
                 promptOverride: store.modeCPrompt,
+                streamOutput: true,
               });
               if (store.outputMode === "DirectInject") {
                 await invoke("restore_clipboard");

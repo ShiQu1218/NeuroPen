@@ -24,6 +24,8 @@ export default function QuickActionIcon() {
   const setModeAPrompt = useAppStore((s) => s.setModeAPrompt);
   const setModeBPrompt = useAppStore((s) => s.setModeBPrompt);
   const setModeCPrompt = useAppStore((s) => s.setModeCPrompt);
+  const setModeAStreamOutput = useAppStore((s) => s.setModeAStreamOutput);
+  const setModeBStreamOutput = useAppStore((s) => s.setModeBStreamOutput);
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
@@ -78,6 +80,8 @@ export default function QuickActionIcon() {
         modeAPrompt?: string;
         modeBPrompt?: string;
         modeCPrompt?: string;
+        modeAStreamOutput?: boolean;
+        modeBStreamOutput?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
         "talkflow://settings-saved",
@@ -109,6 +113,12 @@ export default function QuickActionIcon() {
           if (typeof event.payload.modeCPrompt === "string") {
             setModeCPrompt(event.payload.modeCPrompt);
           }
+          if (typeof event.payload.modeAStreamOutput === "boolean") {
+            setModeAStreamOutput(event.payload.modeAStreamOutput);
+          }
+          if (typeof event.payload.modeBStreamOutput === "boolean") {
+            setModeBStreamOutput(event.payload.modeBStreamOutput);
+          }
           if (event.payload.quickActionCommands) {
             setQuickActionCommands(event.payload.quickActionCommands);
           }
@@ -128,7 +138,7 @@ export default function QuickActionIcon() {
       void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeBPrompt, setModeCPrompt, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
 
   useEffect(() => {
     void setWindowFocusable(false);
@@ -246,6 +256,7 @@ export default function QuickActionIcon() {
         preferredLanguage: currentState.preferredLanguage,
         promptMode: "B",
         promptOverride: currentState.modeBPrompt,
+        streamOutput: currentState.modeBStreamOutput,
       });
     } catch (err) {
       console.error("[QuickAction] call_llm failed:", err);

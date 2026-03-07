@@ -26,6 +26,55 @@ export const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
   return normalized;
 };
 
+const SENTENCE_BOUNDARY_RE = /([.!?;。！？؛；]+)\s*/g;
+const CLAUSE_BOUNDARY_RE = /([,;:，、：؛；])\s*/g;
+const LIST_PREFIX_RE = /^(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+)/;
+
+const buildParagraphs = (
+  parts: string[],
+  options: { maxParts: number; maxChars: number }
+) => {
+  const paragraphs: string[] = [];
+  let bucket: string[] = [];
+  let bucketChars = 0;
+
+  for (const rawPart of parts) {
+    const part = rawPart.trim();
+    if (!part) continue;
+
+    const forceBreak = LIST_PREFIX_RE.test(part);
+    const projectedChars = bucketChars + (bucket.length > 0 ? 1 : 0) + part.length;
+    const shouldBreak =
+      bucket.length > 0 &&
+      (forceBreak || bucket.length >= options.maxParts || projectedChars > options.maxChars);
+
+    if (shouldBreak) {
+      paragraphs.push(bucket.join(" ").trim());
+      bucket = [];
+      bucketChars = 0;
+    }
+
+    bucket.push(part);
+    bucketChars += (bucketChars > 0 ? 1 : 0) + part.length;
+  }
+
+  if (bucket.length > 0) {
+    paragraphs.push(bucket.join(" ").trim());
+  }
+
+  return paragraphs;
+};
+
+const chunkCompactText = (text: string, chunkSize: number) => {
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < text.length) {
+    chunks.push(text.slice(start, start + chunkSize).trim());
+    start += chunkSize;
+  }
+  return chunks.filter(Boolean);
+};
+
 export const formatModeAText = (text: string) => {
   const normalized = text.replace(/\r\n?/g, "\n").trim();
   if (!normalized) return "";
@@ -44,36 +93,20 @@ export const formatModeAText = (text: string) => {
     .replace(/([^\n])((?:[-*+•]\s+))/g, "$1\n$2");
 
   const sentenceParts = result
-    .replace(/([.!?;。！？；])/g, "$1\n")
+    .replace(SENTENCE_BOUNDARY_RE, "$1\n")
     .split(/\n+/)
     .map((part) => part.trim())
     .filter(Boolean);
 
-  if (sentenceParts.length >= 3) {
-    const paragraphs: string[] = [];
-    let bucket: string[] = [];
-
-    for (const part of sentenceParts) {
-      const shouldStartNewParagraph =
-        bucket.length >= 2 ||
-        /^(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+)/.test(part);
-
-      if (shouldStartNewParagraph && bucket.length > 0) {
-        paragraphs.push(bucket.join(" "));
-        bucket = [];
-      }
-      bucket.push(part);
-    }
-
-    if (bucket.length > 0) {
-      paragraphs.push(bucket.join(" "));
-    }
-
-    result = paragraphs.join("\n\n");
+  if (sentenceParts.length >= 2) {
+    result = buildParagraphs(sentenceParts, {
+      maxParts: 2,
+      maxChars: 72,
+    }).join("\n\n");
   }
 
   const hasParagraphs = result.includes("\n\n");
-  const hasSentenceStops = /[。！？!?；;]/.test(result);
+  const hasSentenceStops = /[.!?;。！？؛；]/.test(result);
   const isLongCompactLine =
     !hasParagraphs &&
     result.length >= 36 &&
@@ -81,32 +114,18 @@ export const formatModeAText = (text: string) => {
 
   if (isLongCompactLine && !hasSentenceStops) {
     const clauseParts = result
-      .replace(/([,;:，、：；])/g, "$1\n")
+      .replace(CLAUSE_BOUNDARY_RE, "$1\n")
       .split(/\n+/)
       .map((part) => part.trim())
       .filter(Boolean);
 
-    if (clauseParts.length >= 3) {
-      const paragraphs: string[] = [];
-      let bucket = "";
-
-      for (const clause of clauseParts) {
-        const next = bucket ? `${bucket}${bucket.endsWith("，") || bucket.endsWith(",") ? "" : " "}${clause}` : clause;
-        if (next.length > 28 && bucket) {
-          paragraphs.push(bucket.trim());
-          bucket = clause;
-        } else {
-          bucket = next;
-        }
-      }
-
-      if (bucket) {
-        paragraphs.push(bucket.trim());
-      }
-
-      if (paragraphs.length >= 2) {
-        result = paragraphs.join("\n\n");
-      }
+    if (clauseParts.length >= 2) {
+      result = buildParagraphs(clauseParts, {
+        maxParts: 2,
+        maxChars: 56,
+      }).join("\n\n");
+    } else if (result.length >= 56) {
+      result = chunkCompactText(result, 32).join("\n\n");
     }
   }
 

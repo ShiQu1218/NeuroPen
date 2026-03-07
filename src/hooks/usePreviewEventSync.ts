@@ -122,6 +122,8 @@ export function usePreviewEventSync({
         modeAPrompt?: string;
         modeBPrompt?: string;
         modeCPrompt?: string;
+        modeAStreamOutput?: boolean;
+        modeBStreamOutput?: boolean;
         ttsVoice?: string;
         ttsRate?: string;
         ttsPitch?: string;
@@ -150,6 +152,12 @@ export function usePreviewEventSync({
         }
         if (typeof event.payload.modeCPrompt === "string") {
           state.setModeCPrompt(event.payload.modeCPrompt);
+        }
+        if (typeof event.payload.modeAStreamOutput === "boolean") {
+          state.setModeAStreamOutput(event.payload.modeAStreamOutput);
+        }
+        if (typeof event.payload.modeBStreamOutput === "boolean") {
+          state.setModeBStreamOutput(event.payload.modeBStreamOutput);
         }
         if (typeof event.payload.ttsVoice === "string") {
           state.setTtsVoice(event.payload.ttsVoice);

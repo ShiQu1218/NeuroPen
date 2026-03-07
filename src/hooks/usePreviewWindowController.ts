@@ -31,6 +31,8 @@ export function usePreviewWindowController() {
   const modeAPrompt = useAppStore((state) => state.modeAPrompt);
   const modeBPrompt = useAppStore((state) => state.modeBPrompt);
   const modeCPrompt = useAppStore((state) => state.modeCPrompt);
+  const modeAStreamOutput = useAppStore((state) => state.modeAStreamOutput);
+  const modeBStreamOutput = useAppStore((state) => state.modeBStreamOutput);
   const sttDurationMs = useAppStore((state) => state.sttDurationMs);
   const llmDurationMs = useAppStore((state) => state.llmDurationMs);
   const setLlmOutput = useAppStore((state) => state.setLlmOutput);
@@ -52,6 +54,22 @@ export function usePreviewWindowController() {
       }
     },
     [modeAPrompt, modeBPrompt, modeCPrompt]
+  );
+
+  const resolveStreamingForPreviewMode = useCallback(
+    (sourceMode: PreviewSession["sourceMode"] | undefined) => {
+      switch (sourceMode) {
+        case "A":
+          return modeAStreamOutput;
+        case "B1":
+        case "B2":
+          return modeBStreamOutput;
+        case "C":
+        default:
+          return true;
+      }
+    },
+    [modeAStreamOutput, modeBStreamOutput]
   );
 
   const keepPreviewInBounds = useCallback(async (width: number, height: number) => {
@@ -93,6 +111,7 @@ export function usePreviewWindowController() {
       const sourceMode = previewSession?.sourceMode ?? "C";
       const screenshotToSend = previewSession?.type === "screenshot" ? previewSession.imageBase64 : "";
       const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
+      const streamOutput = resolveStreamingForPreviewMode(sourceMode);
       await emit("talkflow://llm-session-context", {
         mode: sourceMode,
         selectedText,
@@ -115,6 +134,7 @@ export function usePreviewWindowController() {
             preferredLanguage: state.preferredLanguage,
             promptMode,
             promptOverride,
+            streamOutput,
           });
         } else {
           await invoke("call_llm", {
@@ -126,6 +146,7 @@ export function usePreviewWindowController() {
             preferredLanguage: state.preferredLanguage,
             promptMode,
             promptOverride,
+            streamOutput,
           });
         }
       } catch (err) {
@@ -134,7 +155,7 @@ export function usePreviewWindowController() {
         setLlmError(reason);
       }
     },
-    [previewSession, resolvePromptForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput]
+    [previewSession, resolvePromptForPreviewMode, resolveStreamingForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput]
   );
 
   useEffect(() => {

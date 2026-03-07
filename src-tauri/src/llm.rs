@@ -674,6 +674,7 @@ pub async fn call_llm(
     selected_text: &str,
     instruction: &str,
     output_mode: OutputMode,
+    stream_output: bool,
     provider: LlmProvider,
     model: &str,
     preferred_language: Option<String>,
@@ -710,7 +711,7 @@ pub async fn call_llm(
         user_message.clone()
     };
 
-    let full_output = if output_mode == OutputMode::PreviewStream {
+    let full_output = if output_mode == OutputMode::PreviewStream && stream_output {
         call_provider_preview_stream(
             api_key,
             &provider,
@@ -720,6 +721,21 @@ pub async fn call_llm(
             &app,
         )
         .await
+    } else if output_mode == OutputMode::PreviewStream {
+        let full_output = call_provider(
+            api_key,
+            &provider,
+            &chosen_model,
+            &system_prompt,
+            &effective_user_message,
+        )
+        .await?;
+        if !full_output.is_empty() {
+            let _ = app.emit("llm://token", LlmToken {
+                text: full_output.clone(),
+            });
+        }
+        Ok(full_output)
     } else {
         call_provider(
             api_key,
@@ -986,6 +1002,7 @@ pub async fn call_llm_with_image(
     image_base64: &str,
     instruction: &str,
     output_mode: OutputMode,
+    stream_output: bool,
     provider: LlmProvider,
     model: &str,
     preferred_language: Option<String>,
@@ -1023,7 +1040,13 @@ pub async fn call_llm_with_image(
     })?;
 
     if !full_output.is_empty() {
-        emit_output_stream(&app, &full_output).await;
+        if stream_output {
+            emit_output_stream(&app, &full_output).await;
+        } else {
+            let _ = app.emit("llm://token", LlmToken {
+                text: full_output.clone(),
+            });
+        }
     }
     let _ = app.emit("llm://done", ());
 

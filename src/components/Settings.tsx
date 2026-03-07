@@ -78,6 +78,8 @@ export default function Settings() {
     modeAPrompt, setModeAPrompt,
     modeBPrompt, setModeBPrompt,
     modeCPrompt, setModeCPrompt,
+    modeAStreamOutput, setModeAStreamOutput,
+    modeBStreamOutput, setModeBStreamOutput,
     translationTarget, setTranslationTarget,
     historyEnabled, setHistoryEnabled,
   } = useAppStore();
@@ -156,6 +158,8 @@ export default function Settings() {
   const [draftModeAPrompt, setDraftModeAPrompt] = useState(modeAPrompt);
   const [draftModeBPrompt, setDraftModeBPrompt] = useState(modeBPrompt);
   const [draftModeCPrompt, setDraftModeCPrompt] = useState(modeCPrompt);
+  const [draftModeAStreamOutput, setDraftModeAStreamOutput] = useState(modeAStreamOutput);
+  const [draftModeBStreamOutput, setDraftModeBStreamOutput] = useState(modeBStreamOutput);
   const [draftPreferredLanguage, setDraftPreferredLanguage] = useState<PreferredLanguage>(preferredLanguage);
   const [draftMicrophoneSource, setDraftMicrophoneSource] = useState(microphoneSource);
   const [draftLaunchOnStartup, setDraftLaunchOnStartup] = useState(launchOnStartup);
@@ -294,6 +298,8 @@ export default function Settings() {
     setDraftModeAPrompt(modeAPrompt);
     setDraftModeBPrompt(modeBPrompt);
     setDraftModeCPrompt(modeCPrompt);
+    setDraftModeAStreamOutput(modeAStreamOutput);
+    setDraftModeBStreamOutput(modeBStreamOutput);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -324,6 +330,8 @@ export default function Settings() {
     modeAPrompt,
     modeBPrompt,
     modeCPrompt,
+    modeAStreamOutput,
+    modeBStreamOutput,
     preferredLanguage,
     microphoneSource,
     launchOnStartup,
@@ -544,6 +552,8 @@ export default function Settings() {
       setModeAPrompt(draftModeAPrompt.trim());
       setModeBPrompt(draftModeBPrompt.trim());
       setModeCPrompt(draftModeCPrompt.trim());
+      setModeAStreamOutput(draftModeAStreamOutput);
+      setModeBStreamOutput(draftModeBStreamOutput);
       setPreferredLanguage(draftPreferredLanguage);
       setMicrophoneSource(draftMicrophoneSource);
       setLaunchOnStartup(draftLaunchOnStartup);
@@ -578,6 +588,8 @@ export default function Settings() {
         modeAPrompt: draftModeAPrompt.trim(),
         modeBPrompt: draftModeBPrompt.trim(),
         modeCPrompt: draftModeCPrompt.trim(),
+        modeAStreamOutput: draftModeAStreamOutput,
+        modeBStreamOutput: draftModeBStreamOutput,
         microphoneSource: draftMicrophoneSource,
         launchOnStartup: draftLaunchOnStartup,
         language: draftLanguage,
@@ -633,6 +645,8 @@ export default function Settings() {
     setDraftModeAPrompt(modeAPrompt);
     setDraftModeBPrompt(modeBPrompt);
     setDraftModeCPrompt(modeCPrompt);
+    setDraftModeAStreamOutput(modeAStreamOutput);
+    setDraftModeBStreamOutput(modeBStreamOutput);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -849,6 +863,8 @@ export default function Settings() {
       draftModeAPrompt !== modeAPrompt ||
       draftModeBPrompt !== modeBPrompt ||
       draftModeCPrompt !== modeCPrompt ||
+      draftModeAStreamOutput !== modeAStreamOutput ||
+      draftModeBStreamOutput !== modeBStreamOutput ||
       draftPreferredLanguage !== preferredLanguage ||
       draftMicrophoneSource !== microphoneSource ||
       draftLaunchOnStartup !== launchOnStartup ||
@@ -903,6 +919,10 @@ export default function Settings() {
       modeBPrompt,
       draftModeCPrompt,
       modeCPrompt,
+      draftModeAStreamOutput,
+      modeAStreamOutput,
+      draftModeBStreamOutput,
+      modeBStreamOutput,
       draftPreferredLanguage,
       preferredLanguage,
       draftMicrophoneSource,
@@ -1522,6 +1542,27 @@ export default function Settings() {
                     {t("settings.llm.directInject")}
                   </label>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="font-medium">{t("settings.llm.streamToggles")}</label>
+                <p className="text-xs text-gray-400">{t("settings.llm.streamTogglesHint")}</p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draftModeAStreamOutput}
+                    onChange={(e) => setDraftModeAStreamOutput(e.target.checked)}
+                  />
+                  <span>{t("settings.llm.modeAStreamOutput")}</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draftModeBStreamOutput}
+                    onChange={(e) => setDraftModeBStreamOutput(e.target.checked)}
+                  />
+                  <span>{t("settings.llm.modeBStreamOutput")}</span>
+                </label>
               </div>
 
               {/* LLM Provider + Model */}
