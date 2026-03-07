@@ -91,7 +91,7 @@ export async function registerSelectionListeners({
           return;
         }
         store.setSelectedText(selectionText);
-        await emit("talkflow://stable-selection", { text: selectionText });
+        await emit("neuropen://stable-selection", { text: selectionText });
 
         // Position QA icon below selection end (fallback to cursor).
         const x = typeof anchor_x === "number" ? anchor_x : cursor_x;
