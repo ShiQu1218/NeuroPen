@@ -147,28 +147,77 @@ fn is_question_like_instruction(instruction: &str) -> bool {
     QUESTION_KEYWORDS.iter().any(|keyword| lower.contains(keyword))
 }
 
-fn build_prompt(selected_text: &str, instruction: &str, preferred_language: Option<&str>) -> (String, String) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptMode {
+    A,
+    B,
+    C,
+}
+
+impl PromptMode {
+    fn from_input(mode: Option<&str>, has_selected_text: bool) -> Self {
+        match mode.map(str::trim).unwrap_or_default().to_ascii_uppercase().as_str() {
+            "A" => Self::A,
+            "B" | "B1" | "B2" => Self::B,
+            "C" => Self::C,
+            _ if has_selected_text => Self::B,
+            _ => Self::C,
+        }
+    }
+}
+
+fn merge_prompt_override(base_prompt: String, prompt_override: Option<&str>) -> String {
+    let override_text = prompt_override
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match override_text {
+        Some(extra) => format!("{base_prompt}\n\nAdditional mode-specific guidance:\n{extra}"),
+        None => base_prompt,
+    }
+}
+
+fn build_prompt(
+    selected_text: &str,
+    instruction: &str,
+    preferred_language: Option<&str>,
+    prompt_mode: Option<&str>,
+    prompt_override: Option<&str>,
+) -> (String, String) {
     let language_hint = preferred_language_hint(preferred_language)
         .map(|hint| format!(" {hint}"))
         .unwrap_or_default();
+    let question_like = is_question_like_instruction(instruction);
+    let mode = PromptMode::from_input(prompt_mode, !selected_text.is_empty());
+    let system_prompt = match mode {
+        PromptMode::A => format!(
+            "You are refining speech-to-text output for Mode A. \
+             Output only the final text the user wants to insert. \
+             Preserve the original language and script unless the instruction explicitly requests translation. \
+             Improve punctuation, paragraph breaks, and minor fluency only; no commentary or preamble.{language_hint}"
+        ),
+        PromptMode::B => format!(
+            "You are handling selected-text commands for Mode B. \
+             The user has highlighted text and given an instruction. \
+             If the instruction is a transformation request, output only the transformed text. \
+             If the instruction is question-like, answer the question about the highlighted text directly. \
+             When answering, use clean Markdown with short paragraphs and bullets only when helpful.{language_hint}"
+        ),
+        PromptMode::C => format!(
+            "You are handling spoken assistant queries for Mode C. \
+             Reply in clean Markdown with Typeless-style readability: short paragraphs, meaningful bullet lists when useful, and no filler opening lines. \
+             Avoid unnecessary headings for simple answers, but structure longer answers clearly.{language_hint}"
+        ),
+    };
+    let system_prompt = merge_prompt_override(system_prompt, prompt_override);
+
     if selected_text.is_empty() {
         (
-            format!(
-                "You are a helpful assistant. Answer the user's question concisely in the same language they use.{language_hint}"
-            ),
+            system_prompt,
             instruction.to_string(),
         )
     } else {
-        let question_like = is_question_like_instruction(instruction);
         (
-            format!(
-                "You are a helpful assistant. The user has highlighted text and typed an instruction.\
-                \nRules:\
-                \n1. If the instruction is question-like (including short prompts like \"why\", \"為甚麼\", \"what does this mean\", \"explain\"), treat it as a question about the highlighted text and answer directly.\
-                \n2. In question mode, do NOT continue, complete, or rewrite the highlighted text unless explicitly asked.\
-                \n3. If the instruction is a transformation request (e.g. translate/summarize/fix grammar/rewrite), output ONLY the transformed text with no explanation.\
-                \nRespond in the same language the user types in.{language_hint}"
-            ),
+            system_prompt,
             format!(
                 "Highlighted text:\n{selected_text}\n\nUser instruction: {instruction}\nQuestion-like: {}",
                 if question_like { "yes" } else { "no" }
@@ -628,9 +677,17 @@ pub async fn call_llm(
     provider: LlmProvider,
     model: &str,
     preferred_language: Option<String>,
+    prompt_mode: Option<String>,
+    prompt_override: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
+    let (system_prompt, user_message) = build_prompt(
+        selected_text,
+        instruction,
+        preferred_language.as_deref(),
+        prompt_mode.as_deref(),
+        prompt_override.as_deref(),
+    );
     let chosen_model = resolve_model(model, &provider);
 
     // In PreviewStream mode, include conversation history as context
@@ -717,8 +774,16 @@ pub async fn call_llm_text(
     provider: LlmProvider,
     model: &str,
     preferred_language: Option<String>,
+    prompt_mode: Option<String>,
+    prompt_override: Option<String>,
 ) -> Result<String, String> {
-    let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language.as_deref());
+    let (system_prompt, user_message) = build_prompt(
+        selected_text,
+        instruction,
+        preferred_language.as_deref(),
+        prompt_mode.as_deref(),
+        prompt_override.as_deref(),
+    );
     let chosen_model = resolve_model(model, &provider);
     call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await
 }
@@ -924,15 +989,28 @@ pub async fn call_llm_with_image(
     provider: LlmProvider,
     model: &str,
     preferred_language: Option<String>,
+    prompt_mode: Option<String>,
+    prompt_override: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let language_hint = preferred_language_hint(preferred_language.as_deref())
         .map(|h| format!(" {h}"))
         .unwrap_or_default();
-    let system_prompt = format!(
+    let base_prompt = format!(
         "You are a helpful assistant. The user has sent a screenshot and a question about it. \
          Answer concisely based on the image content.{language_hint}"
     );
+    let mode = PromptMode::from_input(prompt_mode.as_deref(), false);
+    let system_prompt = if mode == PromptMode::C {
+        merge_prompt_override(
+            format!(
+                "You are handling a Mode C screenshot query. Answer based on the image content in clean Markdown with short paragraphs and bullets only when useful.{language_hint}"
+            ),
+            prompt_override.as_deref(),
+        )
+    } else {
+        merge_prompt_override(base_prompt, prompt_override.as_deref())
+    };
     let chosen_model = resolve_model(model, &provider);
 
     let full_output = call_provider_with_image(
@@ -1003,7 +1081,8 @@ pub async fn call_llm_with_context(
     preferred_language: Option<&str>,
     max_turns: usize,
 ) -> Result<String, String> {
-    let (system_prompt, user_message) = build_prompt(selected_text, instruction, preferred_language);
+    let (system_prompt, user_message) =
+        build_prompt(selected_text, instruction, preferred_language, None, None);
     let chosen_model = resolve_model(model, provider);
 
     // Build messages with history
@@ -1103,5 +1182,11 @@ mod tests {
     #[test]
     fn keeps_transform_instruction_non_question_like() {
         assert!(!is_question_like_instruction("Translate the selected text to English."));
+    }
+
+    #[test]
+    fn maps_b_variants_to_prompt_mode_b() {
+        assert_eq!(PromptMode::from_input(Some("B1"), true), PromptMode::B);
+        assert_eq!(PromptMode::from_input(Some("B2"), true), PromptMode::B);
     }
 }

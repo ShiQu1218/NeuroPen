@@ -119,6 +119,9 @@ export function usePreviewEventSync({
         llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
+        modeAPrompt?: string;
+        modeBPrompt?: string;
+        modeCPrompt?: string;
         ttsVoice?: string;
         ttsRate?: string;
         ttsPitch?: string;
@@ -138,6 +141,15 @@ export function usePreviewEventSync({
         }
         if (event.payload.preferredLanguage) {
           state.setPreferredLanguage(event.payload.preferredLanguage);
+        }
+        if (typeof event.payload.modeAPrompt === "string") {
+          state.setModeAPrompt(event.payload.modeAPrompt);
+        }
+        if (typeof event.payload.modeBPrompt === "string") {
+          state.setModeBPrompt(event.payload.modeBPrompt);
+        }
+        if (typeof event.payload.modeCPrompt === "string") {
+          state.setModeCPrompt(event.payload.modeCPrompt);
         }
         if (typeof event.payload.ttsVoice === "string") {
           state.setTtsVoice(event.payload.ttsVoice);

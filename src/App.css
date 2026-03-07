@@ -103,39 +103,40 @@ body {
 /* Feature 5: Markdown styles for Preview Window */
 .preview-markdown {
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.6;
+  line-height: 1.72;
+  color: #18181b;
 }
 
 .preview-markdown h1 {
-  font-size: 1.25em;
+  font-size: 1.3em;
   font-weight: 700;
-  margin: 0.5em 0 0.25em;
+  margin: 0.7em 0 0.35em;
 }
 
 .preview-markdown h2 {
-  font-size: 1.1em;
+  font-size: 1.12em;
   font-weight: 600;
-  margin: 0.5em 0 0.25em;
+  margin: 0.65em 0 0.3em;
 }
 
 .preview-markdown h3 {
   font-size: 1em;
   font-weight: 600;
-  margin: 0.4em 0 0.2em;
+  margin: 0.55em 0 0.24em;
 }
 
 .preview-markdown p {
-  margin: 0.3em 0;
+  margin: 0.48em 0;
 }
 
 .preview-markdown ul,
 .preview-markdown ol {
   padding-left: 1.5em;
-  margin: 0.3em 0;
+  margin: 0.45em 0;
 }
 
 .preview-markdown li {
-  margin: 0.15em 0;
+  margin: 0.22em 0;
 }
 
 .preview-markdown code {

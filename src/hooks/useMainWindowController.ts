@@ -16,6 +16,7 @@ import type {
 import {
   applyPunctuationMode,
   buildSelectionFingerprint,
+  formatModeAText,
   inferAppToneHint,
   isLikelyUnexpectedEnglishTranslation,
   normalizeSttEngine,
@@ -73,6 +74,9 @@ export function useMainWindowController() {
     setQuickActionCommands,
     setLanguage,
     setPreferredLanguage,
+    setModeAPrompt,
+    setModeBPrompt,
+    setModeCPrompt,
     setMicrophoneSource,
     setLaunchOnStartup,
     setHistoryEnabled,
@@ -247,6 +251,9 @@ export function useMainWindowController() {
         llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
+        modeAPrompt?: string;
+        modeBPrompt?: string;
+        modeCPrompt?: string;
         microphoneSource?: string;
         launchOnStartup?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
@@ -329,6 +336,15 @@ export function useMainWindowController() {
           }
           if (payload.preferredLanguage) {
             setPreferredLanguage(payload.preferredLanguage);
+          }
+          if (typeof payload.modeAPrompt === "string") {
+            setModeAPrompt(payload.modeAPrompt);
+          }
+          if (typeof payload.modeBPrompt === "string") {
+            setModeBPrompt(payload.modeBPrompt);
+          }
+          if (typeof payload.modeCPrompt === "string") {
+            setModeCPrompt(payload.modeCPrompt);
           }
           if (typeof payload.microphoneSource === "string") {
             setMicrophoneSource(payload.microphoneSource);
@@ -743,6 +759,8 @@ export function useMainWindowController() {
                   provider: store.llmProvider,
                   model: store.llmModel,
                   preferredLanguage: store.preferredLanguage,
+                  promptMode: "A",
+                  promptOverride: store.modeAPrompt,
                 });
                 if (refined?.trim()) {
                   const candidate = stripWrappingQuotes(refined);
@@ -776,6 +794,8 @@ export function useMainWindowController() {
                   provider: store.llmProvider,
                   model: store.llmModel,
                   preferredLanguage: store.translationTarget,
+                  promptMode: "A",
+                  promptOverride: store.modeAPrompt,
                 });
                 if (translated?.trim()) {
                   finalText = translated.trim();
@@ -789,6 +809,8 @@ export function useMainWindowController() {
               setSttError(t("error.translationNeedsLlmApiKey"));
               postInjectWarning = t("status.llmApiMissingOriginalOutput");
             }
+
+            finalText = formatModeAText(finalText);
 
             if (store.outputMode === "PreviewStream") {
               store.setLastSelectedText(finalText);
@@ -882,6 +904,8 @@ export function useMainWindowController() {
                 provider: store.llmProvider,
                 model: store.llmModel,
                 preferredLanguage: store.preferredLanguage,
+                promptMode: "B",
+                promptOverride: store.modeBPrompt,
               });
             } catch (err) {
               const reason = err instanceof Error ? err.message : String(err);
@@ -920,6 +944,8 @@ export function useMainWindowController() {
                 provider: store.llmProvider,
                 model: store.llmModel,
                 preferredLanguage: store.preferredLanguage,
+                promptMode: "C",
+                promptOverride: store.modeCPrompt,
               });
               if (store.outputMode === "DirectInject") {
                 await invoke("restore_clipboard");

@@ -376,6 +376,8 @@ async fn call_llm(
     provider: llm::LlmProvider,
     model: String,
     preferred_language: Option<String>,
+    prompt_mode: Option<String>,
+    prompt_override: Option<String>,
 ) -> Result<(), String> {
     let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
         String::new()
@@ -390,6 +392,8 @@ async fn call_llm(
         provider,
         &model,
         preferred_language,
+        prompt_mode,
+        prompt_override,
         app,
     )
     .await
@@ -403,6 +407,8 @@ async fn call_llm_text(
     provider: llm::LlmProvider,
     model: String,
     preferred_language: Option<String>,
+    prompt_mode: Option<String>,
+    prompt_override: Option<String>,
 ) -> Result<String, String> {
     let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
         String::new()
@@ -416,6 +422,8 @@ async fn call_llm_text(
         provider,
         &model,
         preferred_language,
+        prompt_mode,
+        prompt_override,
     )
     .await
 }
@@ -557,6 +565,8 @@ async fn call_llm_with_image(
     provider: llm::LlmProvider,
     model: String,
     preferred_language: Option<String>,
+    prompt_mode: Option<String>,
+    prompt_override: Option<String>,
 ) -> Result<(), String> {
     let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
         String::new()
@@ -571,6 +581,8 @@ async fn call_llm_with_image(
         provider,
         &model,
         preferred_language,
+        prompt_mode,
+        prompt_override,
         app,
     )
     .await

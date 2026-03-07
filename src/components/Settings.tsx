@@ -75,6 +75,9 @@ export default function Settings() {
     ttsVoice, setTtsVoice,
     ttsRate, setTtsRate,
     ttsPitch, setTtsPitch,
+    modeAPrompt, setModeAPrompt,
+    modeBPrompt, setModeBPrompt,
+    modeCPrompt, setModeCPrompt,
     translationTarget, setTranslationTarget,
     historyEnabled, setHistoryEnabled,
   } = useAppStore();
@@ -150,6 +153,9 @@ export default function Settings() {
   const [draftTtsVoice, setDraftTtsVoice] = useState(ttsVoice);
   const [draftTtsRate, setDraftTtsRate] = useState(ttsRate);
   const [draftTtsPitch, setDraftTtsPitch] = useState(ttsPitch);
+  const [draftModeAPrompt, setDraftModeAPrompt] = useState(modeAPrompt);
+  const [draftModeBPrompt, setDraftModeBPrompt] = useState(modeBPrompt);
+  const [draftModeCPrompt, setDraftModeCPrompt] = useState(modeCPrompt);
   const [draftPreferredLanguage, setDraftPreferredLanguage] = useState<PreferredLanguage>(preferredLanguage);
   const [draftMicrophoneSource, setDraftMicrophoneSource] = useState(microphoneSource);
   const [draftLaunchOnStartup, setDraftLaunchOnStartup] = useState(launchOnStartup);
@@ -285,6 +291,9 @@ export default function Settings() {
     setDraftTtsVoice(ttsVoice);
     setDraftTtsRate(ttsRate);
     setDraftTtsPitch(ttsPitch);
+    setDraftModeAPrompt(modeAPrompt);
+    setDraftModeBPrompt(modeBPrompt);
+    setDraftModeCPrompt(modeCPrompt);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -312,6 +321,9 @@ export default function Settings() {
     ttsVoice,
     ttsRate,
     ttsPitch,
+    modeAPrompt,
+    modeBPrompt,
+    modeCPrompt,
     preferredLanguage,
     microphoneSource,
     launchOnStartup,
@@ -529,6 +541,9 @@ export default function Settings() {
       setTtsVoice(draftTtsVoice);
       setTtsRate(draftTtsRate);
       setTtsPitch(draftTtsPitch);
+      setModeAPrompt(draftModeAPrompt.trim());
+      setModeBPrompt(draftModeBPrompt.trim());
+      setModeCPrompt(draftModeCPrompt.trim());
       setPreferredLanguage(draftPreferredLanguage);
       setMicrophoneSource(draftMicrophoneSource);
       setLaunchOnStartup(draftLaunchOnStartup);
@@ -560,6 +575,9 @@ export default function Settings() {
         llmModel: nextModel,
         llmModelOptions: nextLlmModelOptions,
         preferredLanguage: draftPreferredLanguage,
+        modeAPrompt: draftModeAPrompt.trim(),
+        modeBPrompt: draftModeBPrompt.trim(),
+        modeCPrompt: draftModeCPrompt.trim(),
         microphoneSource: draftMicrophoneSource,
         launchOnStartup: draftLaunchOnStartup,
         language: draftLanguage,
@@ -612,6 +630,9 @@ export default function Settings() {
     setDraftTtsVoice(ttsVoice);
     setDraftTtsRate(ttsRate);
     setDraftTtsPitch(ttsPitch);
+    setDraftModeAPrompt(modeAPrompt);
+    setDraftModeBPrompt(modeBPrompt);
+    setDraftModeCPrompt(modeCPrompt);
     setDraftPreferredLanguage(preferredLanguage);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
@@ -825,6 +846,9 @@ export default function Settings() {
       draftTtsVoice !== ttsVoice ||
       draftTtsRate !== ttsRate ||
       draftTtsPitch !== ttsPitch ||
+      draftModeAPrompt !== modeAPrompt ||
+      draftModeBPrompt !== modeBPrompt ||
+      draftModeCPrompt !== modeCPrompt ||
       draftPreferredLanguage !== preferredLanguage ||
       draftMicrophoneSource !== microphoneSource ||
       draftLaunchOnStartup !== launchOnStartup ||
@@ -873,6 +897,12 @@ export default function Settings() {
       ttsRate,
       draftTtsPitch,
       ttsPitch,
+      draftModeAPrompt,
+      modeAPrompt,
+      draftModeBPrompt,
+      modeBPrompt,
+      draftModeCPrompt,
+      modeCPrompt,
       draftPreferredLanguage,
       preferredLanguage,
       draftMicrophoneSource,
@@ -1576,6 +1606,43 @@ export default function Settings() {
                   <option value="ru-RU">Русский</option>
                 </select>
                 <p className="text-xs text-gray-400">{t("settings.preferredLanguage.hint")}</p>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="font-medium">{t("settings.llm.modePrompts")}</label>
+                  <p className="text-xs text-gray-400">{t("settings.llm.modePromptsHint")}</p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-600">{t("settings.llm.modeAPrompt")}</label>
+                  <textarea
+                    className="w-full min-h-[92px] input-field px-3 py-2 text-xs leading-5"
+                    value={draftModeAPrompt}
+                    onChange={(e) => setDraftModeAPrompt(e.target.value)}
+                    placeholder={t("settings.llm.modeAPromptPlaceholder")}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-600">{t("settings.llm.modeBPrompt")}</label>
+                  <textarea
+                    className="w-full min-h-[92px] input-field px-3 py-2 text-xs leading-5"
+                    value={draftModeBPrompt}
+                    onChange={(e) => setDraftModeBPrompt(e.target.value)}
+                    placeholder={t("settings.llm.modeBPromptPlaceholder")}
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-zinc-600">{t("settings.llm.modeCPrompt")}</label>
+                  <textarea
+                    className="w-full min-h-[92px] input-field px-3 py-2 text-xs leading-5"
+                    value={draftModeCPrompt}
+                    onChange={(e) => setDraftModeCPrompt(e.target.value)}
+                    placeholder={t("settings.llm.modeCPromptPlaceholder")}
+                  />
+                </div>
               </div>
 
               {/* API Key — sent to Rust, never stored in localStorage */}

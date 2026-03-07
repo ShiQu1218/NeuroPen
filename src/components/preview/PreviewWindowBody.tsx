@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { useI18n } from "../../i18n";
 import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
+import { formatModeAText, normalizePreviewMarkdown } from "../../utils/appText";
 
 interface PreviewWindowBodyProps {
   animKey: number;
@@ -64,6 +65,17 @@ export default function PreviewWindowBody({
   swallowDragRelease,
   t,
 }: PreviewWindowBodyProps) {
+  const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
+  const isModeCPreview =
+    (previewSession?.type === "text" && previewSession.sourceMode === "C") ||
+    previewSession?.type === "screenshot";
+  const renderedOutput =
+    isModeAPreview
+      ? formatModeAText(llmOutput)
+      : isModeCPreview
+        ? normalizePreviewMarkdown(llmOutput)
+        : llmOutput;
+
   return (
     <div
       key={animKey}
@@ -153,7 +165,7 @@ export default function PreviewWindowBody({
           ) : isLlmLoading && !hasOutput ? (
             <span className="text-gray-400">{t("preview.loading")}</span>
           ) : hasOutput ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{llmOutput}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{renderedOutput}</ReactMarkdown>
           ) : (
             <span className="text-gray-400">{t("preview.empty")}</span>
           )}

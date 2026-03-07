@@ -28,12 +28,31 @@ export function usePreviewWindowController() {
   const isLlmLoading = useAppStore((state) => state.isLlmLoading);
   const llmError = useAppStore((state) => state.llmError);
   const quickActionCommands = useAppStore((state) => state.quickActionCommands);
+  const modeAPrompt = useAppStore((state) => state.modeAPrompt);
+  const modeBPrompt = useAppStore((state) => state.modeBPrompt);
+  const modeCPrompt = useAppStore((state) => state.modeCPrompt);
   const sttDurationMs = useAppStore((state) => state.sttDurationMs);
   const llmDurationMs = useAppStore((state) => state.llmDurationMs);
   const setLlmOutput = useAppStore((state) => state.setLlmOutput);
   const setIsLlmLoading = useAppStore((state) => state.setIsLlmLoading);
   const setLlmError = useAppStore((state) => state.setLlmError);
   const { fallbackTtsActiveRef, handleTtsToggle, isTtsPlaying, stopFallbackTts } = usePreviewTts(llmOutput);
+
+  const resolvePromptForPreviewMode = useCallback(
+    (sourceMode: PreviewSession["sourceMode"] | undefined) => {
+      switch (sourceMode) {
+        case "A":
+          return { promptMode: "A", promptOverride: modeAPrompt };
+        case "B1":
+        case "B2":
+          return { promptMode: "B", promptOverride: modeBPrompt };
+        case "C":
+        default:
+          return { promptMode: "C", promptOverride: modeCPrompt };
+      }
+    },
+    [modeAPrompt, modeBPrompt, modeCPrompt]
+  );
 
   const keepPreviewInBounds = useCallback(async (width: number, height: number) => {
     try {
@@ -73,6 +92,7 @@ export function usePreviewWindowController() {
       const selectedText = previewSession?.type === "text" ? previewSession.selectedText : "";
       const sourceMode = previewSession?.sourceMode ?? "C";
       const screenshotToSend = previewSession?.type === "screenshot" ? previewSession.imageBase64 : "";
+      const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
       await emit("talkflow://llm-session-context", {
         mode: sourceMode,
         selectedText,
@@ -93,6 +113,8 @@ export function usePreviewWindowController() {
             provider: state.llmProvider,
             model: state.llmModel,
             preferredLanguage: state.preferredLanguage,
+            promptMode,
+            promptOverride,
           });
         } else {
           await invoke("call_llm", {
@@ -102,6 +124,8 @@ export function usePreviewWindowController() {
             provider: state.llmProvider,
             model: state.llmModel,
             preferredLanguage: state.preferredLanguage,
+            promptMode,
+            promptOverride,
           });
         }
       } catch (err) {
@@ -110,7 +134,7 @@ export function usePreviewWindowController() {
         setLlmError(reason);
       }
     },
-    [previewSession, setIsLlmLoading, setLlmError, setLlmOutput]
+    [previewSession, resolvePromptForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput]
   );
 
   useEffect(() => {

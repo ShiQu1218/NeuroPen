@@ -21,6 +21,9 @@ export default function QuickActionIcon() {
   const setLlmModelOptions = useAppStore((s) => s.setLlmModelOptions);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
+  const setModeAPrompt = useAppStore((s) => s.setModeAPrompt);
+  const setModeBPrompt = useAppStore((s) => s.setModeBPrompt);
+  const setModeCPrompt = useAppStore((s) => s.setModeCPrompt);
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
@@ -72,6 +75,9 @@ export default function QuickActionIcon() {
         llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
+        modeAPrompt?: string;
+        modeBPrompt?: string;
+        modeCPrompt?: string;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
       }>(
         "talkflow://settings-saved",
@@ -94,6 +100,15 @@ export default function QuickActionIcon() {
           if (event.payload.preferredLanguage) {
             setPreferredLanguage(event.payload.preferredLanguage);
           }
+          if (typeof event.payload.modeAPrompt === "string") {
+            setModeAPrompt(event.payload.modeAPrompt);
+          }
+          if (typeof event.payload.modeBPrompt === "string") {
+            setModeBPrompt(event.payload.modeBPrompt);
+          }
+          if (typeof event.payload.modeCPrompt === "string") {
+            setModeCPrompt(event.payload.modeCPrompt);
+          }
           if (event.payload.quickActionCommands) {
             setQuickActionCommands(event.payload.quickActionCommands);
           }
@@ -113,7 +128,7 @@ export default function QuickActionIcon() {
       void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeBPrompt, setModeCPrompt, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
 
   useEffect(() => {
     void setWindowFocusable(false);
@@ -229,6 +244,8 @@ export default function QuickActionIcon() {
         provider: currentState.llmProvider,
         model: currentState.llmModel,
         preferredLanguage: currentState.preferredLanguage,
+        promptMode: "B",
+        promptOverride: currentState.modeBPrompt,
       });
     } catch (err) {
       console.error("[QuickAction] call_llm failed:", err);

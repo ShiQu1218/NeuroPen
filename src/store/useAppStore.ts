@@ -29,6 +29,15 @@ export interface QuickActionCommand {
   instruction: string;
 }
 
+export const DEFAULT_MODE_A_PROMPT =
+  "You are refining voice dictation for Mode A. Output only the final text the user wants inserted. Preserve the original language and script unless the instruction explicitly asks for translation. Clean up punctuation, paragraph breaks, and small fluency issues without adding commentary.";
+
+export const DEFAULT_MODE_B_PROMPT =
+  "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly in clean Markdown with short paragraphs and bullets only when they help.";
+
+export const DEFAULT_MODE_C_PROMPT =
+  "You are handling spoken assistant queries for Mode C. Reply in clean Markdown like a polished Typeless-style response: short paragraphs, meaningful bullet lists when useful, no filler opening lines, and no unnecessary headings for simple answers.";
+
 export const normalizeLlmModelOptions = (models: string[], activeModel?: string) =>
   Array.from(
     new Set(
@@ -83,6 +92,9 @@ interface AppState {
   ttsVoice: string;
   ttsRate: string;
   ttsPitch: string;
+  modeAPrompt: string;
+  modeBPrompt: string;
+  modeCPrompt: string;
   translationTarget: TranslationTarget;
   historyEnabled: boolean;
 
@@ -145,6 +157,9 @@ interface AppState {
   setTtsVoice: (voice: string) => void;
   setTtsRate: (rate: string) => void;
   setTtsPitch: (pitch: string) => void;
+  setModeAPrompt: (prompt: string) => void;
+  setModeBPrompt: (prompt: string) => void;
+  setModeCPrompt: (prompt: string) => void;
   setTranslationTarget: (target: TranslationTarget) => void;
   setHistoryEnabled: (enabled: boolean) => void;
   setIsTtsPlaying: (playing: boolean) => void;
@@ -186,6 +201,9 @@ export const useAppStore = create<AppState>()(
       ttsVoice: "",
       ttsRate: "+0%",
       ttsPitch: "+0Hz",
+      modeAPrompt: DEFAULT_MODE_A_PROMPT,
+      modeBPrompt: DEFAULT_MODE_B_PROMPT,
+      modeCPrompt: DEFAULT_MODE_C_PROMPT,
       translationTarget: "off",
       historyEnabled: false,
 
@@ -259,6 +277,9 @@ export const useAppStore = create<AppState>()(
       setTtsVoice: (voice) => set({ ttsVoice: voice }),
       setTtsRate: (rate) => set({ ttsRate: rate }),
       setTtsPitch: (pitch) => set({ ttsPitch: pitch }),
+      setModeAPrompt: (modeAPrompt) => set({ modeAPrompt }),
+      setModeBPrompt: (modeBPrompt) => set({ modeBPrompt }),
+      setModeCPrompt: (modeCPrompt) => set({ modeCPrompt }),
       setTranslationTarget: (target) => set({ translationTarget: target }),
       setHistoryEnabled: (enabled) => set({ historyEnabled: enabled }),
       setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
@@ -328,6 +349,9 @@ export const useAppStore = create<AppState>()(
         ttsVoice: state.ttsVoice,
         ttsRate: state.ttsRate,
         ttsPitch: state.ttsPitch,
+        modeAPrompt: state.modeAPrompt,
+        modeBPrompt: state.modeBPrompt,
+        modeCPrompt: state.modeCPrompt,
         translationTarget: state.translationTarget,
         historyEnabled: state.historyEnabled,
       }),
