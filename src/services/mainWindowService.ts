@@ -7,6 +7,64 @@ export interface RegisteredHotkeys {
   screenshotPersisted: boolean;
 }
 
+export interface SelectionState {
+  has_selection: boolean;
+}
+
+export interface ScreenshotRegion {
+  [key: string]: unknown;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface ScreenshotResponse {
+  base64Png?: string;
+  base64_png?: string;
+}
+
+export interface RouteTranscriptResult {
+  mode: string;
+  transcript: string;
+  selected_text: string | null;
+  incognito: boolean;
+}
+
+export interface LlmCallPayload {
+  [key: string]: unknown;
+  selectedText: string;
+  instruction: string;
+  outputMode: "DirectInject" | "PreviewStream";
+  provider: string;
+  model: string;
+  preferredLanguage: string;
+  promptMode: "A" | "B" | "C";
+  promptOverride: string;
+  streamOutput: boolean;
+}
+
+export interface LlmTextCallPayload {
+  [key: string]: unknown;
+  selectedText: string;
+  instruction: string;
+  provider: string;
+  model: string;
+  preferredLanguage: string;
+  promptMode: "A" | "B" | "C";
+  promptOverride: string;
+}
+
+export interface HistorySavePayload {
+  [key: string]: unknown;
+  mode: string;
+  inputText: string;
+  instruction: string;
+  output: string;
+  provider: string;
+  model: string;
+}
+
 export const mainWindowService = {
   getRegisteredHotkeys: () => invoke<RegisteredHotkeys>("get_registered_hotkeys"),
   changeHotkey: (hotkeyStr: string) => invoke<void>("change_hotkey", { hotkeyStr }),
@@ -22,4 +80,26 @@ export const mainWindowService = {
   startStreamingStt: (engine: string, modelPath: string) =>
     invoke<void>("start_streaming_stt", { engine, modelPath }),
   clearConversation: () => invoke<void>("clear_conversation"),
+  getSelection: () => invoke<SelectionState>("get_selection"),
+  hasLlmApiKey: () => invoke<boolean>("has_api_key"),
+  takeScreenshotRegion: (region: ScreenshotRegion) =>
+    invoke<ScreenshotResponse>("take_screenshot_region", region),
+  routeTranscript: (transcript: string, selectedText: string | null, wakeWord: string, incognito: boolean) =>
+    invoke<RouteTranscriptResult>("route_transcript", {
+      transcript,
+      selectedText,
+      wakeWord,
+      incognito,
+    }),
+  getForegroundWindowTitle: () => invoke<string>("get_foreground_window_title"),
+  callLlm: (payload: LlmCallPayload) => invoke<void>("call_llm", payload),
+  callLlmText: (payload: LlmTextCallPayload) => invoke<string>("call_llm_text", payload),
+  verifyFocus: () => invoke<boolean>("verify_focus"),
+  restoreClipboard: () => invoke<void>("restore_clipboard"),
+  injectText: (text: string, recordForUndo: boolean) =>
+    invoke<void>("inject_text", {
+      text,
+      recordForUndo,
+    }),
+  historySave: (payload: HistorySavePayload) => invoke<void>("history_save", payload),
 };
