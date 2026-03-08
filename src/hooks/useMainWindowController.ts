@@ -84,6 +84,8 @@ export function useMainWindowController() {
       suppressedSelectionFingerprint: "",
       selectionWatchSuppressedUntil: 0,
       qaHideTimer: null,
+      qaResyncTimer: null,
+      lastSelectionSnapshot: null,
     };
     let pendingHotkeyReleaseAt = 0;
 
@@ -511,6 +513,9 @@ export function useMainWindowController() {
       cancelled = true;
       if (selectionState.qaHideTimer) {
         clearTimeout(selectionState.qaHideTimer);
+      }
+      if (selectionState.qaResyncTimer) {
+        clearTimeout(selectionState.qaResyncTimer);
       }
       unlisten.forEach((fn) => fn());
     };
