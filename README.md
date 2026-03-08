@@ -74,7 +74,7 @@
 **Mode B1 — Quick Action on Selection**
 ![Mode B1 Demo](./assets/demo/mode_B1.jpg)
 
-**Mode B2 — Voice Command on Selection**
+**Mode B2 — ScreenShot Q&A**
 ![Mode B2 Demo](./assets/demo/mode_B2.jpg)
 
 ## Core Workflow Safeguards
