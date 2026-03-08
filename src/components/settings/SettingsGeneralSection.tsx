@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from "react";
 import type { useI18n } from "../../i18n";
 import type { AppLanguage } from "../../store/useAppStore";
+import SettingsUpdater from "./SettingsUpdater";
 
 interface SettingsGeneralSectionProps {
   draftLanguage: AppLanguage;
@@ -224,6 +225,8 @@ export default function SettingsGeneralSection({
         />
         <p className="text-xs text-gray-400">{t("settings.wakeWord.hint")}</p>
       </div>
+
+      <SettingsUpdater t={t} />
     </>
   );
 }

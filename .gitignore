@@ -39,3 +39,6 @@ env/
 
 # Application specific
 .claude/
+
+# Tauri signing keys
+~/.tauri/
