@@ -66,6 +66,17 @@
 | **B2 — 選字語音指令** | 有選字 + `Alt + 反引號` + 口述指令 | LLM 改寫結果顯示於預覽視窗 |
 | **C — LLM 問答** | 無選字 + 轉寫中偵測到喚醒詞 | LLM 回答顯示於預覽視窗或直接注入 |
 
+### 模式展示 (Mode Demos)
+
+**Mode A — 直接語音輸入**
+![Mode A 展示](./assets/demo/mode_A.jpg)
+
+**Mode B1 — 劃詞快速操作**
+![Mode B1 展示](./assets/demo/mode_B1.jpg)
+
+**Mode B2 — 選字語音指令**
+![Mode B2 展示](./assets/demo/mode_B2.jpg)
+
 ## Core Workflow Safeguards / 核心流程保護
 
 NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗：

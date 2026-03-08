@@ -66,6 +66,17 @@
 | **B2 — Voice Command on Selection** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite in preview window |
 | **C — LLM Query** | No selection + wake word detected in transcript | LLM answer in preview window or direct inject |
 
+### Mode Demos
+
+**Mode A — Direct Voice Input**
+![Mode A Demo](./assets/demo/mode_A.jpg)
+
+**Mode B1 — Quick Action on Selection**
+![Mode B1 Demo](./assets/demo/mode_B1.jpg)
+
+**Mode B2 — Voice Command on Selection**
+![Mode B2 Demo](./assets/demo/mode_B2.jpg)
+
 ## Core Workflow Safeguards
 
 NeuroPen uses a strict injection sequence to reduce unintended edits:
