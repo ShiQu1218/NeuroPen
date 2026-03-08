@@ -145,7 +145,18 @@ export const settingsMessages = {
     "settings.stt.microphoneHint": "可切換錄音輸入裝置，儲存後立即生效。",
     "settings.stt.disabledHint": "語音 / STT 功能目前已停用。若要使用按住錄音、語音命令，請先重新啟用。",
     "settings.history.enable": "啟用歷史紀錄",
-    "settings.history.hint": "預設為關閉；啟用後才會寫入新紀錄，且系統會自動清除超過 30 天的紀錄。既有紀錄仍可查閱與手動清除。"
+    "settings.history.hint": "預設為關閉；啟用後才會寫入新紀錄，且系統會自動清除超過 30 天的紀錄。既有紀錄仍可查閱與手動清除。",
+    "settings.updater.title": "軟體更新",
+    "settings.updater.currentVersion": "目前版本",
+    "settings.updater.checkForUpdates": "檢查更新",
+    "settings.updater.checking": "檢查中…",
+    "settings.updater.upToDate": "已是最新版本。",
+    "settings.updater.available": "有新版本 {version} 可用！",
+    "settings.updater.downloading": "下載中… {progress}%",
+    "settings.updater.readyToInstall": "下載完成，準備安裝。",
+    "settings.updater.installAndRestart": "安裝並重啟",
+    "settings.updater.error": "檢查更新失敗：{reason}",
+    "settings.updater.changelog": "更新內容"
   },
   "en-US": {
     "settings.title": "NeuroPen Settings",
@@ -293,7 +304,18 @@ export const settingsMessages = {
     "settings.stt.microphoneHint": "Switch recording input device; takes effect right after saving.",
     "settings.stt.disabledHint": "Voice / STT is currently disabled. Re-enable it to use hold-to-record and voice command flows.",
     "settings.history.enable": "Enable history",
-    "settings.history.hint": "History is off by default. New records are only written after enabling it, and entries older than 30 days are cleared automatically."
+    "settings.history.hint": "History is off by default. New records are only written after enabling it, and entries older than 30 days are cleared automatically.",
+    "settings.updater.title": "Software Update",
+    "settings.updater.currentVersion": "Current version",
+    "settings.updater.checkForUpdates": "Check for Updates",
+    "settings.updater.checking": "Checking…",
+    "settings.updater.upToDate": "You are on the latest version.",
+    "settings.updater.available": "Version {version} is available!",
+    "settings.updater.downloading": "Downloading… {progress}%",
+    "settings.updater.readyToInstall": "Download complete, ready to install.",
+    "settings.updater.installAndRestart": "Install & Restart",
+    "settings.updater.error": "Update check failed: {reason}",
+    "settings.updater.changelog": "Changelog"
   },
   "ja-JP": {
     "settings.title": "NeuroPen 設定",
@@ -400,6 +422,17 @@ export const settingsMessages = {
     "settings.translation.hint": "有効時、モードAの音声入力は自動的に対象言語に翻訳されてから挿入されます。",
     "settings.translation.off": "オフ",
     "settings.screenshot.label": "スクリーンショットAI",
-    "settings.screenshot.hint": "Alt+Sでスクリーンショットを撮影し、AIに質問できます。"
+    "settings.screenshot.hint": "Alt+Sでスクリーンショットを撮影し、AIに質問できます。",
+    "settings.updater.title": "ソフトウェア更新",
+    "settings.updater.currentVersion": "現在のバージョン",
+    "settings.updater.checkForUpdates": "更新を確認",
+    "settings.updater.checking": "確認中…",
+    "settings.updater.upToDate": "最新バージョンです。",
+    "settings.updater.available": "バージョン {version} が利用可能です！",
+    "settings.updater.downloading": "ダウンロード中… {progress}%",
+    "settings.updater.readyToInstall": "ダウンロード完了、インストール準備完了。",
+    "settings.updater.installAndRestart": "インストールして再起動",
+    "settings.updater.error": "更新確認に失敗: {reason}",
+    "settings.updater.changelog": "更新内容"
   }
 } as const;

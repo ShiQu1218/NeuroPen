@@ -37,6 +37,9 @@
     "core:webview:allow-webview-show",
     "core:webview:allow-webview-hide",
     "core:webview:allow-webview-close",
-    "core:webview:allow-set-webview-focus"
+    "core:webview:allow-set-webview-focus",
+    "updater:default",
+    "process:allow-restart",
+    "core:app:default"
   ]
 }
