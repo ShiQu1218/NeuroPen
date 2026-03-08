@@ -74,7 +74,7 @@
 **Mode B1 — 劃詞快速操作**
 ![Mode B1 展示](./assets/demo/mode_B1.jpg)
 
-**Mode B2 — 選字語音指令**
+**Mode B2 — 截圖輸入**
 ![Mode B2 展示](./assets/demo/mode_B2.jpg)
 
 ## Core Workflow Safeguards / 核心流程保護
