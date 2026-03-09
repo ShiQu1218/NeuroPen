@@ -28,7 +28,7 @@ export interface RegisteredHotkeys {
   screenshotPersisted: boolean;
 }
 
-export type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "history";
+export type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "history" | "appProfile";
 
 export const STATUS_RESET_MS = 2000;
 export const RATING_INDICES = [0, 1, 2, 3, 4];
@@ -88,6 +88,17 @@ export const NAV_ITEMS: { id: SettingsSection; icon: JSX.Element }[] = [
       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
         <circle cx="12" cy="12" r="10" />
         <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+  },
+  {
+    id: "appProfile",
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
       </svg>
     ),
   },

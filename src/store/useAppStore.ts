@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
+  DEFAULT_APP_PROFILES,
   DEFAULT_LLM_MODEL_OPTIONS,
   DEFAULT_QUICK_ACTION_COMMANDS,
   normalizeLlmModelOptions,
@@ -11,6 +12,7 @@ import {
   DEFAULT_MODE_C_PROMPT,
   type AppLanguage,
   type AppMode,
+  type AppProfile,
   type LlmProvider,
   type OutputMode,
   type PreferredLanguage,
@@ -25,6 +27,7 @@ import {
 export type {
   AppLanguage,
   AppMode,
+  AppProfile,
   LlmProvider,
   OutputMode,
   PreferredLanguage,
@@ -35,6 +38,7 @@ export type {
   SttOutputStrategy,
   TranslationTarget,
 } from "./appStoreTypes";
+export type { AppProfileMode } from "./appStoreTypes";
 export { DEFAULT_MODE_A_PROMPT, DEFAULT_MODE_B_PROMPT, DEFAULT_MODE_C_PROMPT } from "./appStoreTypes";
 export { normalizeLlmModelOptions } from "./appStoreDefaults";
 
@@ -74,6 +78,7 @@ interface AppState {
   modeBStreamOutput: boolean;
   translationTarget: TranslationTarget;
   historyEnabled: boolean;
+  appProfiles: AppProfile[];
 
   // --- Runtime state (not persisted) ---
   isRecording: boolean;
@@ -141,6 +146,7 @@ interface AppState {
   setModeBStreamOutput: (enabled: boolean) => void;
   setTranslationTarget: (target: TranslationTarget) => void;
   setHistoryEnabled: (enabled: boolean) => void;
+  setAppProfiles: (profiles: AppProfile[]) => void;
   setIsTtsPlaying: (playing: boolean) => void;
   setPartialTranscript: (text: string) => void;
   setSttDurationMs: (ms: number) => void;
@@ -187,6 +193,7 @@ export const useAppStore = create<AppState>()(
       modeBStreamOutput: true,
       translationTarget: "off",
       historyEnabled: false,
+      appProfiles: DEFAULT_APP_PROFILES,
 
       isRecording: false,
       selectedText: "",
@@ -265,6 +272,7 @@ export const useAppStore = create<AppState>()(
       setModeBStreamOutput: (modeBStreamOutput) => set({ modeBStreamOutput }),
       setTranslationTarget: (target) => set({ translationTarget: target }),
       setHistoryEnabled: (enabled) => set({ historyEnabled: enabled }),
+      setAppProfiles: (profiles) => set({ appProfiles: profiles }),
       setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
       setPartialTranscript: (text) => set({ partialTranscript: text }),
       setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
@@ -301,6 +309,7 @@ export const useAppStore = create<AppState>()(
             Array.isArray(persisted.llmModelOptions) ? persisted.llmModelOptions : currentState.llmModelOptions,
             nextModel,
           ),
+          appProfiles: Array.isArray(persisted.appProfiles) ? persisted.appProfiles : DEFAULT_APP_PROFILES,
         };
       },
       // Only persist user preferences, not runtime state
@@ -339,6 +348,7 @@ export const useAppStore = create<AppState>()(
         modeBStreamOutput: state.modeBStreamOutput,
         translationTarget: state.translationTarget,
         historyEnabled: state.historyEnabled,
+        appProfiles: state.appProfiles,
       }),
     }
   )

@@ -10,6 +10,7 @@ import { mainWindowService } from "../services/mainWindowService";
 import { useAppStore } from "../store/useAppStore";
 import type {
   AppLanguage,
+  AppProfile,
   LlmProvider,
   PreferredLanguage,
   SttLanguage,
@@ -58,6 +59,7 @@ export function useMainWindowController() {
     setMicrophoneSource,
     setLaunchOnStartup,
     setHistoryEnabled,
+    setAppProfiles,
     setTranslationTarget,
     setScreenshotHotkey,
     resetSession,
@@ -212,6 +214,7 @@ export function useMainWindowController() {
         launchOnStartup?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
         historyEnabled?: boolean;
+        appProfiles?: AppProfile[];
         translationTarget?: TranslationTarget;
         screenshotHotkey?: string;
       }>(
@@ -317,6 +320,9 @@ export function useMainWindowController() {
           }
           if (typeof payload.historyEnabled === "boolean") {
             setHistoryEnabled(payload.historyEnabled);
+          }
+          if (payload.appProfiles) {
+            setAppProfiles(payload.appProfiles);
           }
           if (payload.translationTarget) {
             setTranslationTarget(payload.translationTarget);

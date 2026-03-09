@@ -19,7 +19,21 @@ export type SttLanguage = "auto" | "zh" | "en" | "ja" | "ko" | "de" | "fr" | "es
 export type PreferredLanguage = "auto" | AppLanguage;
 
 export type AppMode = "A" | "B1" | "B2" | "C" | null;
+export type AppProfileMode = "A" | "B1" | "B2" | "C";
 export type TranslationTarget = "off" | AppLanguage;
+
+export interface AppProfile {
+  id: string;
+  name: string;
+  keywords: string[];
+  enabled: boolean;
+  applyToModes: AppProfileMode[];
+  toneHint: string;
+  promptAppendix: string;
+  preferredLanguage: PreferredLanguage | "";
+  outputMode: OutputMode | "";
+  directPaste: boolean | null;
+}
 
 export interface QuickActionCommand {
   id: string;

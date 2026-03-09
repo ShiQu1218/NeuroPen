@@ -1,4 +1,21 @@
-import type { PunctuationMode, SttLanguage } from "../store/useAppStore";
+import type { AppProfile, AppProfileMode, PunctuationMode, SttLanguage } from "../store/useAppStore";
+
+export const resolveAppProfile = (
+  windowTitle: string,
+  profiles: AppProfile[],
+  mode: AppProfileMode,
+): AppProfile | null => {
+  if (!windowTitle) return null;
+  const lower = windowTitle.toLowerCase();
+  return (
+    profiles.find(
+      (p) =>
+        p.enabled &&
+        p.applyToModes.includes(mode) &&
+        p.keywords.some((kw) => lower.includes(kw.toLowerCase())),
+    ) ?? null
+  );
+};
 
 export const inferAppToneHint = (windowTitle: string) => {
   const lower = windowTitle.toLowerCase();

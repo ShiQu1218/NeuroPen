@@ -22,6 +22,7 @@ import {
   normalizeLlmModelOptions,
   useAppStore,
   type AppLanguage,
+  type AppProfile,
   type PreferredLanguage,
   type TranslationTarget,
   type QuickActionCommand,
@@ -29,6 +30,7 @@ import {
   type SttLanguage,
   type PunctuationMode,
 } from "../store/useAppStore";
+import SettingsAppProfileSection from "./settings/SettingsAppProfileSection";
 import SettingsFooter from "./settings/SettingsFooter";
 import SettingsGeneralSection from "./settings/SettingsGeneralSection";
 import SettingsHistorySection from "./settings/SettingsHistorySection";
@@ -82,6 +84,7 @@ export default function Settings() {
     modeBStreamOutput, setModeBStreamOutput,
     translationTarget, setTranslationTarget,
     historyEnabled, setHistoryEnabled,
+    appProfiles, setAppProfiles,
   } = useAppStore();
   const { t } = useI18n();
   const sectionLabelKey: Record<SettingsSection, TranslationKey> = {
@@ -91,6 +94,7 @@ export default function Settings() {
     llm: "settings.section.llm",
     tts: "settings.section.tts",
     history: "settings.section.history",
+    appProfile: "settings.section.appProfile",
   };
   const sttModelNameKey: Partial<Record<string, TranslationKey>> = {
     "whisper-small": "settings.stt.model.whisper-small.name",
@@ -166,6 +170,7 @@ export default function Settings() {
   const [draftQuickActionCommands, setDraftQuickActionCommands] = useState<QuickActionCommand[]>(quickActionCommands);
   const [draftLanguage, setDraftLanguage] = useState<AppLanguage>(language);
   const [draftHistoryEnabled, setDraftHistoryEnabled] = useState(historyEnabled);
+  const [draftAppProfiles, setDraftAppProfiles] = useState<AppProfile[]>(appProfiles);
   const [draftTranslationTarget, setDraftTranslationTarget] = useState<TranslationTarget>(translationTarget);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
   const [audioDevicesLoading, setAudioDevicesLoading] = useState(false);
@@ -303,6 +308,7 @@ export default function Settings() {
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
     setDraftHistoryEnabled(historyEnabled);
+    setDraftAppProfiles(appProfiles);
     setDraftTranslationTarget(translationTarget);
   }, [
     wakeWord,
@@ -335,6 +341,7 @@ export default function Settings() {
     quickActionCommands,
     language,
     historyEnabled,
+    appProfiles,
     translationTarget,
     localModels,
     sttModelPath,
@@ -557,6 +564,7 @@ export default function Settings() {
       setQuickActionCommands(nextQuickActionCommands);
       setLanguage(draftLanguage);
       setHistoryEnabled(draftHistoryEnabled);
+      setAppProfiles(draftAppProfiles);
       setTranslationTarget(nextTranslationTarget);
       await settingsService.setRuntimeSttConfig({
         engine: nextSttEngine,
@@ -595,6 +603,7 @@ export default function Settings() {
         ttsPitch: draftTtsPitch,
         quickActionCommands: nextQuickActionCommands,
         historyEnabled: draftHistoryEnabled,
+        appProfiles: draftAppProfiles,
         translationTarget: nextTranslationTarget,
       });
 
@@ -650,6 +659,7 @@ export default function Settings() {
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
     setDraftHistoryEnabled(historyEnabled);
+    setDraftAppProfiles(appProfiles);
     setDraftTranslationTarget(translationTarget);
     setHotkeyStatus("");
     setHotkeyErrorMessage("");
@@ -818,6 +828,7 @@ export default function Settings() {
             ttsRate: draftTtsRate,
             ttsPitch: draftTtsPitch,
             historyEnabled: draftHistoryEnabled,
+            appProfiles: draftAppProfiles,
             translationTarget: draftSttOutputStrategy === "llmRefine" ? draftTranslationTarget : "off",
           });
         }
@@ -868,7 +879,8 @@ export default function Settings() {
       draftLanguage !== language ||
       draftHistoryEnabled !== historyEnabled ||
       draftTranslationTarget !== translationTarget ||
-      JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands),
+      JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands) ||
+      JSON.stringify(draftAppProfiles) !== JSON.stringify(appProfiles),
     [
       draftWakeWord,
       wakeWord,
@@ -934,6 +946,8 @@ export default function Settings() {
       translationTarget,
       draftQuickActionCommands,
       quickActionCommands,
+      draftAppProfiles,
+      appProfiles,
     ],
   );
 
@@ -1399,6 +1413,13 @@ export default function Settings() {
             <SettingsHistorySection
               draftHistoryEnabled={draftHistoryEnabled}
               onToggle={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
+              t={t}
+            />
+          )}
+          {activeSection === "appProfile" && (
+            <SettingsAppProfileSection
+              profiles={draftAppProfiles}
+              onChange={setDraftAppProfiles}
               t={t}
             />
           )}

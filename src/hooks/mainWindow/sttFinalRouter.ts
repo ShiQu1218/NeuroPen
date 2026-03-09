@@ -1,11 +1,12 @@
 import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
+import type { AppProfile, PreferredLanguage, OutputMode } from "../../store/useAppStore";
 import {
   applyPunctuationMode,
   formatModeAText,
-  inferAppToneHint,
   isLikelyUnexpectedEnglishTranslation,
   normalizeStructuredText,
+  resolveAppProfile,
   stripWrappingQuotes,
 } from "../../utils/appText";
 import {
@@ -55,6 +56,19 @@ export async function registerSttFinalRouter({
       const mode = result.mode as "A" | "B2" | "C";
       store.setCurrentMode(mode);
 
+      // Resolve window title and app profile for all modes
+      const windowTitle = store.contextAwareTone
+        ? await mainWindowService.getForegroundWindowTitle()
+        : "";
+
+      const resolveEffective = (profile: AppProfile | null) => ({
+        lang: ((profile?.preferredLanguage || store.preferredLanguage) as PreferredLanguage),
+        outputMode: ((profile?.outputMode || store.outputMode) as OutputMode),
+        promptAppendix: profile?.promptAppendix || "",
+        toneHint: profile?.toneHint || (store.contextAwareTone ? "Keep neutral and clear style." : "Keep original style."),
+        directPaste: profile?.directPaste ?? null,
+      });
+
       if (mode === "A") {
         let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
         let usedLlmForModeA = false;
@@ -70,10 +84,12 @@ export async function registerSttFinalRouter({
         if (llmNeedsApiKey && (shouldRefine || shouldTranslate)) {
           llmReady = await mainWindowService.hasLlmApiKey().catch(() => false);
         }
-        const title = store.contextAwareTone
-          ? await mainWindowService.getForegroundWindowTitle()
-          : "";
-        const toneHint = store.contextAwareTone ? inferAppToneHint(title) : "Keep original style.";
+        const profileA = store.contextAwareTone
+          ? resolveAppProfile(windowTitle, store.appProfiles, "A")
+          : null;
+        const effectiveA = resolveEffective(profileA);
+        const toneHint = effectiveA.toneHint;
+        const effectiveOutputModeA = effectiveA.outputMode;
         const vocabHint = store.vocabularyTerms.length
           ? `Prefer these domain terms exactly when relevant: ${store.vocabularyTerms.join(", ")}.`
           : "";
@@ -90,15 +106,19 @@ export async function registerSttFinalRouter({
         const translateInstruction =
           `Translate this speech-to-text transcript to ${store.translationTarget}. Preserve the intended structure from the system prompt and output only the final text. ${modeAFormattingHint}`;
         const canStreamModeAPreview =
-          store.outputMode === "PreviewStream" &&
+          effectiveOutputModeA === "PreviewStream" &&
           store.modeAStreamOutput &&
           ((shouldRefine && !shouldTranslate) || (!shouldRefine && shouldTranslate));
+
+        const modeAPromptOverride = effectiveA.promptAppendix
+          ? `${store.modeAPrompt}\n\n${effectiveA.promptAppendix}`
+          : store.modeAPrompt;
 
         if (canStreamModeAPreview && llmReady) {
           const instruction = shouldTranslate ? translateInstruction : refineInstruction;
           const preferredLanguage = shouldTranslate
             ? store.translationTarget
-            : store.preferredLanguage;
+            : effectiveA.lang;
           store.setLlmOutput("");
           store.setIsLlmLoading(true);
           store.setLlmError("");
@@ -121,7 +141,7 @@ export async function registerSttFinalRouter({
               model: store.llmModel,
               preferredLanguage,
               promptMode: "A",
-              promptOverride: store.modeAPrompt,
+              promptOverride: modeAPromptOverride,
               streamOutput: true,
             });
           } catch (err) {
@@ -144,9 +164,9 @@ export async function registerSttFinalRouter({
               instruction: refineInstruction,
               provider: store.llmProvider,
               model: store.llmModel,
-              preferredLanguage: store.preferredLanguage,
+              preferredLanguage: effectiveA.lang,
               promptMode: "A",
-              promptOverride: store.modeAPrompt,
+              promptOverride: modeAPromptOverride,
             });
             if (refined?.trim()) {
               const candidate = stripWrappingQuotes(refined);
@@ -180,7 +200,7 @@ export async function registerSttFinalRouter({
               model: store.llmModel,
               preferredLanguage: store.translationTarget,
               promptMode: "A",
-              promptOverride: store.modeAPrompt,
+              promptOverride: modeAPromptOverride,
             });
             if (translated?.trim()) {
               finalText = translated.trim();
@@ -199,7 +219,9 @@ export async function registerSttFinalRouter({
           ? normalizeStructuredText(finalText)
           : formatModeAText(finalText);
 
-        if (store.outputMode === "PreviewStream") {
+        // directPaste from profile: if true, force DirectInject even if global is PreviewStream
+        const shouldDirectPasteModeA = effectiveA.directPaste === true;
+        if (effectiveOutputModeA === "PreviewStream" && !shouldDirectPasteModeA) {
           store.setLastSelectedText(finalText);
           store.setLastInstruction("");
           await emitPreviewSession({
@@ -263,6 +285,14 @@ export async function registerSttFinalRouter({
           setStatusMsg(t("status.incognitoNoLlm"));
           return;
         }
+        const profileB2 = store.contextAwareTone
+          ? resolveAppProfile(windowTitle, store.appProfiles, "B2")
+          : null;
+        const effectiveB2 = resolveEffective(profileB2);
+        const modeBPromptOverride = effectiveB2.promptAppendix
+          ? `${store.modeBPrompt}\n\n${effectiveB2.promptAppendix}`
+          : store.modeBPrompt;
+
         store.setLlmOutput("");
         store.setIsLlmLoading(true);
         store.setLlmError("");
@@ -284,9 +314,9 @@ export async function registerSttFinalRouter({
             outputMode: "PreviewStream",
             provider: store.llmProvider,
             model: store.llmModel,
-            preferredLanguage: store.preferredLanguage,
+            preferredLanguage: effectiveB2.lang,
             promptMode: "B",
-            promptOverride: store.modeBPrompt,
+            promptOverride: modeBPromptOverride,
             streamOutput: store.modeBStreamOutput,
           });
         } catch (err) {
@@ -303,11 +333,20 @@ export async function registerSttFinalRouter({
           setStatusMsg(t("status.incognitoNoLlm"));
           return;
         }
+        const profileC = store.contextAwareTone
+          ? resolveAppProfile(windowTitle, store.appProfiles, "C")
+          : null;
+        const effectiveC = resolveEffective(profileC);
+        const modeCPromptOverride = effectiveC.promptAppendix
+          ? `${store.modeCPrompt}\n\n${effectiveC.promptAppendix}`
+          : store.modeCPrompt;
+        const effectiveOutputModeC = effectiveC.outputMode;
+
         store.setLlmOutput("");
         store.setIsLlmLoading(true);
         store.setLlmError("");
         store.setLastInstruction(result.transcript);
-        if (store.outputMode === "PreviewStream") {
+        if (effectiveOutputModeC === "PreviewStream") {
           await emitPreviewSession({
             sessionType: "text",
             sourceMode: "C",
@@ -322,15 +361,15 @@ export async function registerSttFinalRouter({
           await mainWindowService.callLlm({
             selectedText: "",
             instruction: result.transcript,
-            outputMode: store.outputMode,
+            outputMode: effectiveOutputModeC,
             provider: store.llmProvider,
             model: store.llmModel,
-            preferredLanguage: store.preferredLanguage,
+            preferredLanguage: effectiveC.lang,
             promptMode: "C",
-            promptOverride: store.modeCPrompt,
+            promptOverride: modeCPromptOverride,
             streamOutput: true,
           });
-          if (store.outputMode === "DirectInject") {
+          if (effectiveOutputModeC === "DirectInject") {
             await mainWindowService.restoreClipboard();
             setStatusMsg(t("status.textInjected"));
             setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);

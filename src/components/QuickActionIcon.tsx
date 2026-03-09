@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
 import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
+import { resolveAppProfile } from "../utils/appText";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
@@ -247,6 +248,22 @@ export default function QuickActionIcon() {
       },
     });
 
+    // Resolve app profile for B1 mode
+    let b1PreferredLanguage: string = currentState.preferredLanguage;
+    let b1PromptOverride = currentState.modeBPrompt;
+    if (currentState.contextAwareTone) {
+      try {
+        const windowTitle = await invoke<string>("get_foreground_window_title");
+        const profileB1 = resolveAppProfile(windowTitle, currentState.appProfiles, "B1");
+        if (profileB1) {
+          if (profileB1.preferredLanguage) b1PreferredLanguage = profileB1.preferredLanguage;
+          if (profileB1.promptAppendix) b1PromptOverride = `${b1PromptOverride}\n\n${profileB1.promptAppendix}`;
+        }
+      } catch {
+        // ignore — profile resolution is best-effort
+      }
+    }
+
     try {
       await invoke("call_llm", {
         selectedText,
@@ -254,9 +271,9 @@ export default function QuickActionIcon() {
         outputMode: llmOutputMode,
         provider: currentState.llmProvider,
         model: currentState.llmModel,
-        preferredLanguage: currentState.preferredLanguage,
+        preferredLanguage: b1PreferredLanguage,
         promptMode: "B",
-        promptOverride: currentState.modeBPrompt,
+        promptOverride: b1PromptOverride,
         streamOutput: currentState.modeBStreamOutput,
       });
     } catch (err) {
