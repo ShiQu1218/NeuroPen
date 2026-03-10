@@ -7,13 +7,13 @@ export type { TranslationKey };
 
 export const languageFallbackMap: Record<AppLanguage, keyof typeof messages> = {
   "zh-TW": "zh-TW",
+  "zh-CN": "zh-CN",
   "en-US": "en-US",
   "ja-JP": "ja-JP",
-  "es-ES": "en-US",
-  "ko-KR": "en-US",
-  "zh-CN": "zh-TW",
-  "de-DE": "en-US",
-  "fr-FR": "en-US",
-  "ar-SA": "en-US",
-  "ru-RU": "en-US",
+  "es-ES": "es-ES",
+  "ko-KR": "ko-KR",
+  "de-DE": "de-DE",
+  "fr-FR": "fr-FR",
+  "ar-SA": "ar-SA",
+  "ru-RU": "ru-RU",
 };
