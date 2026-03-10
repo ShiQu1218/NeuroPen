@@ -21,7 +21,7 @@ use tauri::{Emitter, Listener, Manager};
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
-use commands::history_commands::{history_clear, history_delete, history_list, history_save, history_search};
+use commands::history_commands::{history_clear, history_delete, history_list, history_save, history_search, history_toggle_favorite};
 use commands::llm_commands::{call_llm, call_llm_text, call_llm_with_image, clear_conversation};
 use commands::media_commands::{take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop};
 use commands::stt_commands::{
@@ -433,6 +433,7 @@ pub fn run() {
             history_delete,
             history_clear,
             history_search,
+            history_toggle_favorite,
             tts_speak,
             tts_stop,
             tts_is_playing,

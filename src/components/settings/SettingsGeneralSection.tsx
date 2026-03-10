@@ -77,16 +77,16 @@ export default function SettingsGeneralSection({
           value={draftLanguage}
           onChange={(event) => onLanguageChange(event.target.value as AppLanguage)}
         >
-          <option value="zh-TW">{t("settings.language.zh-TW")}</option>
-          <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-          <option value="en-US">{t("settings.language.en-US")}</option>
-          <option value="ja-JP">{t("settings.language.ja-JP")}</option>
-          <option value="es-ES">{t("settings.language.es-ES")}</option>
-          <option value="ko-KR">{t("settings.language.ko-KR")}</option>
-          <option value="de-DE">{t("settings.language.de-DE")}</option>
-          <option value="fr-FR">{t("settings.language.fr-FR")}</option>
-          <option value="ar-SA">{t("settings.language.ar-SA")}</option>
-          <option value="ru-RU">{t("settings.language.ru-RU")}</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="zh-CN">简体中文</option>
+          <option value="en-US">English</option>
+          <option value="ja-JP">日本語</option>
+          <option value="es-ES">Español</option>
+          <option value="ko-KR">한국어</option>
+          <option value="de-DE">Deutsch</option>
+          <option value="fr-FR">Français</option>
+          <option value="ar-SA">العربية</option>
+          <option value="ru-RU">Русский</option>
         </select>
         <p className="text-xs text-gray-400">{t("settings.language.hint")}</p>
       </div>

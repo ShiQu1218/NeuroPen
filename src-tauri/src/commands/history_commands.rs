@@ -31,3 +31,8 @@ pub fn history_clear() {
 pub fn history_search(query: String) -> Vec<history::HistoryEntry> {
     history::search(&query)
 }
+
+#[tauri::command]
+pub fn history_toggle_favorite(id: String) -> Option<bool> {
+    history::toggle_favorite(&id)
+}
