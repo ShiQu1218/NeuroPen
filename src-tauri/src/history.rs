@@ -29,6 +29,9 @@ pub struct HistoryEntry {
     pub provider: String,
     /// Model name
     pub model: String,
+    /// Whether the entry is favorited (exempt from auto-pruning)
+    #[serde(default)]
+    pub favorited: bool,
 }
 
 const MAX_ENTRIES: usize = 200;
@@ -97,7 +100,7 @@ fn unix_now() -> i64 {
 fn prune_expired(entries: &mut Vec<HistoryEntry>) -> bool {
     let cutoff = unix_now() - HISTORY_RETENTION_DAYS * 24 * 60 * 60;
     let before = entries.len();
-    entries.retain(|entry| entry.timestamp >= cutoff);
+    entries.retain(|entry| entry.favorited || entry.timestamp >= cutoff);
     entries.len() != before
 }
 
@@ -119,6 +122,7 @@ pub fn save(
         output: output.to_string(),
         provider: provider.to_string(),
         model: model.to_string(),
+        favorited: false,
     };
 
     let mut guard = HISTORY.lock().expect("history lock poisoned");
@@ -158,6 +162,21 @@ pub fn clear_all() {
     let mut guard = HISTORY.lock().expect("history lock poisoned");
     *guard = Some(Vec::new());
     save_to_disk(&[]);
+}
+
+/// Toggle the favorited flag on an entry. Returns the new favorited state, or None if not found.
+pub fn toggle_favorite(id: &str) -> Option<bool> {
+    let mut guard = HISTORY.lock().expect("history lock poisoned");
+    ensure_loaded(&mut *guard);
+    let entries = guard.as_mut().unwrap();
+    if let Some(entry) = entries.iter_mut().find(|e| e.id == id) {
+        entry.favorited = !entry.favorited;
+        let new_state = entry.favorited;
+        save_to_disk(entries);
+        Some(new_state)
+    } else {
+        None
+    }
 }
 
 /// Search history entries — matches input_text, instruction, or output.

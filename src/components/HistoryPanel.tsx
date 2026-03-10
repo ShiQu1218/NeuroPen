@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { useI18n } from "../i18n";
+import { useAppStore } from "../store/useAppStore";
+import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 
 interface HistoryEntry {
   id: string;
@@ -11,6 +14,7 @@ interface HistoryEntry {
   output: string;
   provider: string;
   model: string;
+  favorited: boolean;
 }
 
 const MODE_LABELS: Record<string, string> = {
@@ -19,6 +23,8 @@ const MODE_LABELS: Record<string, string> = {
   B2: "Voice + Selection",
   C: "LLM Query",
 };
+
+type FilterTab = "all" | "favorites";
 
 function formatTime(ts: number): string {
   const d = new Date(ts * 1000);
@@ -39,6 +45,7 @@ export default function HistoryPanel() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterTab>("all");
   const { t } = useI18n();
 
   const loadHistory = useCallback(async () => {
@@ -73,6 +80,137 @@ export default function HistoryPanel() {
     await invoke("copy_to_clipboard", { text });
   };
 
+  const handleToggleFavorite = async (id: string) => {
+    await invoke<boolean | null>("history_toggle_favorite", { id });
+    loadHistory();
+  };
+
+  const handleReExecute = async (entry: HistoryEntry) => {
+    const state = useAppStore.getState();
+    const sourceMode = (entry.mode === "B1" || entry.mode === "B2") ? entry.mode : "C";
+    const promptMode = (entry.mode === "B1" || entry.mode === "B2") ? "B" : entry.mode === "A" ? "A" : "C";
+
+    // Set up session context
+    state.setLastSelectedText(entry.inputText);
+    state.setLastInstruction(entry.instruction);
+
+    await emit("neuropen://llm-session-context", {
+      mode: sourceMode,
+      selectedText: entry.inputText,
+      instruction: entry.instruction,
+    });
+
+    await emitPreviewSession({
+      sessionType: "text",
+      sourceMode: sourceMode as "A" | "B1" | "B2" | "C",
+      selectedText: entry.inputText,
+      instruction: entry.instruction,
+    });
+    await showPreviewWindow({
+      focusable: true,
+      focus: true,
+      size: { width: 420, height: 320 },
+    });
+
+    try {
+      await invoke("call_llm", {
+        selectedText: entry.inputText,
+        instruction: entry.instruction,
+        outputMode: "PreviewStream",
+        provider: state.llmProvider,
+        model: state.llmModel,
+        preferredLanguage: state.preferredLanguage,
+        promptMode,
+        promptOverride: promptMode === "B" ? state.modeBPrompt : promptMode === "A" ? state.modeAPrompt : state.modeCPrompt,
+        streamOutput: true,
+      });
+    } catch (err) {
+      console.error("[History] re-execute call_llm failed:", err);
+      state.setLlmError(String(err));
+    }
+  };
+
+  const handleApplyToSelection = async (entry: HistoryEntry) => {
+    if (!entry.instruction) return;
+
+    const state = useAppStore.getState();
+
+    // Get current selection
+    let selectedText = "";
+    try {
+      const sel = await invoke<{ has_selection: boolean; text: string | null }>("get_selection");
+      if (sel.has_selection && sel.text) {
+        selectedText = sel.text;
+      }
+    } catch (err) {
+      console.error("[History] get_selection failed:", err);
+    }
+
+    if (!selectedText) return;
+
+    state.setLastSelectedText(selectedText);
+    state.setLastInstruction(entry.instruction);
+
+    await emit("neuropen://llm-session-context", {
+      mode: "B1",
+      selectedText,
+      instruction: entry.instruction,
+    });
+
+    await emitPreviewSession({
+      sessionType: "text",
+      sourceMode: "B1",
+      selectedText,
+      instruction: entry.instruction,
+    });
+    await showPreviewWindow({
+      focusable: true,
+      focus: true,
+      size: { width: 420, height: 320 },
+    });
+
+    try {
+      await invoke("call_llm", {
+        selectedText,
+        instruction: entry.instruction,
+        outputMode: "PreviewStream",
+        provider: state.llmProvider,
+        model: state.llmModel,
+        preferredLanguage: state.preferredLanguage,
+        promptMode: "B",
+        promptOverride: state.modeBPrompt,
+        streamOutput: state.modeBStreamOutput,
+      });
+    } catch (err) {
+      console.error("[History] apply-to-selection call_llm failed:", err);
+      state.setLlmError(String(err));
+    }
+  };
+
+  const handleAddToQuickAction = (entry: HistoryEntry) => {
+    if (!entry.instruction) return;
+
+    const state = useAppStore.getState();
+    const existing = state.quickActionCommands;
+
+    // Avoid duplicates by instruction
+    if (existing.some((cmd) => cmd.instruction === entry.instruction)) return;
+
+    const newCommand = {
+      id: `history-${Date.now()}`,
+      label: entry.instruction.length > 20
+        ? entry.instruction.slice(0, 20) + "…"
+        : entry.instruction,
+      instruction: entry.instruction,
+    };
+
+    state.setQuickActionCommands([...existing, newCommand]);
+  };
+
+  const displayedEntries = filter === "favorites"
+    ? entries.filter((e) => e.favorited)
+    : entries;
+
   return (
     <div className="flex flex-col h-full">
       {/* Search bar */}
@@ -93,14 +231,38 @@ export default function HistoryPanel() {
         )}
       </div>
 
+      {/* Filter tabs */}
+      <div className="flex gap-1 px-3 py-1.5 border-b border-zinc-100">
+        <button
+          className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
+            filter === "all"
+              ? "bg-blue-100 text-blue-700 font-medium"
+              : "text-zinc-500 hover:bg-zinc-100"
+          }`}
+          onClick={() => setFilter("all")}
+        >
+          {t("history.filterAll")}
+        </button>
+        <button
+          className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
+            filter === "favorites"
+              ? "bg-amber-100 text-amber-700 font-medium"
+              : "text-zinc-500 hover:bg-zinc-100"
+          }`}
+          onClick={() => setFilter("favorites")}
+        >
+          {t("history.filterFavorites")}
+        </button>
+      </div>
+
       {/* Entry list */}
       <div className="flex-1 overflow-auto">
-        {entries.length === 0 ? (
+        {displayedEntries.length === 0 ? (
           <div className="p-4 text-center text-zinc-400 text-sm">
             {t("history.empty")}
           </div>
         ) : (
-          entries.map((entry) => (
+          displayedEntries.map((entry) => (
             <div
               key={entry.id}
               className="border-b border-zinc-100 hover:bg-zinc-50 transition-colors"
@@ -112,6 +274,9 @@ export default function HistoryPanel() {
                   setExpanded(expanded === entry.id ? null : entry.id)
                 }
               >
+                {entry.favorited && (
+                  <span className="text-amber-500 text-[11px]">★</span>
+                )}
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
                   {MODE_LABELS[entry.mode] || entry.mode}
                 </span>
@@ -161,12 +326,45 @@ export default function HistoryPanel() {
                       {entry.provider} / {entry.model}
                     </div>
                   )}
-                  <div className="flex gap-2 pt-1">
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
+                    <button
+                      className="text-[10px] text-blue-600 hover:text-blue-800"
+                      onClick={() => handleReExecute(entry)}
+                    >
+                      {t("history.reExecute")}
+                    </button>
+                    {entry.instruction && (
+                      <button
+                        className="text-[10px] text-blue-600 hover:text-blue-800"
+                        onClick={() => handleApplyToSelection(entry)}
+                      >
+                        {t("history.applyToSelection")}
+                      </button>
+                    )}
+                    {entry.instruction && (
+                      <button
+                        className="text-[10px] text-blue-600 hover:text-blue-800"
+                        onClick={() => handleAddToQuickAction(entry)}
+                      >
+                        {t("history.addToQuickAction")}
+                      </button>
+                    )}
                     <button
                       className="text-[10px] text-blue-600 hover:text-blue-800"
                       onClick={() => handleCopy(entry.output)}
                     >
                       {t("history.copyOutput")}
+                    </button>
+                    <button
+                      className={`text-[10px] ${
+                        entry.favorited
+                          ? "text-amber-500 hover:text-amber-700"
+                          : "text-zinc-400 hover:text-amber-500"
+                      }`}
+                      onClick={() => handleToggleFavorite(entry.id)}
+                    >
+                      {entry.favorited ? t("history.unfavorite") : t("history.favorite")}
                     </button>
                     <button
                       className="text-[10px] text-red-500 hover:text-red-700"

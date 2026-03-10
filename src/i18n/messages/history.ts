@@ -7,7 +7,15 @@ export const historyMessages = {
     "history.instruction": "指令",
     "history.output": "輸出",
     "history.copyOutput": "複製輸出",
-    "history.delete": "刪除"
+    "history.delete": "刪除",
+    "history.reExecute": "再次執行",
+    "history.applyToSelection": "套用到目前選字",
+    "history.addToQuickAction": "加入 Quick Action",
+    "history.favorite": "收藏",
+    "history.unfavorite": "取消收藏",
+    "history.noInstruction": "此紀錄沒有可用的指令",
+    "history.filterAll": "全部",
+    "history.filterFavorites": "收藏"
   },
   "en-US": {
     "history.searchPlaceholder": "Search history…",
@@ -17,7 +25,15 @@ export const historyMessages = {
     "history.instruction": "Instruction",
     "history.output": "Output",
     "history.copyOutput": "Copy Output",
-    "history.delete": "Delete"
+    "history.delete": "Delete",
+    "history.reExecute": "Re-execute",
+    "history.applyToSelection": "Apply to Selection",
+    "history.addToQuickAction": "Add to Quick Action",
+    "history.favorite": "Favorite",
+    "history.unfavorite": "Unfavorite",
+    "history.noInstruction": "No instruction available for this entry",
+    "history.filterAll": "All",
+    "history.filterFavorites": "Favorites"
   },
   "ja-JP": {
     "history.searchPlaceholder": "履歴を検索…",
@@ -27,6 +43,14 @@ export const historyMessages = {
     "history.instruction": "指示",
     "history.output": "出力",
     "history.copyOutput": "出力をコピー",
-    "history.delete": "削除"
+    "history.delete": "削除",
+    "history.reExecute": "再実行",
+    "history.applyToSelection": "選択テキストに適用",
+    "history.addToQuickAction": "Quick Actionに追加",
+    "history.favorite": "お気に入り",
+    "history.unfavorite": "お気に入り解除",
+    "history.noInstruction": "この記録に使用可能な指示がありません",
+    "history.filterAll": "すべて",
+    "history.filterFavorites": "お気に入り"
   }
 } as const;
