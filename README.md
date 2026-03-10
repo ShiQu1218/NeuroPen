@@ -52,6 +52,7 @@
 | **Screenshot-to-LLM workflow** | `Alt + S` region capture and multimodal prompt flow in preview window |
 | **TTS playback** | Built-in read-aloud via Edge TTS with configurable voice/rate/pitch |
 | **History controls** | Searchable local history (up to 200 entries) |
+| **App Profiles** | Per-app automatic tone, prompt, language, output mode, and direct-paste tuning — keyword-based, first-match-wins priority |
 | **Operational settings** | Startup launch toggle, microphone selection, hotkey customization, language settings |
 | **System tray operation** | Background tray app with quick access to settings and exit |
 
@@ -92,12 +93,13 @@ If focus changes during processing, injection is cancelled and clipboard is rest
 
 ## UI Modules
 
-- **Settings Window**: General, STT, Quick Actions, LLM, TTS, and History sections with persisted preferences.
+- **Settings Window**: General, Voice & STT, Quick Actions, LLM, TTS, History, and App Profiles sections with persisted preferences.
 - **Quick Action Icon**: Floating menu on selected text with user-editable preset commands and custom instruction input.
 - **Output Preview Window**: Streaming markdown output with LaTeX formula rendering, follow-up prompts, copy/replace controls, and screenshot attachment preview.
 - **Recording Indicator**: Lightweight overlay for recording state and elapsed time.
 - **History Panel**: Search, copy, and delete prior outputs (local storage).
 - **Screenshot Overlay**: Region selector used by screenshot-to-LLM workflows.
+- **App Profiles**: Card-based per-app configuration with keyword matching, tone hints, prompt appendix, language/output-mode overrides, and direct-paste option. Profiles are ordered by priority — the first matching profile wins.
 
 ---
 
@@ -342,9 +344,10 @@ NeuroPen/
 | Category | Options |
 |----------|---------|
 | **General** | Display language, global hotkey, wake word, launch at startup |
-| **Voice & STT** | STT engine selection, local model management (install/delete/switch), microphone source, STT output strategy (pure STT / LLM polish), smart punctuation, vocabulary import, foreground app context awareness |
+| **Voice & STT** | STT engine selection, local model management (install/delete/switch), microphone source, STT output strategy (pure STT / LLM polish), smart punctuation, vocabulary import |
 | **Quick Actions** | Add, edit, delete Quick Action commands |
 | **LLM** | Output mode (streaming preview / direct injection), Provider, saved model list, Model, preferred output language, API Key, multimodal toggle |
+| **App Profiles** | Keyword-based per-app profiles (e.g. Notion, VS Code, LINE): tone hint, prompt appendix, language override, output mode override, direct paste — ordered by priority, first match wins |
 
 ---
 

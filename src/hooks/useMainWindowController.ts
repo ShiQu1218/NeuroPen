@@ -24,6 +24,10 @@ import {
 
 export function useMainWindowController() {
   const { t } = useI18n();
+  // Keep a ref so event-listener closures always use the latest translation function.
+  const tRef = useRef(t);
+  tRef.current = t;
+  const tLive: typeof t = (...args) => tRef.current(...args);
   const [statusMsg, setStatusMsg] = useState(t("status.readyHoldHotkey"));
   const statusReadyRef = useRef(false);
 
@@ -72,6 +76,13 @@ export function useMainWindowController() {
     }
     void emit("neuropen://status", { message: statusMsg });
   }, [statusMsg]);
+
+  // When the UI language changes, refresh the idle status message.
+  const language = useAppStore((s) => s.language);
+  useEffect(() => {
+    setStatusMsg(t("status.readyHoldHotkey"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
 
   useEffect(() => {
     // `cancelled` flag handles React StrictMode double-mount:
@@ -165,13 +176,13 @@ export function useMainWindowController() {
           );
           store.setIsRecording(false);
           pendingHotkeyReleaseAt = 0;
-          setStatusMsg(t("status.recognizing"));
+          setStatusMsg(tLive("status.recognizing"));
         } catch (err) {
           console.error("[App] stop_recording failed:", err);
           store.setSttError(String(err));
           store.setIsRecording(false);
           pendingHotkeyReleaseAt = 0;
-          setStatusMsg(t("status.stopRecordingFailed"));
+          setStatusMsg(tLive("status.stopRecordingFailed"));
         }
       };
 
@@ -330,8 +341,8 @@ export function useMainWindowController() {
           if (typeof payload.screenshotHotkey === "string") {
             setScreenshotHotkey(payload.screenshotHotkey);
           }
-          setStatusMsg(t("status.settingsUpdated"));
-          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+          setStatusMsg(tLive("status.settingsUpdated"));
+          setTimeout(() => setStatusMsg(tLive("status.readyHoldHotkey")), 2000);
         }
       );
 
@@ -354,8 +365,8 @@ export function useMainWindowController() {
           return;
         }
         if (!store.sttEnabled) {
-          setStatusMsg(t("status.sttFeatureDisabled"));
-          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 1500);
+          setStatusMsg(tLive("status.sttFeatureDisabled"));
+          setTimeout(() => setStatusMsg(tLive("status.readyHoldHotkey")), 1500);
           return;
         }
 
@@ -369,7 +380,7 @@ export function useMainWindowController() {
           // ── Mode B2 ── hide Quick Action Icon, start recording
           setSelectedText(selected_text);
           setCurrentMode("B2");
-          setStatusMsg(t("status.selectionRecording"));
+          setStatusMsg(tLive("status.selectionRecording"));
 
           // Hide Quick Action Icon if it was shown by selection watcher
           const qaWin = await WebviewWindow.getByLabel("quick-action");
@@ -384,8 +395,8 @@ export function useMainWindowController() {
             const hasKey = await mainWindowService.hasSttApiKey();
             if (!hasKey) {
               pendingHotkeyReleaseAt = 0;
-              setSttError(t("error.sttApiKeyRequired"));
-              setStatusMsg(t("status.setupSttApiKey"));
+              setSttError(tLive("error.sttApiKeyRequired"));
+              setStatusMsg(tLive("status.setupSttApiKey"));
               return;
             }
           }
@@ -406,7 +417,7 @@ export function useMainWindowController() {
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
-            setStatusMsg(t("status.recordingStartFailed"));
+            setStatusMsg(tLive("status.recordingStartFailed"));
             pendingHotkeyReleaseAt = 0;
           }
         } else {
@@ -417,14 +428,14 @@ export function useMainWindowController() {
             const hasKey = await mainWindowService.hasSttApiKey();
             if (!hasKey) {
               pendingHotkeyReleaseAt = 0;
-              setSttError(t("error.sttApiKeyRequired"));
-              setStatusMsg(t("status.setupSttApiKey"));
+              setSttError(tLive("error.sttApiKeyRequired"));
+              setStatusMsg(tLive("status.setupSttApiKey"));
               return;
             }
           }
 
           setCurrentMode("A");
-          setStatusMsg(t("status.recordingReleaseToStop"));
+          setStatusMsg(tLive("status.recordingReleaseToStop"));
           try {
             await mainWindowService.startRecording();
             // Start streaming partial transcription
@@ -441,7 +452,7 @@ export function useMainWindowController() {
           } catch (err) {
             console.error("[App] start_recording failed:", err);
             setSttError(String(err));
-            setStatusMsg(t("status.recordingStartFailed"));
+            setStatusMsg(tLive("status.recordingStartFailed"));
             pendingHotkeyReleaseAt = 0;
           }
         }
@@ -456,14 +467,14 @@ export function useMainWindowController() {
 
       await registerScreenshotListeners({
         safeRegister,
-        t,
+        t: tLive,
         setStatusMsg,
         setSttError,
       });
 
       await registerSttFinalRouter({
         safeRegister,
-        t,
+        t: tLive,
         setStatusMsg,
         setSttError,
       });
@@ -498,7 +509,7 @@ export function useMainWindowController() {
         const store = useAppStore.getState();
         store.setSttError(event.payload.message);
         store.setIsRecording(false);
-        setStatusMsg(t("status.sttError", { reason: event.payload.message }));
+        setStatusMsg(tLive("status.sttError", { reason: event.payload.message }));
       });
 
       // ── 5. Undo result ──
@@ -506,11 +517,11 @@ export function useMainWindowController() {
         "neuropen://undo-result",
         (event) => {
           if (event.payload.success) {
-            setStatusMsg(t("status.undoSuccess"));
+            setStatusMsg(tLive("status.undoSuccess"));
           } else {
-            setStatusMsg(t("status.undoFailed", { reason: event.payload.reason ?? "" }));
+            setStatusMsg(tLive("status.undoFailed", { reason: event.payload.reason ?? "" }));
           }
-          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+          setTimeout(() => setStatusMsg(tLive("status.readyHoldHotkey")), 2000);
         }
       );
     })();

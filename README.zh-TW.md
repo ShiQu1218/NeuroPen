@@ -52,6 +52,7 @@
 | **截圖多模態流程** | `Alt + S` 區域截圖後可直接進入 LLM 圖像問答流程 |
 | **TTS 朗讀** | 內建 Edge TTS，支援 voice/rate/pitch 設定 |
 | **歷史紀錄控制** | 本地歷史紀錄（最多 200 筆） |
+| **應用程式設定檔** | 依前景應用程式自動套用語調、提示詞、語言、輸出模式與直接貼上設定 — 關鍵字首配對勝出 |
 | **操作設定** | 開機啟動、麥克風來源、快捷鍵、語言偏好等 |
 | **系統匣常駐** | 背景執行，從系統匣快速開啟設定或結束程式 |
 
@@ -92,12 +93,13 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 
 ## UI Modules / 介面模組
 
-- **Settings Window / 設定視窗**：包含 General、STT、Quick Actions、LLM、TTS、History 等設定分頁。
+- **Settings Window / 設定視窗**：包含 General、Voice & STT、Quick Actions、LLM、TTS、History、App Profiles 等設定分頁。
 - **Quick Action Icon / 劃詞浮動操作**：選字後顯示可自訂預設指令與自訂輸入欄位。
 - **Output Preview Window / 輸出預覽視窗**：支援串流輸出、追問、複製/取代，以及截圖附件預覽。
 - **Recording Indicator / 錄音指示器**：顯示錄音狀態與秒數的輕量浮窗。
 - **History Panel / 歷史紀錄面板**：本地紀錄的搜尋、複製與刪除操作。
 - **Screenshot Overlay / 截圖區域選取層**：提供區域截圖並串接到圖像問答流程。
+- **App Profiles / 應用程式設定檔**：以關鍵字匹配前景應用程式（如 Notion、VS Code、LINE），自動套用語調提示、額外提示詞、語言偏好、輸出模式與直接貼上設定。設定檔依優先順序排列，首個匹配者生效。
 
 ---
 
@@ -342,9 +344,10 @@ NeuroPen/
 | Category | Options |
 |----------|---------|
 | **一般 (General)** | 顯示語言、全域快捷鍵、喚醒詞、開機自動啟動 |
-| **語音與 STT (Voice & STT)** | STT 引擎選擇、本地模型管理（安裝/刪除/切換）、麥克風來源、STT 輸出策略（純 STT / LLM 潤飾）、智慧標點、詞彙庫匯入、前景 App 情境感知 |
+| **語音與 STT (Voice & STT)** | STT 引擎選擇、本地模型管理（安裝/刪除/切換）、麥克風來源、STT 輸出策略（純 STT / LLM 潤飾）、智慧標點、詞彙庫匯入 |
 | **快捷指令 (Quick Actions)** | 新增、編輯、刪除 Quick Action 指令 |
 | **LLM** | 輸出模式（預覽串流 / 直接注入）、Provider、常用模型清單、Model、輸出偏好語言、API Key、多模態開關 |
+| **應用程式設定檔 (App Profiles)** | 依關鍵字匹配應用程式（如 Notion、VS Code、LINE）：語調提示、額外提示詞、語言覆蓋、輸出模式覆蓋、直接貼上 — 優先順序由上而下，首配對勝出 |
 
 ---
 

@@ -1,11 +1,8 @@
 //! Screenshot module — capture screen region for multimodal LLM queries.
 //!
-//! Uses Win32 API to capture the screen, encode to PNG, then pass to
-//! LLM providers that support image input (OpenAI, Gemini, Claude).
-//!
-//! Emits:
-//!   `screenshot://captured(base64)` — screenshot taken
-//!   `screenshot://error(msg)`       — capture failed
+//! Uses Windows Graphics Capture on Windows so hardware-accelerated video
+//! surfaces (for example YouTube / Bilibili playback) are captured correctly.
+//! Falls back to an explicit error on unsupported platforms.
 
 use serde::Serialize;
 
@@ -17,69 +14,348 @@ pub struct ScreenshotResult {
     pub height: u32,
 }
 
-/// Capture the entire primary screen.
 #[cfg(target_os = "windows")]
-pub fn capture_full_screen() -> Result<ScreenshotResult, String> {
-    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-    use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleBitmap, CreateCompatibleDC, SelectObject, BitBlt,
-        GetDIBits, DeleteDC, DeleteObject, BITMAPINFO, BITMAPINFOHEADER,
-        BI_RGB, DIB_RGB_COLORS, SRCCOPY,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow;
-    use windows::Win32::Graphics::Gdi::GetDC;
-    use windows::Win32::Graphics::Gdi::ReleaseDC;
+mod windows_capture {
+    use super::ScreenshotResult;
+    use std::sync::mpsc::channel;
+    use std::time::Duration;
 
-    unsafe {
-        let width = GetSystemMetrics(SM_CXSCREEN) as u32;
-        let height = GetSystemMetrics(SM_CYSCREEN) as u32;
-
-        let hwnd = GetDesktopWindow();
-        let hdc_screen = GetDC(hwnd);
-        let hdc_mem = CreateCompatibleDC(hdc_screen);
-        let hbm = CreateCompatibleBitmap(hdc_screen, width as i32, height as i32);
-        let old = SelectObject(hdc_mem, hbm);
-
-        let _ = BitBlt(hdc_mem, 0, 0, width as i32, height as i32, hdc_screen, 0, 0, SRCCOPY);
-
-        // Read pixel data
-        let mut bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: width as i32,
-                biHeight: -(height as i32), // top-down
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
+    use windows::{
+        Foundation::TypedEventHandler,
+        Graphics::{
+            Capture::{Direct3D11CaptureFramePool, GraphicsCaptureItem},
+            DirectX::{Direct3D11::IDirect3DDevice, DirectXPixelFormat},
+        },
+        Win32::{
+            Foundation::{POINT, RECT},
+            Graphics::{
+                Direct3D::D3D_DRIVER_TYPE_HARDWARE,
+                Direct3D11::{
+                    D3D11_BOX, D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                    D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SDK_VERSION,
+                    D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11CreateDevice, ID3D11Device,
+                    ID3D11DeviceContext, ID3D11Resource, ID3D11Texture2D,
+                },
+                Dxgi::IDXGIDevice,
+                Gdi::{
+                    GetMonitorInfoW, MonitorFromPoint, MonitorFromRect, HMONITOR, MONITORINFO,
+                    MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
+                },
             },
-            ..Default::default()
-        };
+            System::WinRT::{
+                Direct3D11::{CreateDirect3D11DeviceFromDXGIDevice, IDirect3DDxgiInterfaceAccess},
+                Graphics::Capture::IGraphicsCaptureItemInterop,
+            },
+        },
+        core::{IInspectable, Interface, factory},
+    };
 
-        let row_bytes = (width * 4) as usize;
-        let mut pixels = vec![0u8; row_bytes * height as usize];
-
-        GetDIBits(
-            hdc_mem,
-            hbm,
-            0,
-            height,
-            Some(pixels.as_mut_ptr() as *mut _),
-            &mut bmi,
-            DIB_RGB_COLORS,
-        );
-
-        SelectObject(hdc_mem, old);
-        let _ = DeleteObject(hbm);
-        let _ = DeleteDC(hdc_mem);
-        ReleaseDC(hwnd, hdc_screen);
-
-        // Convert BGRA → RGBA
-        for chunk in pixels.chunks_exact_mut(4) {
-            chunk.swap(0, 2); // B <-> R
+    pub fn capture_full_screen() -> Result<ScreenshotResult, String> {
+        let hmonitor = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
+        if hmonitor.0.is_null() {
+            return Err("Unable to locate the primary monitor for screenshot capture.".to_string());
         }
 
-        // Encode as PNG
+        let monitor_rect = get_monitor_rect(hmonitor)?;
+        let width = rect_width(&monitor_rect)?;
+        let height = rect_height(&monitor_rect)?;
+
+        capture_monitor_region(hmonitor, 0, 0, width, height)
+    }
+
+    pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult, String> {
+        if w == 0 || h == 0 {
+            return Err("Screenshot region must have a non-zero width and height.".to_string());
+        }
+
+        let right = x
+            .checked_add(i32::try_from(w).map_err(|_| "Screenshot width exceeds the supported range.")?)
+            .ok_or_else(|| "Screenshot region exceeds the supported coordinate range.".to_string())?;
+        let bottom = y
+            .checked_add(i32::try_from(h).map_err(|_| "Screenshot height exceeds the supported range.")?)
+            .ok_or_else(|| "Screenshot region exceeds the supported coordinate range.".to_string())?;
+
+        let region_rect = RECT {
+            left: x,
+            top: y,
+            right,
+            bottom,
+        };
+
+        let hmonitor = unsafe { MonitorFromRect(&region_rect, MONITOR_DEFAULTTONEAREST) };
+        if hmonitor.0.is_null() {
+            return Err("Unable to locate the target monitor for screenshot capture.".to_string());
+        }
+
+        let monitor_rect = get_monitor_rect(hmonitor)?;
+        let crop_x = (x - monitor_rect.left).max(0) as u32;
+        let crop_y = (y - monitor_rect.top).max(0) as u32;
+        let max_width = rect_width(&monitor_rect)?.saturating_sub(crop_x);
+        let max_height = rect_height(&monitor_rect)?.saturating_sub(crop_y);
+        let crop_w = w.min(max_width);
+        let crop_h = h.min(max_height);
+
+        if crop_w == 0 || crop_h == 0 {
+            return Err("Screenshot region falls outside the selected monitor.".to_string());
+        }
+
+        capture_monitor_region(hmonitor, crop_x, crop_y, crop_w, crop_h)
+    }
+
+    fn capture_monitor_region(
+        hmonitor: HMONITOR,
+        crop_x: u32,
+        crop_y: u32,
+        crop_w: u32,
+        crop_h: u32,
+    ) -> Result<ScreenshotResult, String> {
+        let d3d_device = create_d3d_device()?;
+        let d3d_context = unsafe {
+            d3d_device
+                .GetImmediateContext()
+                .map_err(|e| format!("Failed to acquire the D3D11 device context: {e}"))?
+        };
+        let dxgi_device = d3d_device
+            .cast::<IDXGIDevice>()
+            .map_err(|e| format!("Failed to cast the D3D11 device to DXGI: {e}"))?;
+        let inspectable = unsafe {
+            CreateDirect3D11DeviceFromDXGIDevice(&dxgi_device)
+                .map_err(|e| format!("Failed to create the WinRT Direct3D device: {e}"))?
+        };
+        let capture_device = inspectable
+            .cast::<IDirect3DDevice>()
+            .map_err(|e| format!("Failed to cast the WinRT Direct3D device: {e}"))?;
+        let capture_item = create_monitor_capture_item(hmonitor)?;
+        let capture_size = capture_item
+            .Size()
+            .map_err(|e| format!("Failed to query the monitor capture size: {e}"))?;
+        let frame_pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
+            &capture_device,
+            DirectXPixelFormat::B8G8R8A8UIntNormalized,
+            1,
+            capture_size,
+        )
+        .map_err(|e| format!("Failed to create the capture frame pool: {e}"))?;
+
+        let (sender, receiver) = channel::<Result<(Vec<u8>, u32, u32), String>>();
+        let d3d_device_for_frame = d3d_device.clone();
+        let d3d_context_for_frame = d3d_context.clone();
+
+        frame_pool
+            .FrameArrived(&TypedEventHandler::<Direct3D11CaptureFramePool, IInspectable>::new(
+                move |pool, _| {
+                    let Some(pool) = pool else {
+                        let _ = sender.send(Err("Capture frame pool was unexpectedly unavailable.".to_string()));
+                        return Ok(());
+                    };
+
+                    let frame_result = extract_cropped_frame(
+                        &d3d_device_for_frame,
+                        &d3d_context_for_frame,
+                        &pool,
+                        crop_x,
+                        crop_y,
+                        crop_w,
+                        crop_h,
+                    );
+                    let _ = sender.send(frame_result);
+                    Ok(())
+                },
+            ))
+            .map_err(|e| format!("Failed to subscribe to capture frames: {e}"))?;
+
+        let session = frame_pool
+            .CreateCaptureSession(&capture_item)
+            .map_err(|e| format!("Failed to create the monitor capture session: {e}"))?;
+        let _ = session.SetIsBorderRequired(false);
+        let _ = session.SetIsCursorCaptureEnabled(false);
+        session
+            .StartCapture()
+            .map_err(|e| format!("Failed to start monitor capture: {e}"))?;
+
+        let (rgba_pixels, width, height) = receiver
+            .recv_timeout(Duration::from_millis(750))
+            .map_err(|_| "Timed out while waiting for the monitor frame.".to_string())??;
+
+        session.Close().ok();
+        frame_pool.Close().ok();
+
+        encode_png(rgba_pixels, width, height)
+    }
+
+    fn create_d3d_device() -> Result<ID3D11Device, String> {
+        unsafe {
+            let mut d3d_device = None;
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_HARDWARE,
+                None,
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                None,
+                D3D11_SDK_VERSION,
+                Some(&mut d3d_device),
+                None,
+                None,
+            )
+            .map_err(|e| format!("Failed to create the D3D11 device: {e}"))?;
+
+            d3d_device.ok_or_else(|| "D3D11 device creation returned no device.".to_string())
+        }
+    }
+
+    fn create_monitor_capture_item(hmonitor: HMONITOR) -> Result<GraphicsCaptureItem, String> {
+        let interop = factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>()
+            .map_err(|e| format!("Failed to access GraphicsCaptureItem interop: {e}"))?;
+        unsafe {
+            interop
+                .CreateForMonitor::<HMONITOR, GraphicsCaptureItem>(hmonitor)
+                .map_err(|e| format!("Failed to create the monitor capture item: {e}"))
+        }
+    }
+
+    fn get_monitor_rect(hmonitor: HMONITOR) -> Result<RECT, String> {
+        let mut monitor_info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        unsafe {
+            GetMonitorInfoW(hmonitor, &mut monitor_info as *mut MONITORINFO as *mut _)
+                .ok()
+                .map_err(|e| format!("Failed to query monitor bounds: {e}"))?;
+        }
+        Ok(monitor_info.rcMonitor)
+    }
+
+    fn extract_cropped_frame(
+        d3d_device: &ID3D11Device,
+        d3d_context: &ID3D11DeviceContext,
+        frame_pool: &Direct3D11CaptureFramePool,
+        crop_x: u32,
+        crop_y: u32,
+        crop_w: u32,
+        crop_h: u32,
+    ) -> Result<(Vec<u8>, u32, u32), String> {
+        let frame = frame_pool
+            .TryGetNextFrame()
+            .map_err(|e| format!("Failed to retrieve the next capture frame: {e}"))?;
+        let surface = frame
+            .Surface()
+            .map_err(|e| format!("Failed to access the Direct3D frame surface: {e}"))?;
+        let dxgi_access = surface
+            .cast::<IDirect3DDxgiInterfaceAccess>()
+            .map_err(|e| format!("Failed to access the DXGI frame texture: {e}"))?;
+        let source_texture = unsafe {
+            dxgi_access
+                .GetInterface::<ID3D11Texture2D>()
+                .map_err(|e| format!("Failed to access the D3D11 frame texture: {e}"))?
+        };
+        let rgba_pixels = crop_texture_to_rgba(
+            d3d_device,
+            d3d_context,
+            &source_texture,
+            crop_x,
+            crop_y,
+            crop_w,
+            crop_h,
+        )?;
+        frame.Close().ok();
+        Ok((rgba_pixels, crop_w, crop_h))
+    }
+
+    fn crop_texture_to_rgba(
+        d3d_device: &ID3D11Device,
+        d3d_context: &ID3D11DeviceContext,
+        source_texture: &ID3D11Texture2D,
+        crop_x: u32,
+        crop_y: u32,
+        crop_w: u32,
+        crop_h: u32,
+    ) -> Result<Vec<u8>, String> {
+        unsafe {
+            let mut source_desc = D3D11_TEXTURE2D_DESC::default();
+            source_texture.GetDesc(&mut source_desc);
+
+            if crop_x.checked_add(crop_w).is_none()
+                || crop_y.checked_add(crop_h).is_none()
+                || crop_x + crop_w > source_desc.Width
+                || crop_y + crop_h > source_desc.Height
+            {
+                return Err("Requested screenshot crop falls outside the captured frame.".to_string());
+            }
+
+            let mut staging_desc = source_desc;
+            staging_desc.Width = crop_w;
+            staging_desc.Height = crop_h;
+            staging_desc.BindFlags = 0;
+            staging_desc.MiscFlags = 0;
+            staging_desc.Usage = D3D11_USAGE_STAGING;
+            staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
+
+            let mut staging_texture = None;
+            d3d_device
+                .CreateTexture2D(&staging_desc, None, Some(&mut staging_texture))
+                .map_err(|e| format!("Failed to create the staging screenshot texture: {e}"))?;
+            let staging_texture = staging_texture
+                .ok_or_else(|| "The staging screenshot texture was not created.".to_string())?;
+
+            let source_resource = source_texture
+                .cast::<ID3D11Resource>()
+                .map_err(|e| format!("Failed to cast the source screenshot texture: {e}"))?;
+            let staging_resource = staging_texture
+                .cast::<ID3D11Resource>()
+                .map_err(|e| format!("Failed to cast the staging screenshot texture: {e}"))?;
+            let crop_box = D3D11_BOX {
+                left: crop_x,
+                top: crop_y,
+                right: crop_x + crop_w,
+                bottom: crop_y + crop_h,
+                front: 0,
+                back: 1,
+            };
+
+            d3d_context.CopySubresourceRegion(
+                Some(&staging_resource),
+                0,
+                0,
+                0,
+                0,
+                Some(&source_resource),
+                0,
+                Some(&crop_box),
+            );
+
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            d3d_context
+                .Map(
+                    Some(&staging_resource),
+                    0,
+                    D3D11_MAP_READ,
+                    0,
+                    Some(&mut mapped),
+                )
+                .map_err(|e| format!("Failed to map the screenshot texture for reading: {e}"))?;
+
+            let mut rgba_pixels = vec![0u8; (crop_w * crop_h * 4) as usize];
+            let source_ptr = mapped.pData as *const u8;
+            for row in 0..crop_h {
+                let source_offset = (row * mapped.RowPitch) as usize;
+                let destination_offset = (row * crop_w * 4) as usize;
+                let source_row =
+                    std::slice::from_raw_parts(source_ptr.add(source_offset), (crop_w * 4) as usize);
+                let destination_row =
+                    &mut rgba_pixels[destination_offset..destination_offset + (crop_w * 4) as usize];
+                destination_row.copy_from_slice(source_row);
+                for pixel in destination_row.chunks_exact_mut(4) {
+                    pixel.swap(0, 2);
+                }
+            }
+
+            d3d_context.Unmap(Some(&staging_resource), 0);
+            Ok(rgba_pixels)
+        }
+    }
+
+    fn encode_png(rgba_pixels: Vec<u8>, width: u32, height: u32) -> Result<ScreenshotResult, String> {
         let mut png_buf = Vec::new();
         {
             let mut encoder = png::Encoder::new(std::io::Cursor::new(&mut png_buf), width, height);
@@ -89,19 +365,33 @@ pub fn capture_full_screen() -> Result<ScreenshotResult, String> {
                 .write_header()
                 .map_err(|e| format!("PNG header error: {e}"))?;
             writer
-                .write_image_data(&pixels)
+                .write_image_data(&rgba_pixels)
                 .map_err(|e| format!("PNG write error: {e}"))?;
         }
 
         use base64::Engine;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&png_buf);
-
         Ok(ScreenshotResult {
-            base64_png: b64,
+            base64_png: base64::engine::general_purpose::STANDARD.encode(&png_buf),
             width,
             height,
         })
     }
+
+    fn rect_width(rect: &RECT) -> Result<u32, String> {
+        u32::try_from(rect.right - rect.left)
+            .map_err(|_| "Monitor width is outside the supported range.".to_string())
+    }
+
+    fn rect_height(rect: &RECT) -> Result<u32, String> {
+        u32::try_from(rect.bottom - rect.top)
+            .map_err(|_| "Monitor height is outside the supported range.".to_string())
+    }
+}
+
+/// Capture the entire primary screen.
+#[cfg(target_os = "windows")]
+pub fn capture_full_screen() -> Result<ScreenshotResult, String> {
+    windows_capture::capture_full_screen()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -112,79 +402,7 @@ pub fn capture_full_screen() -> Result<ScreenshotResult, String> {
 /// Capture a specific screen region.
 #[cfg(target_os = "windows")]
 pub fn capture_region(x: i32, y: i32, w: u32, h: u32) -> Result<ScreenshotResult, String> {
-    use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleBitmap, CreateCompatibleDC, SelectObject, BitBlt,
-        GetDIBits, DeleteDC, DeleteObject, BITMAPINFO, BITMAPINFOHEADER,
-        BI_RGB, DIB_RGB_COLORS, SRCCOPY,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow;
-    use windows::Win32::Graphics::Gdi::GetDC;
-    use windows::Win32::Graphics::Gdi::ReleaseDC;
-
-    unsafe {
-        let hwnd = GetDesktopWindow();
-        let hdc_screen = GetDC(hwnd);
-        let hdc_mem = CreateCompatibleDC(hdc_screen);
-        let hbm = CreateCompatibleBitmap(hdc_screen, w as i32, h as i32);
-        let old = SelectObject(hdc_mem, hbm);
-
-        let _ = BitBlt(hdc_mem, 0, 0, w as i32, h as i32, hdc_screen, x, y, SRCCOPY);
-
-        let mut bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: w as i32,
-                biHeight: -(h as i32),
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let mut pixels = vec![0u8; (w * 4) as usize * h as usize];
-        GetDIBits(
-            hdc_mem,
-            hbm,
-            0,
-            h,
-            Some(pixels.as_mut_ptr() as *mut _),
-            &mut bmi,
-            DIB_RGB_COLORS,
-        );
-
-        SelectObject(hdc_mem, old);
-        let _ = DeleteObject(hbm);
-        let _ = DeleteDC(hdc_mem);
-        ReleaseDC(hwnd, hdc_screen);
-
-        for chunk in pixels.chunks_exact_mut(4) {
-            chunk.swap(0, 2);
-        }
-
-        let mut png_buf = Vec::new();
-        {
-            let mut encoder = png::Encoder::new(std::io::Cursor::new(&mut png_buf), w, h);
-            encoder.set_color(png::ColorType::Rgba);
-            encoder.set_depth(png::BitDepth::Eight);
-            let mut writer = encoder
-                .write_header()
-                .map_err(|e| format!("PNG header error: {e}"))?;
-            writer
-                .write_image_data(&pixels)
-                .map_err(|e| format!("PNG write error: {e}"))?;
-        }
-
-        use base64::Engine;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&png_buf);
-
-        Ok(ScreenshotResult {
-            base64_png: b64,
-            width: w,
-            height: h,
-        })
-    }
+    windows_capture::capture_region(x, y, w, h)
 }
 
 #[cfg(not(target_os = "windows"))]
