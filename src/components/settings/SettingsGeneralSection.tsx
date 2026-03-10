@@ -197,7 +197,7 @@ export default function SettingsGeneralSection({
             onClearHotkeyError();
           }}
         />
-        <p className="text-xs text-gray-400">{t("settings.screenshot.hint")}（可自訂）</p>
+        <p className="text-xs text-gray-400">{t("settings.screenshot.hint")}</p>
         <div className="flex items-center gap-2">
           <button
             type="button"

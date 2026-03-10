@@ -491,7 +491,7 @@ export default function Settings() {
     const isExternalModelChoice = draftSttModelChoice === OPENAI_STT_MODEL;
     if (!isExternalModelChoice && !localModels.some((model) => model.id === draftSttModelChoice && model.installed)) {
       setSettingsSaveStatus("error");
-      setLocalModelStatus({ type: "error", message: "請先安裝本地模型，或改選 OpenAI Whisper API。" });
+      setLocalModelStatus({ type: "error", message: t("settings.stt.localModelRequired") });
       setTimeout(() => setSettingsSaveStatus(""), STATUS_RESET_MS);
       return;
     }
@@ -748,10 +748,10 @@ export default function Settings() {
         )
       );
       setDraftVocabularyTerms(merged.join("\n"));
-      setLocalModelStatus({ type: "success", message: "詞彙庫已匯入，可按儲存套用。" });
+      setLocalModelStatus({ type: "success", message: t("settings.stt.vocabularyImported") });
     } catch (err) {
       console.error("[Settings] import vocabulary failed:", err);
-      setLocalModelStatus({ type: "error", message: "詞彙庫匯入失敗，請確認檔案格式。" });
+      setLocalModelStatus({ type: "error", message: t("settings.stt.vocabularyImportFailed") });
     }
   };
 
@@ -1017,12 +1017,12 @@ export default function Settings() {
                     setDraftSttEngine(engine);
                   }}
                 >
-                  <option value={OPENAI_STT_MODEL}>OpenAI Whisper API（雲端）</option>
+                  <option value={OPENAI_STT_MODEL}>OpenAI Whisper API{t("settings.stt.modelCloud")}</option>
                   {localModels
                     .filter((model) => model.installed)
                     .map((model) => (
                       <option key={model.id} value={model.id}>
-                        {getLocalizedModelName(model)}（本地）
+                        {getLocalizedModelName(model)}{t("settings.stt.modelLocal")}
                       </option>
                     ))}
                 </select>
@@ -1080,9 +1080,9 @@ export default function Settings() {
 
               {draftSttModelChoice === OPENAI_STT_MODEL && (
                 <div className="space-y-1">
-                  <label className="font-medium">Whisper API Key（STT）</label>
+                  <label className="font-medium">{t("settings.stt.sttApiKeyLabel")}</label>
                   {sttApiKeySet && (
-                    <p className="text-xs text-green-600">已設定 Whisper STT API Key</p>
+                    <p className="text-xs text-green-600">{t("settings.stt.sttApiKeySet")}</p>
                   )}
                   <div className="flex gap-2">
                     <input
@@ -1090,7 +1090,7 @@ export default function Settings() {
                       className="flex-1 input-field px-2 py-1 font-mono text-xs"
                       value={sttApiKeyInput}
                       onChange={(e) => setSttApiKeyInput(e.target.value)}
-                      placeholder={sttApiKeySet ? "••••••••" : "輸入 Whisper STT API Key"}
+                      placeholder={sttApiKeySet ? "••••••••" : t("settings.stt.sttApiKeyPlaceholder")}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && sttApiKeyInput) handleSaveSttApiKey();
                       }}
@@ -1100,20 +1100,20 @@ export default function Settings() {
                       disabled={!sttApiKeyInput || sttApiKeySaveStatus === "saving"}
                       className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     >
-                      {sttApiKeySaveStatus === "saving" ? "儲存中..." : "儲存"}
+                      {sttApiKeySaveStatus === "saving" ? t("settings.llm.saving") : t("settings.llm.save")}
                     </button>
                   </div>
                   {sttApiKeySaveStatus === "saved" && (
-                    <p className="text-xs text-green-600">Whisper STT API Key 已更新</p>
+                    <p className="text-xs text-green-600">{t("settings.stt.sttApiKeySaved")}</p>
                   )}
                   {sttApiKeySaveStatus === "error" && (
-                    <p className="text-xs text-red-600">Whisper STT API Key 儲存失敗</p>
+                    <p className="text-xs text-red-600">{t("settings.stt.sttApiKeySaveFailed")}</p>
                   )}
                 </div>
               )}
 
               <div className="space-y-1">
-                <label className="font-medium">STT 輸出策略</label>
+                <label className="font-medium">{t("settings.stt.outputStrategy")}</label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -1126,7 +1126,7 @@ export default function Settings() {
                         setDraftTranslationTarget("off");
                       }}
                     />
-                    純 STT 直出
+                    {t("settings.stt.outputRaw")}
                   </label>
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -1136,7 +1136,7 @@ export default function Settings() {
                       checked={draftSttOutputStrategy === "llmRefine"}
                       onChange={() => setDraftSttOutputStrategy("llmRefine")}
                     />
-                    先經 LLM 潤飾
+                    {t("settings.stt.outputLlmRefine")}
                   </label>
                 </div>
               </div>
@@ -1163,48 +1163,30 @@ export default function Settings() {
                 </select>
                 <p className="text-xs text-gray-500">{t("settings.translation.hint")}</p>
                 {draftSttOutputStrategy !== "llmRefine" && (
-                  <p className="text-xs text-amber-700">需先開啟「先經 LLM 潤飾」才可啟用即時翻譯。</p>
+                  <p className="text-xs text-amber-700">{t("settings.stt.translationRequiresRefine")}</p>
                 )}
               </div>
 
               <div className="space-y-1">
-                <label className="font-medium">智慧標點 / 排版</label>
+                <label className="font-medium">{t("settings.stt.punctuation")}</label>
                 <select
                   className="w-full input-field px-2 py-1"
                   value={draftPunctuationMode}
                   onChange={(e) => setDraftPunctuationMode(e.target.value as PunctuationMode)}
                 >
-                  <option value="off">關閉</option>
-                  <option value="balanced">平衡</option>
-                  <option value="aggressive">積極</option>
+                  <option value="off">{t("settings.stt.punctuationOff")}</option>
+                  <option value="balanced">{t("settings.stt.punctuationBalanced")}</option>
+                  <option value="aggressive">{t("settings.stt.punctuationAggressive")}</option>
                 </select>
               </div>
 
               <div className="space-y-1">
-                <label className="font-medium">應用程式情境感知</label>
-                <label className="flex items-center gap-2 text-xs text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={draftContextAwareTone}
-                    onChange={(e) => setDraftContextAwareTone(e.target.checked)}
-                    disabled={draftSttOutputStrategy !== "llmRefine"}
-                  />
-                  根據目前前景應用程式調整潤飾語氣
-                </label>
-                {draftSttOutputStrategy !== "llmRefine" && (
-                  <p className="text-xs text-amber-700">
-                    需先開啟「先經 LLM 潤飾」才會生效。
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-medium">專業詞彙庫</label>
+                <label className="font-medium">{t("settings.stt.vocabulary")}</label>
                 <textarea
                   className="w-full min-h-[96px] input-field px-2 py-1 text-xs font-mono"
                   value={draftVocabularyTerms}
                   onChange={(e) => setDraftVocabularyTerms(e.target.value)}
-                  placeholder="每行一個詞彙，或用逗號分隔"
+                  placeholder={t("settings.stt.vocabularyPlaceholder")}
                 />
                 <div className="flex items-center gap-2">
                   <input
@@ -1213,14 +1195,14 @@ export default function Settings() {
                     onChange={(e) => void handleImportVocabularyFile(e.target.files?.[0] ?? null)}
                     className="text-xs"
                   />
-                  <span className="text-xs text-gray-500">支援 .txt / .csv</span>
+                  <span className="text-xs text-gray-500">{t("settings.stt.vocabularyFileHint")}</span>
                 </div>
               </div>
 
               {/* Local STT model manager */}
               <div className="space-y-1">
-                <label className="font-medium">模型下載與管理</label>
-                <p className="text-xs text-gray-400">所有可下載模型統一在此管理（安裝 / 刪除）。</p>
+                <label className="font-medium">{t("settings.stt.modelDownloadTitle")}</label>
+                <p className="text-xs text-gray-400">{t("settings.stt.modelDownloadHint")}</p>
                 {!localSttAvailable && (
                   <p className="text-xs text-amber-700">{t("settings.stt.localNotEnabledHint")}</p>
                 )}
@@ -1420,6 +1402,8 @@ export default function Settings() {
             <SettingsAppProfileSection
               profiles={draftAppProfiles}
               onChange={setDraftAppProfiles}
+              contextAwareTone={draftContextAwareTone}
+              onContextAwareToneChange={setDraftContextAwareTone}
               t={t}
             />
           )}

@@ -50,6 +50,10 @@ export const previewMessages = {
     "preview.replaceFocusChanged": "フォーカスが変わったため、置換を中止しました",
     "preview.ttsPlay": "読み上げ",
     "preview.ttsStop": "読み上げ停止",
-    "preview.screenshot": "スクリーンショットAI"
+    "preview.screenshot": "スクリーンショットAI",
+    "preview.quickActions": "プリセットアクション",
+    "preview.screenshotAttached": "スクリーンショット添付済み",
+    "preview.removeScreenshot": "スクリーンショットを削除",
+    "preview.askAboutScreenshot": "スクリーンショットについて質問を入力…"
   }
 } as const;

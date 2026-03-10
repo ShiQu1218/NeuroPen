@@ -52,7 +52,7 @@ export default function SettingsQuickActionSection({
                 onClick={() => onMove(command.id, "up")}
                 disabled={index === 0}
                 className="btn-secondary px-2.5 py-1 rounded-lg text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                title="上移"
+                title="Move up"
               >
                 ↑
               </button>
@@ -60,7 +60,7 @@ export default function SettingsQuickActionSection({
                 onClick={() => onMove(command.id, "down")}
                 disabled={index === commands.length - 1}
                 className="btn-secondary px-2.5 py-1 rounded-lg text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                title="下移"
+                title="Move down"
               >
                 ↓
               </button>
