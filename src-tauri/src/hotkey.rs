@@ -32,55 +32,43 @@ fn default_screenshot_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::KeyS)
 }
 
-fn trigger_hotkey_file() -> Option<PathBuf> {
+fn hotkey_file(file_name: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let dir = home.join(".neuropen");
     if !dir.exists() {
         let _ = fs::create_dir_all(&dir);
     }
-    Some(dir.join("trigger_hotkey"))
+    Some(dir.join(file_name))
 }
 
-fn screenshot_hotkey_file() -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
-    let dir = home.join(".neuropen");
-    if !dir.exists() {
-        let _ = fs::create_dir_all(&dir);
-    }
-    Some(dir.join("screenshot_hotkey"))
-}
-
-fn load_persisted_trigger_hotkey() -> Option<String> {
-    let path = trigger_hotkey_file()?;
+fn load_persisted_hotkey(file_name: &str) -> Option<String> {
+    let path = hotkey_file(file_name)?;
     let content = fs::read_to_string(path).ok()?;
     Some(content.trim().to_string())
 }
 
-fn load_persisted_screenshot_hotkey() -> Option<String> {
-    let path = screenshot_hotkey_file()?;
-    let content = fs::read_to_string(path).ok()?;
-    Some(content.trim().to_string())
+fn persist_hotkey(file_name: &str, hotkey_type: &str, hotkey: &str) -> Result<(), String> {
+    let path = hotkey_file(file_name).ok_or_else(|| format!("Cannot resolve {hotkey_type} hotkey path"))?;
+    fs::write(path, hotkey).map_err(|e| format!("Failed to persist {hotkey_type} hotkey: {e}"))
 }
 
 pub fn persist_trigger_hotkey(hotkey: &str) -> Result<(), String> {
-    let path = trigger_hotkey_file().ok_or("Cannot resolve trigger hotkey path")?;
-    fs::write(path, hotkey).map_err(|e| format!("Failed to persist trigger hotkey: {e}"))
+    persist_hotkey("trigger_hotkey", "trigger", hotkey)
 }
 
 pub fn persist_screenshot_hotkey(hotkey: &str) -> Result<(), String> {
-    let path = screenshot_hotkey_file().ok_or("Cannot resolve screenshot hotkey path")?;
-    fs::write(path, hotkey).map_err(|e| format!("Failed to persist screenshot hotkey: {e}"))
+    persist_hotkey("screenshot_hotkey", "screenshot", hotkey)
 }
 
 pub fn current_trigger_hotkey() -> (String, bool) {
-    match load_persisted_trigger_hotkey() {
+    match load_persisted_hotkey("trigger_hotkey") {
         Some(hotkey) => (hotkey, true),
         None => (DEFAULT_TRIGGER_HOTKEY.to_string(), false),
     }
 }
 
 pub fn current_screenshot_hotkey() -> (String, bool) {
-    match load_persisted_screenshot_hotkey() {
+    match load_persisted_hotkey("screenshot_hotkey") {
         Some(hotkey) => (hotkey, true),
         None => (DEFAULT_SCREENSHOT_HOTKEY.to_string(), false),
     }

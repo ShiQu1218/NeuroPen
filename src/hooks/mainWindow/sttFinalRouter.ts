@@ -43,6 +43,18 @@ export async function registerSttFinalRouter({
 
     const store = useAppStore.getState();
     store.setTranscript(transcript);
+    const resetLlmRequestState = (selectedText: string, instruction: string) => {
+      store.setLlmOutput("");
+      store.setIsLlmLoading(true);
+      store.setLlmError("");
+      store.setLastSelectedText(selectedText);
+      store.setLastInstruction(instruction);
+    };
+    const restoreClipboardAfterFailure = async (context: string) => {
+      await mainWindowService.restoreClipboard().catch((restoreErr) => {
+        console.warn(`[App] restore_clipboard failed after ${context}:`, restoreErr);
+      });
+    };
 
     try {
       const result = await mainWindowService.routeTranscript(
@@ -119,11 +131,7 @@ export async function registerSttFinalRouter({
           const preferredLanguage = shouldTranslate
             ? store.translationTarget
             : effectiveA.lang;
-          store.setLlmOutput("");
-          store.setIsLlmLoading(true);
-          store.setLlmError("");
-          store.setLastSelectedText(finalText);
-          store.setLastInstruction(instruction);
+          resetLlmRequestState(finalText, instruction);
           await emitPreviewSession({
             sessionType: "text",
             sourceMode: "A",
@@ -260,7 +268,12 @@ export async function registerSttFinalRouter({
           await mainWindowService.restoreClipboard();
           return;
         }
-        await mainWindowService.injectText(finalText, true);
+        try {
+          await mainWindowService.injectText(finalText, true);
+        } catch (err) {
+          await restoreClipboardAfterFailure("Mode A inject failure");
+          throw err;
+        }
         await new Promise((r) => setTimeout(r, 150));
         await mainWindowService.restoreClipboard();
 
@@ -293,11 +306,7 @@ export async function registerSttFinalRouter({
           ? `${store.modeBPrompt}\n\n${effectiveB2.promptAppendix}`
           : store.modeBPrompt;
 
-        store.setLlmOutput("");
-        store.setIsLlmLoading(true);
-        store.setLlmError("");
-        store.setLastSelectedText(store.selectedText);
-        store.setLastInstruction(result.transcript);
+        resetLlmRequestState(store.selectedText, result.transcript);
         await emitPreviewSession({
           sessionType: "text",
           sourceMode: "B2",
@@ -322,7 +331,7 @@ export async function registerSttFinalRouter({
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           store.setLlmError(reason);
-          await mainWindowService.restoreClipboard().catch(() => {});
+          await restoreClipboardAfterFailure("Mode B2 failure");
           setStatusMsg(t("status.routeFailed", { reason }));
           setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
         } finally {
@@ -342,10 +351,7 @@ export async function registerSttFinalRouter({
           : store.modeCPrompt;
         const effectiveOutputModeC = effectiveC.outputMode;
 
-        store.setLlmOutput("");
-        store.setIsLlmLoading(true);
-        store.setLlmError("");
-        store.setLastInstruction(result.transcript);
+        resetLlmRequestState("", result.transcript);
         if (effectiveOutputModeC === "PreviewStream") {
           await emitPreviewSession({
             sessionType: "text",
@@ -377,7 +383,7 @@ export async function registerSttFinalRouter({
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           store.setLlmError(reason);
-          await mainWindowService.restoreClipboard().catch(() => {});
+          await restoreClipboardAfterFailure("Mode C failure");
           setStatusMsg(t("status.routeFailed", { reason }));
           setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
         } finally {

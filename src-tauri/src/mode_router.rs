@@ -27,9 +27,6 @@ pub enum AppMode {
     C,
 }
 
-/// Default wake word (user-configurable in settings).
-pub const DEFAULT_WAKE_WORD: &str = "助理";
-
 /// Result of analyzing a completed STT transcript.
 #[derive(Debug, Clone, Serialize)]
 pub struct RouteResult {

@@ -17,7 +17,6 @@ use std::sync::{Arc, Mutex};
 
 /// Whisper expects 16 kHz mono f32 samples.
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
-pub const TARGET_CHANNELS: u16 = 1;
 
 /// Ring buffer capacity — ~30 seconds of 16 kHz mono audio.
 const RING_BUFFER_CAPACITY: usize = TARGET_SAMPLE_RATE as usize * 30;
@@ -47,7 +46,16 @@ pub struct CaptureHandle {
 // - start() creates the stream on the calling thread
 // - stop() drops it (CaptureHandle moved into stop, so the stream is dropped)
 // - We never access the stream from another thread
-struct UnsafeStreamHolder(cpal::Stream);
+struct UnsafeStreamHolder {
+    _stream: cpal::Stream,
+}
+
+impl UnsafeStreamHolder {
+    fn new(stream: cpal::Stream) -> Self {
+        Self { _stream: stream }
+    }
+}
+
 unsafe impl Send for UnsafeStreamHolder {}
 
 impl CaptureHandle {
@@ -246,7 +254,7 @@ pub fn start() -> Result<CaptureHandle, String> {
     println!("[audio_capture] Recording started");
 
     Ok(CaptureHandle {
-        _stream: UnsafeStreamHolder(stream),
+        _stream: UnsafeStreamHolder::new(stream),
         consumer,
         recording,
     })

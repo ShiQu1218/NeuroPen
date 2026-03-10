@@ -155,6 +155,41 @@ interface AppState {
   resetSession: () => void;
 }
 
+const SESSION_RUNTIME_RESET: Pick<
+  AppState,
+  | "isRecording"
+  | "selectedText"
+  | "currentMode"
+  | "transcript"
+  | "sttError"
+  | "llmOutput"
+  | "isLlmLoading"
+  | "llmError"
+  | "lastSelectedText"
+  | "lastInstruction"
+  | "isTtsPlaying"
+  | "partialTranscript"
+  | "sttDurationMs"
+  | "llmDurationMs"
+  | "pendingScreenshot"
+> = {
+  isRecording: false,
+  selectedText: "",
+  currentMode: null,
+  transcript: "",
+  sttError: "",
+  llmOutput: "",
+  isLlmLoading: false,
+  llmError: "",
+  lastSelectedText: "",
+  lastInstruction: "",
+  isTtsPlaying: false,
+  partialTranscript: "",
+  sttDurationMs: 0,
+  llmDurationMs: 0,
+  pendingScreenshot: "",
+};
+
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
@@ -278,20 +313,7 @@ export const useAppStore = create<AppState>()(
       setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
       setLlmDurationMs: (ms) => set({ llmDurationMs: ms }),
       setPendingScreenshot: (base64) => set({ pendingScreenshot: base64 }),
-      resetSession: () =>
-        set({
-          isRecording: false,
-          selectedText: "",
-          currentMode: null,
-          transcript: "",
-          sttError: "",
-          llmOutput: "",
-          isLlmLoading: false,
-          llmError: "",
-          lastSelectedText: "",
-          lastInstruction: "",
-          pendingScreenshot: "",
-        }),
+      resetSession: () => set(SESSION_RUNTIME_RESET),
     }),
     {
       name: "neuropen-settings",

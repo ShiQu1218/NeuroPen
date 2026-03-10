@@ -521,19 +521,9 @@ pub fn is_recording() -> bool {
         .unwrap_or(false)
 }
 
-/// Drain buffered audio samples into a Vec<f32>.
-pub fn drain_audio() -> Vec<f32> {
-    let mut out = Vec::new();
-    if let Ok(guard) = CAPTURE.lock() {
-        if let Some(ref handle) = *guard {
-            handle.drain_samples(&mut out);
-        }
-    }
-    out
-}
-
 /// Validate that a user-supplied model path is safe to load.
 /// Must be absolute, point to an existing `.bin` file, and resolve cleanly (no `..` tricks).
+#[cfg(feature = "local-stt")]
 fn validate_model_path(model_path: &str) -> Result<PathBuf, String> {
     if model_path.is_empty() {
         return Err("未設定本地 Whisper 模型路徑。請在設定中填入 .bin 檔路徑。".into());

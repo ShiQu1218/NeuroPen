@@ -64,6 +64,21 @@ static RUNTIME_STT_CONFIG: Mutex<Option<RuntimeSttConfig>> = Mutex::new(None);
 #[cfg(target_os = "windows")]
 static SINGLE_INSTANCE_GUARD: Mutex<Option<std::net::TcpListener>> = Mutex::new(None);
 
+fn get_effective_stt_config(
+    engine: stt::SttEngine,
+    model_path: String,
+) -> (stt::SttEngine, String, String) {
+    RUNTIME_STT_CONFIG
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .as_ref()
+                .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
+        })
+        .unwrap_or((engine, model_path, "auto".to_string()))
+}
+
 #[cfg(target_os = "windows")]
 fn acquire_single_instance_lock() -> Result<(), String> {
     // Bind a localhost guard port for the process lifetime.
@@ -179,15 +194,8 @@ fn start_streaming_stt(
     engine: stt::SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    let (effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
-        .lock()
-        .ok()
-        .and_then(|guard| {
-            guard
-                .as_ref()
-                .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
-        })
-        .unwrap_or((engine, model_path, "auto".to_string()));
+    let (effective_engine, effective_model_path, effective_stt_language) =
+        get_effective_stt_config(engine, model_path);
     stt::start_streaming_stt(app, effective_engine, effective_model_path, effective_stt_language)
 }
 
@@ -198,15 +206,8 @@ fn stop_recording(
     engine: stt::SttEngine,
     model_path: String,
 ) -> Result<(), String> {
-    let (effective_engine, effective_model_path, effective_stt_language) = RUNTIME_STT_CONFIG
-        .lock()
-        .ok()
-        .and_then(|guard| {
-            guard
-                .as_ref()
-                .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
-        })
-        .unwrap_or((engine, model_path, "auto".to_string()));
+    let (effective_engine, effective_model_path, effective_stt_language) =
+        get_effective_stt_config(engine, model_path);
     stt::stop_recording(app, effective_engine, effective_model_path, effective_stt_language)
 }
 

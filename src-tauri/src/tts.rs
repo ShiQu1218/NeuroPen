@@ -9,7 +9,6 @@
 //!   `tts://error(msg)`  — synthesis/playback failure
 
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -19,14 +18,6 @@ static TTS_PLAYING: AtomicBool = AtomicBool::new(false);
 
 /// Stop signal shared between playback thread and stop command.
 static TTS_STOP: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TtsConfig {
-    pub voice: String,
-    pub rate: String,
-    pub pitch: String,
-}
 
 /// Multi-language voice map (language code → Edge TTS voice name).
 const VOICE_MAP: &[(&str, &str)] = &[
@@ -81,11 +72,6 @@ fn voice_for_language(lang: &str) -> &'static str {
         .find(|(code, _)| *code == lang)
         .map(|(_, voice)| *voice)
         .unwrap_or("zh-TW-HsiaoChenNeural")
-}
-
-/// List available TTS voices.
-pub fn list_voices() -> Vec<(&'static str, &'static str)> {
-    VOICE_MAP.iter().map(|(code, voice)| (*code, *voice)).collect()
 }
 
 pub fn is_playing() -> bool {

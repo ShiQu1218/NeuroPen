@@ -46,18 +46,25 @@ static HISTORY_FILE: Lazy<PathBuf> = Lazy::new(|| {
 
 static HISTORY: Mutex<Option<Vec<HistoryEntry>>> = Mutex::new(None);
 
-fn ensure_loaded(guard: &mut Option<Vec<HistoryEntry>>) {
-    if guard.is_none() {
-        let mut entries = load_from_disk();
-        if prune_expired(&mut entries) {
-            save_to_disk(&entries);
-        }
-        *guard = Some(entries);
-    } else if let Some(entries) = guard.as_mut() {
-        if prune_expired(entries) {
-            save_to_disk(entries);
+fn lock_history() -> std::sync::MutexGuard<'static, Option<Vec<HistoryEntry>>> {
+    match HISTORY.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            eprintln!("[history] lock poisoned, recovering cached history state");
+            poisoned.into_inner()
         }
     }
+}
+
+fn ensure_loaded(guard: &mut Option<Vec<HistoryEntry>>) -> &mut Vec<HistoryEntry> {
+    if guard.is_none() {
+        *guard = Some(load_from_disk());
+    }
+    let entries = guard.get_or_insert_with(Vec::new);
+    if prune_expired(entries) {
+        save_to_disk(entries);
+    }
+    entries
 }
 
 fn load_from_disk() -> Vec<HistoryEntry> {
@@ -125,9 +132,8 @@ pub fn save(
         favorited: false,
     };
 
-    let mut guard = HISTORY.lock().expect("history lock poisoned");
-    ensure_loaded(&mut *guard);
-    let entries = guard.as_mut().unwrap();
+    let mut guard = lock_history();
+    let entries = ensure_loaded(&mut guard);
     prune_expired(entries);
     entries.insert(0, entry); // newest first
     if entries.len() > MAX_ENTRIES {
@@ -138,16 +144,14 @@ pub fn save(
 
 /// Return all history entries (newest first).
 pub fn list() -> Vec<HistoryEntry> {
-    let mut guard = HISTORY.lock().expect("history lock poisoned");
-    ensure_loaded(&mut *guard);
-    guard.as_ref().unwrap().clone()
+    let mut guard = lock_history();
+    ensure_loaded(&mut guard).clone()
 }
 
 /// Delete a single entry by id. Returns true if found.
 pub fn delete(id: &str) -> bool {
-    let mut guard = HISTORY.lock().expect("history lock poisoned");
-    ensure_loaded(&mut *guard);
-    let entries = guard.as_mut().unwrap();
+    let mut guard = lock_history();
+    let entries = ensure_loaded(&mut guard);
     let before = entries.len();
     entries.retain(|e| e.id != id);
     let removed = entries.len() < before;
@@ -159,16 +163,15 @@ pub fn delete(id: &str) -> bool {
 
 /// Clear all history.
 pub fn clear_all() {
-    let mut guard = HISTORY.lock().expect("history lock poisoned");
+    let mut guard = lock_history();
     *guard = Some(Vec::new());
     save_to_disk(&[]);
 }
 
 /// Toggle the favorited flag on an entry. Returns the new favorited state, or None if not found.
 pub fn toggle_favorite(id: &str) -> Option<bool> {
-    let mut guard = HISTORY.lock().expect("history lock poisoned");
-    ensure_loaded(&mut *guard);
-    let entries = guard.as_mut().unwrap();
+    let mut guard = lock_history();
+    let entries = ensure_loaded(&mut guard);
     if let Some(entry) = entries.iter_mut().find(|e| e.id == id) {
         entry.favorited = !entry.favorited;
         let new_state = entry.favorited;
@@ -182,11 +185,8 @@ pub fn toggle_favorite(id: &str) -> Option<bool> {
 /// Search history entries — matches input_text, instruction, or output.
 pub fn search(query: &str) -> Vec<HistoryEntry> {
     let lower = query.to_lowercase();
-    let mut guard = HISTORY.lock().expect("history lock poisoned");
-    ensure_loaded(&mut *guard);
-    guard
-        .as_ref()
-        .unwrap()
+    let mut guard = lock_history();
+    ensure_loaded(&mut guard)
         .iter()
         .filter(|e| {
             e.input_text.to_lowercase().contains(&lower)
