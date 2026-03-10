@@ -2,25 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { listen, emit } from "@tauri-apps/api/event";
 import { useI18n } from "../i18n";
-import type { SelectionListenerState } from "./mainWindow/listenerTypes";
+import type { SafeRegister } from "./mainWindow/listenerTypes";
+import {
+  applySettingsSavedPayload,
+  cleanupSelectionListenerState,
+  createSelectionListenerState,
+  initializeMainWindowRuntime,
+  type ModeStartPayload,
+  type SettingsSavedPayload,
+} from "./mainWindow/controllerHelpers";
 import { registerScreenshotListeners } from "./mainWindow/screenshotListeners";
 import { registerSelectionListeners } from "./mainWindow/selectionListeners";
 import { registerSttFinalRouter } from "./mainWindow/sttFinalRouter";
 import { mainWindowService } from "../services/mainWindowService";
 import { useAppStore } from "../store/useAppStore";
-import type {
-  AppLanguage,
-  AppProfile,
-  LlmProvider,
-  PreferredLanguage,
-  SttLanguage,
-  TranslationTarget,
-} from "../store/useAppStore";
 import { normalizeSttEngine, normalizeSttLanguage } from "../utils/appText";
-import {
-  hideWindowByLabel,
-  preventCloseDestroy,
-} from "../utils/windowLifecycle";
 
 export function useMainWindowController() {
   const { t } = useI18n();
@@ -30,44 +26,8 @@ export function useMainWindowController() {
   const tLive: typeof t = (...args) => tRef.current(...args);
   const [statusMsg, setStatusMsg] = useState(t("status.readyHoldHotkey"));
   const statusReadyRef = useRef(false);
-
-  const {
-    setIsRecording,
-    setSelectedText,
-    setCurrentMode,
-    setSttError,
-    setSttEngine,
-    setSttLanguage,
-    setSttModelPath,
-    setWakeWord,
-    setSttEnabled,
-    setSelectionEnabled,
-    setScreenshotEnabled,
-    setHotkey,
-    setOutputMode,
-    setSttOutputStrategy,
-    setPunctuationMode,
-    setContextAwareTone,
-    setVocabularyTerms,
-    setLlmProvider,
-    setLlmModel,
-    setLlmModelOptions,
-    setQuickActionCommands,
-    setLanguage,
-    setPreferredLanguage,
-    setModeAPrompt,
-    setModeBPrompt,
-    setModeCPrompt,
-    setModeAStreamOutput,
-    setModeBStreamOutput,
-    setMicrophoneSource,
-    setLaunchOnStartup,
-    setHistoryEnabled,
-    setAppProfiles,
-    setTranslationTarget,
-    setScreenshotHotkey,
-    resetSession,
-  } = useAppStore();
+  const resetSession = useAppStore((s) => s.resetSession);
+  const setSttError = (message: string) => useAppStore.getState().setSttError(message);
 
   useEffect(() => {
     if (!statusReadyRef.current) {
@@ -91,100 +51,93 @@ export function useMainWindowController() {
     // up because `unlisten` is still empty when cleanup runs synchronously.
     let cancelled = false;
     const unlisten: Array<() => void> = [];
-    const selectionState: SelectionListenerState = {
-      qaInteracting: false,
-      lastSelectionFingerprint: "",
-      suppressedSelectionFingerprint: "",
-      selectionWatchSuppressedUntil: 0,
-      qaHideTimer: null,
-      qaResyncTimer: null,
-      lastSelectionSnapshot: null,
-    };
+    const selectionState = createSelectionListenerState();
     let pendingHotkeyReleaseAt = 0;
 
-    (async () => {
-      // ── 0. Prevent sub-windows from being destroyed on close ──
-      for (const label of ["settings", "preview", "quick-action", "recording-indicator", "screenshot-overlay"]) {
-        preventCloseDestroy(label);
+    const safeRegister: SafeRegister = async (event, handler) => {
+      const u = await listen(event, handler);
+      if (cancelled) {
+        u();
+      } else {
+        unlisten.push(u);
       }
+    };
 
-      // Wait for Zustand persist hydration so we read the real saved values
-      if (!useAppStore.persist.hasHydrated()) {
-        await new Promise<void>((resolve) => {
-          useAppStore.persist.onFinishHydration(() => resolve());
-        });
+    const stopRecordingNow = async () => {
+      const store = useAppStore.getState();
+      if (!store.isRecording) return;
+      try {
+        const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
+        await mainWindowService.stopRecording(
+          normalizedSttEngine,
+          normalizedSttEngine === "localWhisper" ? store.sttModelPath : "",
+          normalizeSttLanguage(store.sttLanguage),
+        );
+        store.setIsRecording(false);
+        pendingHotkeyReleaseAt = 0;
+        setStatusMsg(tLive("status.recognizing"));
+      } catch (err) {
+        console.error("[App] stop_recording failed:", err);
+        store.setSttError(String(err));
+        store.setIsRecording(false);
+        pendingHotkeyReleaseAt = 0;
+        setStatusMsg(tLive("status.stopRecordingFailed"));
       }
+    };
 
-      const hydratedStore = useAppStore.getState();
-      const backendHotkeys = await mainWindowService.getRegisteredHotkeys().catch((err) => {
-        console.warn("[App] get_registered_hotkeys failed:", err);
-        return null;
-      });
-      const initialTriggerHotkey =
-        backendHotkeys?.triggerPersisted ? backendHotkeys.triggerHotkey : hydratedStore.hotkey;
-      const initialScreenshotHotkey =
-        backendHotkeys?.screenshotPersisted ? backendHotkeys.screenshotHotkey : hydratedStore.screenshotHotkey;
-      if (initialTriggerHotkey !== hydratedStore.hotkey) {
-        setHotkey(initialTriggerHotkey);
+    const ensureSttReady = async (sttEngine: ReturnType<typeof normalizeSttEngine>) => {
+      if (sttEngine !== "openAi") {
+        return true;
       }
-      if (initialScreenshotHotkey !== hydratedStore.screenshotHotkey) {
-        setScreenshotHotkey(initialScreenshotHotkey);
+      const hasKey = await mainWindowService.hasSttApiKey();
+      if (hasKey) {
+        return true;
       }
-      if (!backendHotkeys || backendHotkeys.triggerHotkey !== initialTriggerHotkey) {
-        await mainWindowService.changeHotkey(initialTriggerHotkey).catch((err) => {
-          console.warn("[App] change_hotkey init failed, keeping stored value:", err);
-        });
-      }
-      if (!backendHotkeys || backendHotkeys.screenshotHotkey !== initialScreenshotHotkey) {
-        await mainWindowService.changeScreenshotHotkey(initialScreenshotHotkey).catch((err) => {
-          console.warn("[App] change_screenshot_hotkey init failed:", err);
-        });
-      }
-      await mainWindowService.setRuntimeSttConfig(
-        normalizeSttEngine(String(hydratedStore.sttEngine)),
-        hydratedStore.sttModelPath,
-        normalizeSttLanguage(hydratedStore.sttLanguage),
-      ).catch((err) => {
-        console.warn("[App] set_runtime_stt_config init failed:", err);
-      });
-      await mainWindowService.setAudioDevice(hydratedStore.microphoneSource ?? "").catch((err) => {
-        console.warn("[App] set_audio_device init failed:", err);
-      });
+      pendingHotkeyReleaseAt = 0;
+      const store = useAppStore.getState();
+      store.setSttError(tLive("error.sttApiKeyRequired"));
+      setStatusMsg(tLive("status.setupSttApiKey"));
+      return false;
+    };
 
-      // Helper: register a listener only if this effect hasn't been cancelled
-      async function safeRegister<T>(
-        event: string,
-        handler: (e: { payload: T }) => void | Promise<void>,
-      ) {
-        const u = await listen<T>(event, handler);
-        if (cancelled) {
-          u(); // immediately unregister if effect was already cleaned up
+    const startRecordingCapture = async (sttEngine: ReturnType<typeof normalizeSttEngine>) => {
+      const store = useAppStore.getState();
+      try {
+        await mainWindowService.startRecording();
+        void mainWindowService.startStreamingStt(
+          sttEngine,
+          sttEngine === "localWhisper" ? store.sttModelPath : "",
+        ).catch((err) => console.warn("[App] streaming STT start failed:", err));
+        store.setIsRecording(true);
+        if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
+          await stopRecordingNow();
         } else {
-          unlisten.push(u);
+          pendingHotkeyReleaseAt = 0;
         }
+      } catch (err) {
+        console.error("[App] start_recording failed:", err);
+        store.setSttError(String(err));
+        store.setIsRecording(false);
+        setStatusMsg(tLive("status.recordingStartFailed"));
+        pendingHotkeyReleaseAt = 0;
       }
+    };
 
-      const stopRecordingNow = async () => {
-        const store = useAppStore.getState();
-        if (!store.isRecording) return;
-        try {
-          const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
-          await mainWindowService.stopRecording(
-            normalizedSttEngine,
-            normalizedSttEngine === "localWhisper" ? store.sttModelPath : "",
-            normalizeSttLanguage(store.sttLanguage),
-          );
-          store.setIsRecording(false);
-          pendingHotkeyReleaseAt = 0;
-          setStatusMsg(tLive("status.recognizing"));
-        } catch (err) {
-          console.error("[App] stop_recording failed:", err);
-          store.setSttError(String(err));
-          store.setIsRecording(false);
-          pendingHotkeyReleaseAt = 0;
-          setStatusMsg(tLive("status.stopRecordingFailed"));
-        }
-      };
+    const prepareSelectionRecording = async (selectedText: string) => {
+      const store = useAppStore.getState();
+      store.setSelectedText(selectedText);
+      store.setCurrentMode("B2");
+      setStatusMsg(tLive("status.selectionRecording"));
+
+      const qaWin = await WebviewWindow.getByLabel("quick-action");
+      if (qaWin) {
+        selectionState.qaInteracting = false;
+        await qaWin.hide();
+      }
+    };
+
+    (async () => {
+      await initializeMainWindowRuntime();
 
       await safeRegister<{
         mode: "A" | "B1" | "B2" | "C";
@@ -197,152 +150,10 @@ export function useMainWindowController() {
         store.setLastInstruction(event.payload.instruction ?? "");
       });
 
-      await safeRegister<{
-        wakeWord: string;
-        hotkey: string;
-        sttEnabled?: boolean;
-        selectionEnabled?: boolean;
-        screenshotEnabled?: boolean;
-        sttEngine: "openAi" | "localWhisper";
-        sttModelPath?: string;
-        sttLanguage?: SttLanguage;
-        outputMode: "DirectInject" | "PreviewStream";
-        sttOutputStrategy?: "raw" | "llmRefine";
-        punctuationMode?: "off" | "balanced" | "aggressive";
-        contextAwareTone?: boolean;
-        vocabularyTerms?: string[];
-        llmProvider: LlmProvider;
-        llmModel: string;
-        llmModelOptions?: string[];
-        language?: AppLanguage;
-        preferredLanguage?: PreferredLanguage;
-        modeAPrompt?: string;
-        modeBPrompt?: string;
-        modeCPrompt?: string;
-        modeAStreamOutput?: boolean;
-        modeBStreamOutput?: boolean;
-        microphoneSource?: string;
-        launchOnStartup?: boolean;
-        quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
-        historyEnabled?: boolean;
-        appProfiles?: AppProfile[];
-        translationTarget?: TranslationTarget;
-        screenshotHotkey?: string;
-      }>(
+      await safeRegister<SettingsSavedPayload>(
         "neuropen://settings-saved",
         (event) => {
-          const payload = event.payload;
-          if (payload.wakeWord) {
-            setWakeWord(payload.wakeWord);
-          }
-          if (typeof payload.hotkey === "string") {
-            setHotkey(payload.hotkey);
-          }
-          if (typeof payload.sttEnabled === "boolean") {
-            setSttEnabled(payload.sttEnabled);
-          }
-          if (typeof payload.selectionEnabled === "boolean") {
-            setSelectionEnabled(payload.selectionEnabled);
-            if (!payload.selectionEnabled) {
-              void (async () => {
-                await hideWindowByLabel("quick-action");
-              })();
-            }
-          }
-          if (typeof payload.screenshotEnabled === "boolean") {
-            setScreenshotEnabled(payload.screenshotEnabled);
-            if (!payload.screenshotEnabled) {
-              void (async () => {
-                await hideWindowByLabel("screenshot-overlay");
-              })();
-            }
-          }
-          if (payload.sttEngine) {
-            setSttEngine(normalizeSttEngine(payload.sttEngine));
-          }
-          if (payload.sttLanguage) {
-            setSttLanguage(normalizeSttLanguage(payload.sttLanguage));
-          }
-          if (typeof payload.sttModelPath === "string") {
-            setSttModelPath(payload.sttModelPath);
-          }
-          if (payload.sttEngine || payload.sttLanguage || typeof payload.sttModelPath === "string") {
-            void mainWindowService.setRuntimeSttConfig(
-              normalizeSttEngine(payload.sttEngine ?? "openAi"),
-              typeof payload.sttModelPath === "string" ? payload.sttModelPath : "",
-              normalizeSttLanguage(payload.sttLanguage),
-            ).catch((err) => {
-              console.warn("[App] set_runtime_stt_config sync failed:", err);
-            });
-          }
-          if (payload.outputMode) {
-            setOutputMode(payload.outputMode);
-          }
-          if (payload.sttOutputStrategy) {
-            setSttOutputStrategy(payload.sttOutputStrategy);
-          }
-          if (payload.punctuationMode) {
-            setPunctuationMode(payload.punctuationMode);
-          }
-          if (typeof payload.contextAwareTone === "boolean") {
-            setContextAwareTone(payload.contextAwareTone);
-          }
-          if (payload.vocabularyTerms) {
-            setVocabularyTerms(payload.vocabularyTerms);
-          }
-          if (payload.llmProvider) {
-            setLlmProvider(payload.llmProvider);
-          }
-          if (payload.llmModel) {
-            setLlmModel(payload.llmModel);
-          }
-          if (payload.llmModelOptions) {
-            setLlmModelOptions(payload.llmModelOptions);
-          }
-          if (payload.language) {
-            setLanguage(payload.language);
-          }
-          if (payload.preferredLanguage) {
-            setPreferredLanguage(payload.preferredLanguage);
-          }
-          if (typeof payload.modeAPrompt === "string") {
-            setModeAPrompt(payload.modeAPrompt);
-          }
-          if (typeof payload.modeBPrompt === "string") {
-            setModeBPrompt(payload.modeBPrompt);
-          }
-          if (typeof payload.modeCPrompt === "string") {
-            setModeCPrompt(payload.modeCPrompt);
-          }
-          if (typeof payload.modeAStreamOutput === "boolean") {
-            setModeAStreamOutput(payload.modeAStreamOutput);
-          }
-          if (typeof payload.modeBStreamOutput === "boolean") {
-            setModeBStreamOutput(payload.modeBStreamOutput);
-          }
-          if (typeof payload.microphoneSource === "string") {
-            setMicrophoneSource(payload.microphoneSource);
-          }
-          if (typeof payload.launchOnStartup === "boolean") {
-            setLaunchOnStartup(payload.launchOnStartup);
-          }
-          if (payload.quickActionCommands) {
-            setQuickActionCommands(payload.quickActionCommands);
-          }
-          if (typeof payload.historyEnabled === "boolean") {
-            setHistoryEnabled(payload.historyEnabled);
-          }
-          if (payload.appProfiles) {
-            setAppProfiles(payload.appProfiles);
-          }
-          if (payload.translationTarget) {
-            setTranslationTarget(payload.translationTarget);
-          }
-          if (typeof payload.screenshotHotkey === "string") {
-            setScreenshotHotkey(payload.screenshotHotkey);
-          }
-          setStatusMsg(tLive("status.settingsUpdated"));
-          setTimeout(() => setStatusMsg(tLive("status.readyHoldHotkey")), 2000);
+          applySettingsSavedPayload(event.payload, tLive, setStatusMsg);
         }
       );
 
@@ -352,12 +163,7 @@ export function useMainWindowController() {
       });
 
       // ── 1. hotkey PRESS → start recording ──
-      await safeRegister<{
-        has_selection: boolean;
-        selected_text: string | null;
-        initial_mode: string;
-        hwnd: number;
-      }>("neuropen://mode-start", async (event) => {
+      await safeRegister<ModeStartPayload>("neuropen://mode-start", async (event) => {
         const store = useAppStore.getState();
 
         // Already recording → ignore (key repeat)
@@ -375,85 +181,18 @@ export function useMainWindowController() {
         if (import.meta.env.DEV) console.log("[App] neuropen://mode-start", event.payload);
 
         resetSession();
+        const sttEngine = normalizeSttEngine(store.sttEngine);
 
         if (has_selection && selected_text && store.selectionEnabled) {
-          // ── Mode B2 ── hide Quick Action Icon, start recording
-          setSelectedText(selected_text);
-          setCurrentMode("B2");
-          setStatusMsg(tLive("status.selectionRecording"));
-
-          // Hide Quick Action Icon if it was shown by selection watcher
-          const qaWin = await WebviewWindow.getByLabel("quick-action");
-          if (qaWin) {
-            selectionState.qaInteracting = false;
-            await qaWin.hide();
-          }
-
-          // Check API key before starting (for OpenAI engine)
-          const sttEngine = normalizeSttEngine(store.sttEngine);
-          if (sttEngine === "openAi") {
-            const hasKey = await mainWindowService.hasSttApiKey();
-            if (!hasKey) {
-              pendingHotkeyReleaseAt = 0;
-              setSttError(tLive("error.sttApiKeyRequired"));
-              setStatusMsg(tLive("status.setupSttApiKey"));
-              return;
-            }
-          }
-
-          try {
-            await mainWindowService.startRecording();
-            // Start streaming partial transcription
-            mainWindowService.startStreamingStt(
-              sttEngine,
-              sttEngine === "localWhisper" ? store.sttModelPath : "",
-            ).catch((e) => console.warn("[App] streaming STT start failed:", e));
-            setIsRecording(true);
-            if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
-              await stopRecordingNow();
-            } else {
-              pendingHotkeyReleaseAt = 0;
-            }
-          } catch (err) {
-            console.error("[App] start_recording failed:", err);
-            setSttError(String(err));
-            setStatusMsg(tLive("status.recordingStartFailed"));
-            pendingHotkeyReleaseAt = 0;
+          await prepareSelectionRecording(selected_text);
+          if (await ensureSttReady(sttEngine)) {
+            await startRecordingCapture(sttEngine);
           }
         } else {
-          // ── Mode A or C ── start recording
-          // Check API key before starting (for OpenAI engine)
-          const sttEngine = normalizeSttEngine(store.sttEngine);
-          if (sttEngine === "openAi") {
-            const hasKey = await mainWindowService.hasSttApiKey();
-            if (!hasKey) {
-              pendingHotkeyReleaseAt = 0;
-              setSttError(tLive("error.sttApiKeyRequired"));
-              setStatusMsg(tLive("status.setupSttApiKey"));
-              return;
-            }
-          }
-
-          setCurrentMode("A");
+          store.setCurrentMode("A");
           setStatusMsg(tLive("status.recordingReleaseToStop"));
-          try {
-            await mainWindowService.startRecording();
-            // Start streaming partial transcription
-            mainWindowService.startStreamingStt(
-              sttEngine,
-              sttEngine === "localWhisper" ? store.sttModelPath : "",
-            ).catch((e) => console.warn("[App] streaming STT start failed:", e));
-            setIsRecording(true);
-            if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
-              await stopRecordingNow();
-            } else {
-              pendingHotkeyReleaseAt = 0;
-            }
-          } catch (err) {
-            console.error("[App] start_recording failed:", err);
-            setSttError(String(err));
-            setStatusMsg(tLive("status.recordingStartFailed"));
-            pendingHotkeyReleaseAt = 0;
+          if (await ensureSttReady(sttEngine)) {
+            await startRecordingCapture(sttEngine);
           }
         }
       });
@@ -528,13 +267,8 @@ export function useMainWindowController() {
 
     return () => {
       cancelled = true;
-      if (selectionState.qaHideTimer) {
-        clearTimeout(selectionState.qaHideTimer);
-      }
-      if (selectionState.qaResyncTimer) {
-        clearTimeout(selectionState.qaResyncTimer);
-      }
+      cleanupSelectionListenerState(selectionState);
       unlisten.forEach((fn) => fn());
     };
-  }, [setSttLanguage]);
+  }, [resetSession]);
 }

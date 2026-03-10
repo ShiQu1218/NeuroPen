@@ -1,23 +1,24 @@
 import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
-import type { AppProfile, PreferredLanguage, OutputMode } from "../../store/useAppStore";
 import {
   applyPunctuationMode,
   formatModeAText,
   isLikelyUnexpectedEnglishTranslation,
   normalizeStructuredText,
-  resolveAppProfile,
   stripWrappingQuotes,
 } from "../../utils/appText";
-import {
-  emitPreviewSession,
-  emitPreviewStaticOutput,
-  showPreviewWindow,
-} from "../../utils/previewWindow";
 import type { ErrorSetter, SafeRegister, StatusSetter, TranslateFn } from "./listenerTypes";
-
-const isLikelyAuthError = (err: unknown) =>
-  /(401|unauthorized|api\s*key|authentication|invalid key)/i.test(String(err));
+import {
+  buildPromptOverride,
+  createLlmRequestStateReset,
+  isLikelyAuthError,
+  openPreviewTextSession,
+  resolveEffectiveProfile,
+  restoreClipboardAfterFailure,
+  saveHistoryIfAllowed,
+  setReadyStatus,
+  setRouteFailureStatus,
+} from "./sttFinalRouterHelpers";
 
 interface RegisterSttFinalRouterParams {
   safeRegister: SafeRegister;
@@ -43,18 +44,7 @@ export async function registerSttFinalRouter({
 
     const store = useAppStore.getState();
     store.setTranscript(transcript);
-    const resetLlmRequestState = (selectedText: string, instruction: string) => {
-      store.setLlmOutput("");
-      store.setIsLlmLoading(true);
-      store.setLlmError("");
-      store.setLastSelectedText(selectedText);
-      store.setLastInstruction(instruction);
-    };
-    const restoreClipboardAfterFailure = async (context: string) => {
-      await mainWindowService.restoreClipboard().catch((restoreErr) => {
-        console.warn(`[App] restore_clipboard failed after ${context}:`, restoreErr);
-      });
-    };
+    const resetLlmRequestState = createLlmRequestStateReset(store);
 
     try {
       const result = await mainWindowService.routeTranscript(
@@ -73,14 +63,6 @@ export async function registerSttFinalRouter({
         ? await mainWindowService.getForegroundWindowTitle()
         : "";
 
-      const resolveEffective = (profile: AppProfile | null) => ({
-        lang: ((profile?.preferredLanguage || store.preferredLanguage) as PreferredLanguage),
-        outputMode: ((profile?.outputMode || store.outputMode) as OutputMode),
-        promptAppendix: profile?.promptAppendix || "",
-        toneHint: profile?.toneHint || (store.contextAwareTone ? "Keep neutral and clear style." : "Keep original style."),
-        directPaste: profile?.directPaste ?? null,
-      });
-
       if (mode === "A") {
         let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
         let usedLlmForModeA = false;
@@ -96,10 +78,7 @@ export async function registerSttFinalRouter({
         if (llmNeedsApiKey && (shouldRefine || shouldTranslate)) {
           llmReady = await mainWindowService.hasLlmApiKey().catch(() => false);
         }
-        const profileA = store.contextAwareTone
-          ? resolveAppProfile(windowTitle, store.appProfiles, "A")
-          : null;
-        const effectiveA = resolveEffective(profileA);
+        const effectiveA = resolveEffectiveProfile(store, windowTitle, "A");
         const toneHint = effectiveA.toneHint;
         const effectiveOutputModeA = effectiveA.outputMode;
         const vocabHint = store.vocabularyTerms.length
@@ -122,9 +101,7 @@ export async function registerSttFinalRouter({
           store.modeAStreamOutput &&
           ((shouldRefine && !shouldTranslate) || (!shouldRefine && shouldTranslate));
 
-        const modeAPromptOverride = effectiveA.promptAppendix
-          ? `${store.modeAPrompt}\n\n${effectiveA.promptAppendix}`
-          : store.modeAPrompt;
+        const modeAPromptOverride = buildPromptOverride(store.modeAPrompt, effectiveA.promptAppendix);
 
         if (canStreamModeAPreview && llmReady) {
           const instruction = shouldTranslate ? translateInstruction : refineInstruction;
@@ -132,13 +109,7 @@ export async function registerSttFinalRouter({
             ? store.translationTarget
             : effectiveA.lang;
           resetLlmRequestState(finalText, instruction);
-          await emitPreviewSession({
-            sessionType: "text",
-            sourceMode: "A",
-            selectedText: finalText,
-            instruction,
-          });
-          await showPreviewWindow({ focusable: true, focus: true });
+          await openPreviewTextSession("A", finalText, instruction);
           setStatusMsg(shouldTranslate ? t("status.translating") : t("status.llmRefining"));
           try {
             await mainWindowService.callLlm({
@@ -155,8 +126,7 @@ export async function registerSttFinalRouter({
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             store.setLlmError(reason);
-            setStatusMsg(t("status.routeFailed", { reason }));
-            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
+            setRouteFailureStatus(setStatusMsg, t, reason);
             return;
           } finally {
             store.setIsLlmLoading(false);
@@ -232,31 +202,22 @@ export async function registerSttFinalRouter({
         if (effectiveOutputModeA === "PreviewStream" && !shouldDirectPasteModeA) {
           store.setLastSelectedText(finalText);
           store.setLastInstruction("");
-          await emitPreviewSession({
-            sessionType: "text",
-            sourceMode: "A",
-            selectedText: finalText,
-            instruction: "",
-          });
-          await showPreviewWindow({ focusable: true, focus: true });
-          await emitPreviewStaticOutput(finalText);
+          await openPreviewTextSession("A", finalText, "", finalText);
 
-          if (store.historyEnabled && !store.incognito) {
-            void mainWindowService.historySave({
-              mode: "A",
-              inputText: result.transcript,
-              instruction: "",
-              output: finalText,
-              provider: usedLlmForModeA ? store.llmProvider : "",
-              model: usedLlmForModeA ? store.llmModel : "",
-            });
-          }
+          saveHistoryIfAllowed(store, {
+            mode: "A",
+            inputText: result.transcript,
+            instruction: "",
+            output: finalText,
+            provider: usedLlmForModeA ? store.llmProvider : "",
+            model: usedLlmForModeA ? store.llmModel : "",
+          });
 
           if (postInjectWarning) {
             setStatusMsg(postInjectWarning);
-            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 3500);
+            setReadyStatus(setStatusMsg, t, 3500);
           } else {
-            setStatusMsg(t("status.readyHoldHotkey"));
+            setReadyStatus(setStatusMsg, t);
           }
           return;
         }
@@ -277,43 +238,30 @@ export async function registerSttFinalRouter({
         await new Promise((r) => setTimeout(r, 150));
         await mainWindowService.restoreClipboard();
 
-        if (store.historyEnabled && !store.incognito) {
-          void mainWindowService.historySave({
-            mode: "A",
-            inputText: result.transcript,
-            instruction: "",
-            output: finalText,
-            provider: usedLlmForModeA ? store.llmProvider : "",
-            model: usedLlmForModeA ? store.llmModel : "",
-          });
-        }
+        saveHistoryIfAllowed(store, {
+          mode: "A",
+          inputText: result.transcript,
+          instruction: "",
+          output: finalText,
+          provider: usedLlmForModeA ? store.llmProvider : "",
+          model: usedLlmForModeA ? store.llmModel : "",
+        });
 
         const injectSuccessStatus = usedLlmForModeA
           ? t("status.llmProcessedInjected")
           : t("status.textInjected");
         setStatusMsg(postInjectWarning || injectSuccessStatus);
-        setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), postInjectWarning ? 3500 : 2000);
+        setReadyStatus(setStatusMsg, t, postInjectWarning ? 3500 : 2000);
       } else if (mode === "B2") {
         if (store.incognito) {
           setStatusMsg(t("status.incognitoNoLlm"));
           return;
         }
-        const profileB2 = store.contextAwareTone
-          ? resolveAppProfile(windowTitle, store.appProfiles, "B2")
-          : null;
-        const effectiveB2 = resolveEffective(profileB2);
-        const modeBPromptOverride = effectiveB2.promptAppendix
-          ? `${store.modeBPrompt}\n\n${effectiveB2.promptAppendix}`
-          : store.modeBPrompt;
+        const effectiveB2 = resolveEffectiveProfile(store, windowTitle, "B2");
+        const modeBPromptOverride = buildPromptOverride(store.modeBPrompt, effectiveB2.promptAppendix);
 
         resetLlmRequestState(store.selectedText, result.transcript);
-        await emitPreviewSession({
-          sessionType: "text",
-          sourceMode: "B2",
-          selectedText: store.selectedText,
-          instruction: result.transcript,
-        });
-        await showPreviewWindow({ focusable: true, focus: true });
+        await openPreviewTextSession("B2", store.selectedText, result.transcript);
 
         setStatusMsg(t("status.llmProcessing"));
         try {
@@ -332,8 +280,7 @@ export async function registerSttFinalRouter({
           const reason = err instanceof Error ? err.message : String(err);
           store.setLlmError(reason);
           await restoreClipboardAfterFailure("Mode B2 failure");
-          setStatusMsg(t("status.routeFailed", { reason }));
-          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
+          setRouteFailureStatus(setStatusMsg, t, reason);
         } finally {
           store.setIsLlmLoading(false);
         }
@@ -342,24 +289,13 @@ export async function registerSttFinalRouter({
           setStatusMsg(t("status.incognitoNoLlm"));
           return;
         }
-        const profileC = store.contextAwareTone
-          ? resolveAppProfile(windowTitle, store.appProfiles, "C")
-          : null;
-        const effectiveC = resolveEffective(profileC);
-        const modeCPromptOverride = effectiveC.promptAppendix
-          ? `${store.modeCPrompt}\n\n${effectiveC.promptAppendix}`
-          : store.modeCPrompt;
+        const effectiveC = resolveEffectiveProfile(store, windowTitle, "C");
+        const modeCPromptOverride = buildPromptOverride(store.modeCPrompt, effectiveC.promptAppendix);
         const effectiveOutputModeC = effectiveC.outputMode;
 
         resetLlmRequestState("", result.transcript);
         if (effectiveOutputModeC === "PreviewStream") {
-          await emitPreviewSession({
-            sessionType: "text",
-            sourceMode: "C",
-            selectedText: "",
-            instruction: result.transcript,
-          });
-          await showPreviewWindow({ focusable: true, focus: true });
+          await openPreviewTextSession("C", "", result.transcript);
         }
 
         setStatusMsg(t("status.llmProcessing"));
@@ -378,14 +314,13 @@ export async function registerSttFinalRouter({
           if (effectiveOutputModeC === "DirectInject") {
             await mainWindowService.restoreClipboard();
             setStatusMsg(t("status.textInjected"));
-            setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
+            setReadyStatus(setStatusMsg, t, 2000);
           }
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           store.setLlmError(reason);
           await restoreClipboardAfterFailure("Mode C failure");
-          setStatusMsg(t("status.routeFailed", { reason }));
-          setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2500);
+          setRouteFailureStatus(setStatusMsg, t, reason);
         } finally {
           store.setIsLlmLoading(false);
         }

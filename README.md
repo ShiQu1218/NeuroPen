@@ -282,8 +282,10 @@ Build output:
 ### Modularization Status
 
 - **Frontend**: IPC calls are centralized into `src/services/*`, and major `useMainWindowController` event flows are split into `src/hooks/mainWindow/*`.
+- **Frontend orchestration**: shared controller/bootstrap logic and STT final-routing helpers now live in `src/hooks/mainWindow/controllerHelpers.ts` and `src/hooks/mainWindow/sttFinalRouterHelpers.ts`, keeping the main hooks smaller without changing behavior.
 - **i18n**: `src/i18n/messages.ts` is now an aggregator, with domain dictionaries split into `src/i18n/messages/{settings,preview,history,common}.ts`.
 - **Store**: `useAppStore` types and defaults were extracted to `appStoreTypes.ts` and `appStoreDefaults.ts` while preserving existing exports.
+- **Runtime safety**: recent cleanup also tightened session reset coverage, clipboard failure restoration, and panic-prone history state handling to reduce stale UI state and hidden failure paths.
 - **Rust backend**: command implementations are grouped under `src-tauri/src/commands/*`, and STT/LLM helpers have been moved into focused submodules.
 
 ---
@@ -297,7 +299,10 @@ NeuroPen/
 │   ├── i18n.ts                           #   i18n public API (translate/useI18n)
 │   ├── hooks/
 │   │   ├── useMainWindowController.ts    #   Main orchestrator hook
-│   │   └── mainWindow/                   #   Listener modules (selection/screenshot/STT route)
+│   │   └── mainWindow/                   #   Listener + orchestration helpers
+│   │       ├── controllerHelpers.ts
+│   │       ├── sttFinalRouterHelpers.ts
+│   │       └── ...                       #   selection/screenshot/STT route modules
 │   ├── services/                         #   IPC service layer (Tauri command wrappers)
 │   ├── i18n/
 │   │   ├── catalog.ts

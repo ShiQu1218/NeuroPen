@@ -282,8 +282,10 @@ Build output:
 ### Modularization Status / 模組化現況
 
 - **Frontend**：IPC 呼叫已集中到 `src/services/*`，`useMainWindowController` 主要事件流已拆至 `src/hooks/mainWindow/*`。
+- **Frontend orchestration / 前端協調層**：共用的 controller / 啟動初始化邏輯與 STT 最終路由 helper 已抽到 `src/hooks/mainWindow/controllerHelpers.ts` 與 `src/hooks/mainWindow/sttFinalRouterHelpers.ts`，讓主 hooks 更精簡但不改變既有行為。
 - **i18n**：`src/i18n/messages.ts` 已改為聚合層，並依 domain 拆分至 `src/i18n/messages/{settings,preview,history,common}.ts`。
 - **Store**：`useAppStore` 的型別與 defaults 已抽到 `appStoreTypes.ts`、`appStoreDefaults.ts`，同時保留既有匯出相容性。
+- **Runtime safety / 執行期穩定性**：近期也補強了 session reset 覆蓋範圍、剪貼簿失敗時的還原流程，以及 history 狀態的容錯處理，以降低殘留 UI 狀態與隱性失敗路徑。
 - **Rust backend**：command 實作已分組到 `src-tauri/src/commands/*`，STT / LLM helper 也已下沉到子模組。
 
 ---
@@ -297,7 +299,10 @@ NeuroPen/
 │   ├── i18n.ts                           #   i18n public API (translate/useI18n)
 │   ├── hooks/
 │   │   ├── useMainWindowController.ts    #   Main orchestrator hook
-│   │   └── mainWindow/                   #   Listener modules (selection/screenshot/STT route)
+│   │   └── mainWindow/                   #   Listener + orchestration helpers
+│   │       ├── controllerHelpers.ts
+│   │       ├── sttFinalRouterHelpers.ts
+│   │       └── ...                       #   selection/screenshot/STT route modules
 │   ├── services/                         #   IPC service layer (Tauri command wrappers)
 │   ├── i18n/
 │   │   ├── catalog.ts
