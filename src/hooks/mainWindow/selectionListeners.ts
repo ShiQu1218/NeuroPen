@@ -128,6 +128,12 @@ export async function registerSelectionListeners({
       await qaWin.setPosition(new PhysicalPosition(clampedQaPos.x, clampedQaPos.y));
       await qaWin.show();
       await emit("neuropen://qa-show");
+      // Keep the editor active so its native text selection remains usable
+      // even after the non-focusable quick-action window is shown.
+      await mainWindowService.restoreFocus().catch((err) => {
+        console.warn("[App] restore_focus after qa show failed:", err);
+        return false;
+      });
       return;
     }
 

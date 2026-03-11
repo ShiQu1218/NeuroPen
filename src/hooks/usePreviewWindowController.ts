@@ -254,7 +254,6 @@ export function usePreviewWindowController() {
     stopFallbackTts();
     await invoke("tts_stop").catch(() => { });
     await invoke("clear_conversation");
-    await invoke("restore_clipboard");
     await setPreviewFocusable(false);
     await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT));
     await getCurrentWindow().hide();

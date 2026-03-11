@@ -98,6 +98,7 @@ export const mainWindowService = {
   callLlm: (payload: LlmCallPayload) => invoke<void>("call_llm", payload),
   callLlmText: (payload: LlmTextCallPayload) => invoke<string>("call_llm_text", payload),
   verifyFocus: () => invoke<boolean>("verify_focus"),
+  restoreFocus: () => invoke<boolean>("restore_focus"),
   restoreClipboard: () => invoke<void>("restore_clipboard"),
   injectText: (text: string, recordForUndo: boolean) =>
     invoke<void>("inject_text", {
