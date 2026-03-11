@@ -27,7 +27,7 @@ export interface SettingsSavedPayload {
   sttEnabled?: boolean;
   selectionEnabled?: boolean;
   screenshotEnabled?: boolean;
-  sttEngine: "openAi" | "localWhisper";
+  sttEngine: "openAi" | "localWhisper" | "senseVoice" | "moonshine";
   sttModelPath?: string;
   sttLanguage?: SttLanguage;
   outputMode: "DirectInject" | "PreviewStream";

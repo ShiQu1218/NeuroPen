@@ -5,10 +5,12 @@ import type { SttLanguage } from "../store/useAppStore";
 export interface SttCapabilities {
   openAiAvailable: boolean;
   localAvailable: boolean;
+  sensevoiceAvailable: boolean;
+  moonshineAvailable: boolean;
 }
 
 export interface RuntimeSttConfig {
-  engine: "openAi" | "localWhisper";
+  engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine";
   modelPath: string;
   sttLanguage: SttLanguage;
 }

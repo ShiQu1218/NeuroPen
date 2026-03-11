@@ -70,7 +70,7 @@ export function useMainWindowController() {
         const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
         await mainWindowService.stopRecording(
           normalizedSttEngine,
-          normalizedSttEngine === "localWhisper" ? store.sttModelPath : "",
+          normalizedSttEngine !== "openAi" ? store.sttModelPath : "",
           normalizeSttLanguage(store.sttLanguage),
         );
         store.setIsRecording(false);
@@ -106,7 +106,7 @@ export function useMainWindowController() {
         await mainWindowService.startRecording();
         void mainWindowService.startStreamingStt(
           sttEngine,
-          sttEngine === "localWhisper" ? store.sttModelPath : "",
+          sttEngine !== "openAi" ? store.sttModelPath : "",
         ).catch((err) => console.warn("[App] streaming STT start failed:", err));
         store.setIsRecording(true);
         if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {

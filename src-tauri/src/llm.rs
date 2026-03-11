@@ -231,20 +231,31 @@ fn build_prompt(
     };
     let system_prompt = merge_prompt_override(system_prompt, prompt_override);
 
-    if selected_text.is_empty() {
-        (
-            system_prompt,
-            instruction.to_string(),
-        )
-    } else {
-        (
-            system_prompt,
-            format!(
-                "Highlighted text:\n{selected_text}\n\nUser instruction: {instruction}\nQuestion-like: {}",
-                if question_like { "yes" } else { "no" }
-            ),
-        )
-    }
+    let user_message = match mode {
+        PromptMode::A => {
+            if selected_text.trim().is_empty() {
+                instruction.to_string()
+            } else {
+                format!("Speech transcript:\n{selected_text}\n\nTask:\n{instruction}")
+            }
+        }
+        PromptMode::B => {
+            if selected_text.trim().is_empty() {
+                instruction.to_string()
+            } else {
+                format!(
+                    "Highlighted text:\n{selected_text}\n\nUser instruction: {instruction}\nQuestion-like: {}",
+                    if question_like { "yes" } else { "no" }
+                )
+            }
+        }
+        PromptMode::C => instruction.to_string(),
+    };
+
+    (
+        system_prompt,
+        user_message,
+    )
 }
 
 fn extract_openai_text(parsed: &serde_json::Value) -> Option<String> {
@@ -1153,6 +1164,21 @@ mod tests {
     fn maps_b_variants_to_prompt_mode_b() {
         assert_eq!(PromptMode::from_input(Some("B1"), true), PromptMode::B);
         assert_eq!(PromptMode::from_input(Some("B2"), true), PromptMode::B);
+    }
+
+    #[test]
+    fn mode_a_prompt_uses_transcript_and_task_format() {
+        let (_, user_message) = build_prompt(
+            "幫我整理這段逐字稿",
+            "Rewrite this speech-to-text transcript into a clean final version.",
+            None,
+            Some("A"),
+            None,
+        );
+
+        assert!(user_message.contains("Speech transcript:\n幫我整理這段逐字稿"));
+        assert!(user_message.contains("Task:\nRewrite this speech-to-text transcript"));
+        assert!(!user_message.contains("Highlighted text"));
     }
 
     #[test]

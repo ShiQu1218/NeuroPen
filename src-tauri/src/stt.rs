@@ -14,13 +14,14 @@ use crate::audio_capture::{self, CaptureHandle, TARGET_SAMPLE_RATE};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-#[cfg(feature = "local-stt")]
 use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::Emitter;
 
 mod api_keys;
 mod models;
+mod sensevoice;
+mod moonshine;
 
 /// Which STT backend to use.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -29,8 +30,9 @@ pub enum SttEngine {
     OpenAi,
     #[serde(alias = "local")]
     LocalWhisper,
-    Parakeet,
+    SenseVoice,
     Moonshine,
+    Parakeet,
 }
 
 /// Runtime capabilities — which engines are compiled in.
@@ -39,19 +41,18 @@ pub enum SttEngine {
 pub struct SttCapabilities {
     pub openai_available: bool,
     pub local_available: bool,
-    pub parakeet_available: bool,
+    pub sensevoice_available: bool,
     pub moonshine_available: bool,
+    pub parakeet_available: bool,
 }
 
 pub fn get_capabilities() -> SttCapabilities {
     SttCapabilities {
         openai_available: true,
-        #[cfg(feature = "local-stt")]
         local_available: true,
-        #[cfg(not(feature = "local-stt"))]
-        local_available: false,
+        sensevoice_available: true,
+        moonshine_available: true,
         parakeet_available: has_external_engine_command("NEUROPEN_PARAKEET_CMD"),
-        moonshine_available: has_external_engine_command("NEUROPEN_MOONSHINE_CMD"),
     }
 }
 
@@ -69,14 +70,12 @@ static STREAMING_FINAL_SAMPLES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
 static MODEL_DOWNLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
 static MODEL_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
-#[cfg(feature = "local-stt")]
 struct LocalWhisperContextCache {
     model_path: String,
     context: Arc<whisper_rs::WhisperContext>,
 }
 
 /// Cache loaded whisper context so local STT doesn't reload model every request.
-#[cfg(feature = "local-stt")]
 static LOCAL_WHISPER_CONTEXT: Mutex<Option<LocalWhisperContextCache>> = Mutex::new(None);
 
 fn neuropen_dir() -> Result<PathBuf, String> {
@@ -101,75 +100,108 @@ pub fn list_local_stt_models() -> Result<Vec<LocalSttModel>, String> {
 pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) -> Result<LocalSttModel, String> {
     let entry = models::catalog_entry_by_id(&model_id)
         .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
-    let target_path = models::model_file_path(entry)?;
-    if !target_path.exists() {
+    let install_artifacts = models::install_artifacts(entry)?;
+    let already_installed = install_artifacts
+        .iter()
+        .all(|artifact| artifact.path.is_file());
+    if !already_installed {
         if MODEL_DOWNLOAD_ACTIVE.swap(true, Ordering::SeqCst) {
             return Err("Another model download is in progress".to_string());
         }
         MODEL_DOWNLOAD_CANCEL.store(false, Ordering::SeqCst);
         let client = reqwest::Client::new();
-        let temp_path = target_path.with_extension("download");
         let download_result: Result<(), String> = async {
-            let response = client
-                .get(entry.download_url)
-                .send()
-                .await
-                .map_err(|e| format!("Failed to download model: {e}"))?;
-            let status = response.status();
-            if !status.is_success() {
-                return Err(format!("Download failed with status {status}"));
-            }
-            let total_bytes = response.content_length();
+            let mut downloaded: u64 = install_artifacts
+                .iter()
+                .filter_map(|artifact| artifact.path.metadata().ok().map(|meta| meta.len()))
+                .sum();
+            let mut total_bytes: Option<u64> = None;
             let _ = app.emit("stt://model-download-progress", serde_json::json!({
                 "modelId": model_id,
                 "status": "start",
-                "downloadedBytes": 0u64,
+                "downloadedBytes": downloaded,
                 "totalBytes": total_bytes,
                 "progressPct": 0.0f64,
             }));
 
-            let mut file = tokio::fs::File::create(&temp_path)
-                .await
-                .map_err(|e| format!("Failed to create model file: {e}"))?;
-            let mut downloaded: u64 = 0;
-            let mut stream = response.bytes_stream();
+            for artifact in &install_artifacts {
+                if artifact.path.is_file() {
+                    continue;
+                }
 
-            while let Some(chunk) = stream.next().await {
-                if MODEL_DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
-                    let _ = tokio::fs::remove_file(&temp_path).await;
+                if let Some(parent) = artifact.path.parent() {
+                    tokio::fs::create_dir_all(parent)
+                        .await
+                        .map_err(|e| format!("Failed to create model directory: {e}"))?;
+                }
+
+                let response = client
+                    .get(artifact.download_url)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Failed to download model artifact: {e}"))?;
+                let status = response.status();
+                if !status.is_success() {
+                    return Err(format!("Download failed with status {status}"));
+                }
+
+                total_bytes = match (total_bytes, response.content_length()) {
+                    (Some(total), Some(content_len)) => Some(total + content_len),
+                    (Some(total), None) => Some(total),
+                    (None, Some(content_len)) => Some(downloaded + content_len),
+                    (None, None) => None,
+                };
+
+                let file_name = artifact
+                    .path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("artifact");
+                let temp_path = artifact.path.with_file_name(format!("{file_name}.download"));
+                let mut file = tokio::fs::File::create(&temp_path)
+                    .await
+                    .map_err(|e| format!("Failed to create model file: {e}"))?;
+                let mut stream = response.bytes_stream();
+
+                while let Some(chunk) = stream.next().await {
+                    if MODEL_DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
+                        let _ = tokio::fs::remove_file(&temp_path).await;
+                        let _ = app.emit("stt://model-download-progress", serde_json::json!({
+                            "modelId": model_id,
+                            "status": "cancelled",
+                            "downloadedBytes": downloaded,
+                            "totalBytes": total_bytes,
+                            "progressPct": 0.0f64,
+                        }));
+                        return Err("Model download cancelled".to_string());
+                    }
+                    let bytes = chunk.map_err(|e| format!("Failed to read download chunk: {e}"))?;
+                    tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
+                        .await
+                        .map_err(|e| format!("Failed to write model file: {e}"))?;
+                    downloaded += bytes.len() as u64;
+                    let progress_pct = total_bytes
+                        .filter(|total| *total > 0)
+                        .map(|total| ((downloaded as f64 / total as f64) * 100.0).min(100.0))
+                        .unwrap_or(0.0);
                     let _ = app.emit("stt://model-download-progress", serde_json::json!({
                         "modelId": model_id,
-                        "status": "cancelled",
+                        "status": "downloading",
                         "downloadedBytes": downloaded,
                         "totalBytes": total_bytes,
-                        "progressPct": 0.0f64,
+                        "progressPct": progress_pct,
                     }));
-                    return Err("Model download cancelled".to_string());
                 }
-                let bytes = chunk.map_err(|e| format!("Failed to read download chunk: {e}"))?;
-                tokio::io::AsyncWriteExt::write_all(&mut file, &bytes)
+
+                tokio::fs::rename(&temp_path, &artifact.path)
                     .await
-                    .map_err(|e| format!("Failed to write model file: {e}"))?;
-                downloaded += bytes.len() as u64;
-                let progress_pct = total_bytes
-                    .map(|total| ((downloaded as f64 / total as f64) * 100.0).min(100.0))
-                    .unwrap_or(0.0);
-                let _ = app.emit("stt://model-download-progress", serde_json::json!({
-                    "modelId": model_id,
-                    "status": "downloading",
-                    "downloadedBytes": downloaded,
-                    "totalBytes": total_bytes,
-                    "progressPct": progress_pct,
-                }));
+                    .map_err(|e| format!("Failed to finalize model file: {e}"))?;
             }
 
-            tokio::fs::rename(&temp_path, &target_path)
-                .await
-                .map_err(|e| format!("Failed to finalize model file: {e}"))?;
             let _ = app.emit("stt://model-download-progress", serde_json::json!({
                 "modelId": model_id,
                 "status": "done",
-                "downloadedBytes": total_bytes.unwrap_or(downloaded),
+                "downloadedBytes": downloaded,
                 "totalBytes": total_bytes,
                 "progressPct": 100.0f64,
             }));
@@ -318,20 +350,7 @@ pub fn start_streaming_stt(
             // Transcribe accumulated audio for partial result (need >0.5s of audio)
             let min_samples = TARGET_SAMPLE_RATE as usize / 2;
             if accumulated.len() > min_samples {
-                let result = match &engine {
-                    SttEngine::OpenAi => {
-                        transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated, &stt_language).await
-                    }
-                    SttEngine::LocalWhisper => {
-                        transcribe_local(&model_path, &accumulated, &stt_language).await
-                    }
-                    SttEngine::Parakeet => {
-                        transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", &model_path, &accumulated).await
-                    }
-                    SttEngine::Moonshine => {
-                        transcribe_external_command("Moonshine", "NEUROPEN_MOONSHINE_CMD", &model_path, &accumulated).await
-                    }
-                };
+                let result = transcribe_by_engine(&engine, api_key.as_deref(), &model_path, &accumulated, &stt_language).await;
                 if let Ok(raw_text) = result {
                     let text = sanitize_transcript_text(&raw_text);
                     if !text.is_empty() {
@@ -359,20 +378,7 @@ pub fn start_streaming_stt(
                 STREAMING_ACTIVE.store(false, Ordering::SeqCst);
                 return;
             }
-            let result = match &engine {
-                SttEngine::OpenAi => {
-                    transcribe_openai(api_key.as_deref().unwrap_or(""), &accumulated, &stt_language).await
-                }
-                SttEngine::LocalWhisper => {
-                    transcribe_local(&model_path, &accumulated, &stt_language).await
-                }
-                SttEngine::Parakeet => {
-                    transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", &model_path, &accumulated).await
-                }
-                SttEngine::Moonshine => {
-                    transcribe_external_command("Moonshine", "NEUROPEN_MOONSHINE_CMD", &model_path, &accumulated).await
-                }
-            };
+            let result = transcribe_by_engine(&engine, api_key.as_deref(), &model_path, &accumulated, &stt_language).await;
             let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
             match result {
                 Ok(raw_text) => {
@@ -476,16 +482,7 @@ pub fn stop_recording(
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
         let stt_start = std::time::Instant::now();
-        let result = match engine {
-            SttEngine::OpenAi => transcribe_openai(api_key.as_deref().unwrap_or(""), &samples, &stt_language).await,
-            SttEngine::LocalWhisper => transcribe_local(&model_path, &samples, &stt_language).await,
-            SttEngine::Parakeet => {
-                transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", &model_path, &samples).await
-            }
-            SttEngine::Moonshine => {
-                transcribe_external_command("Moonshine", "NEUROPEN_MOONSHINE_CMD", &model_path, &samples).await
-            }
-        };
+        let result = transcribe_by_engine(&engine, api_key.as_deref(), &model_path, &samples, &stt_language).await;
         let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
         match result {
             Ok(raw_text) => {
@@ -522,11 +519,10 @@ pub fn is_recording() -> bool {
 }
 
 /// Validate that a user-supplied model path is safe to load.
-/// Must be absolute, point to an existing `.bin` file, and resolve cleanly (no `..` tricks).
-#[cfg(feature = "local-stt")]
+/// Must be absolute, point to an existing file or directory, and resolve cleanly (no `..` tricks).
 fn validate_model_path(model_path: &str) -> Result<PathBuf, String> {
     if model_path.is_empty() {
-        return Err("未設定本地 Whisper 模型路徑。請在設定中填入 .bin 檔路徑。".into());
+        return Err("未設定本地模型路徑。請在設定中填入模型檔路徑。".into());
     }
 
     let p = std::path::Path::new(model_path);
@@ -535,72 +531,71 @@ fn validate_model_path(model_path: &str) -> Result<PathBuf, String> {
         return Err("模型路徑必須為絕對路徑。".into());
     }
 
-    match p.extension().and_then(|e| e.to_str()) {
-        Some("bin") => {}
-        _ => return Err("模型路徑必須以 .bin 結尾。".into()),
-    }
-
     let canonical = p
         .canonicalize()
         .map_err(|e| format!("無法解析模型路徑：{e}"))?;
 
-    if !canonical.is_file() {
-        return Err("模型路徑不指向一個有效的檔案。".into());
+    if !canonical.exists() {
+        return Err("模型路徑不存在。".into());
     }
 
     Ok(canonical)
 }
 
-/// Transcribe audio using local whisper.cpp via whisper-rs.
-/// When compiled without `--features local-stt`, returns a friendly error immediately.
-async fn transcribe_local(model_path: &str, samples: &[f32], stt_language: &str) -> Result<String, String> {
-    #[cfg(not(feature = "local-stt"))]
-    {
-        let _ = (model_path, samples, stt_language);
-        return Err(
-            "本地 Whisper 未編譯。請安裝 CMake + MSVC 後以 --features local-stt 重新建置。".into(),
-        );
+/// Central routing for all STT engines.
+async fn transcribe_by_engine(
+    engine: &SttEngine,
+    api_key: Option<&str>,
+    model_path: &str,
+    samples: &[f32],
+    stt_language: &str,
+) -> Result<String, String> {
+    match engine {
+        SttEngine::OpenAi => transcribe_openai(api_key.unwrap_or(""), samples, stt_language).await,
+        SttEngine::LocalWhisper => transcribe_local(model_path, samples, stt_language).await,
+        SttEngine::SenseVoice => sensevoice::transcribe(model_path, samples, stt_language).await,
+        SttEngine::Moonshine => moonshine::transcribe(model_path, samples).await,
+        SttEngine::Parakeet => {
+            transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", model_path, samples).await
+        }
     }
+}
 
-    #[cfg(feature = "local-stt")]
-    {
-        use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+/// Transcribe audio using local whisper.cpp via whisper-rs.
+async fn transcribe_local(model_path: &str, samples: &[f32], stt_language: &str) -> Result<String, String> {
+    use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-        let canonical = validate_model_path(model_path)?;
-        let model_path = canonical.to_string_lossy().to_string();
-        let samples: Vec<f32> = samples.to_vec();
-        let stt_language = stt_language.to_string();
+    let canonical = validate_model_path(model_path)?;
+    match canonical.extension().and_then(|ext| ext.to_str()) {
+        Some("bin") => {}
+        _ => return Err("Whisper 模型路徑必須指向 .bin 檔案。".into()),
+    }
+    let model_path = canonical.to_string_lossy().to_string();
+    let samples: Vec<f32> = samples.to_vec();
+    let stt_language = stt_language.to_string();
 
-        tokio::task::spawn_blocking(move || {
-            let build_context = |path: &str| -> Result<Arc<WhisperContext>, String> {
-                #[cfg(feature = "local-stt-gpu")]
-                let mut context_params = WhisperContextParameters::default();
-                #[cfg(not(feature = "local-stt-gpu"))]
-                let context_params = WhisperContextParameters::default();
-                #[cfg(feature = "local-stt-gpu")]
-                {
-                    context_params.use_gpu(true);
-                }
-                let ctx = WhisperContext::new_with_params(path, context_params)
-                    .map_err(|e| format!("Failed to load model: {e}"))?;
-                Ok(Arc::new(ctx))
-            };
+    tokio::task::spawn_blocking(move || {
+        let build_context = |path: &str| -> Result<Arc<WhisperContext>, String> {
+            #[cfg(feature = "local-stt-gpu")]
+            let mut context_params = WhisperContextParameters::default();
+            #[cfg(not(feature = "local-stt-gpu"))]
+            let context_params = WhisperContextParameters::default();
+            #[cfg(feature = "local-stt-gpu")]
+            {
+                context_params.use_gpu(true);
+            }
+            let ctx = WhisperContext::new_with_params(path, context_params)
+                .map_err(|e| format!("Failed to load model: {e}"))?;
+            Ok(Arc::new(ctx))
+        };
 
-            let ctx = {
-                let mut cache = LOCAL_WHISPER_CONTEXT
-                    .lock()
-                    .map_err(|e| format!("Local model cache lock poisoned: {e}"))?;
-                if let Some(ref cached) = *cache {
-                    if cached.model_path == model_path {
-                        cached.context.clone()
-                    } else {
-                        let loaded = build_context(&model_path)?;
-                        *cache = Some(LocalWhisperContextCache {
-                            model_path: model_path.clone(),
-                            context: loaded.clone(),
-                        });
-                        loaded
-                    }
+        let ctx = {
+            let mut cache = LOCAL_WHISPER_CONTEXT
+                .lock()
+                .map_err(|e| format!("Local model cache lock poisoned: {e}"))?;
+            if let Some(ref cached) = *cache {
+                if cached.model_path == model_path {
+                    cached.context.clone()
                 } else {
                     let loaded = build_context(&model_path)?;
                     *cache = Some(LocalWhisperContextCache {
@@ -609,38 +604,45 @@ async fn transcribe_local(model_path: &str, samples: &[f32], stt_language: &str)
                     });
                     loaded
                 }
-            };
+            } else {
+                let loaded = build_context(&model_path)?;
+                *cache = Some(LocalWhisperContextCache {
+                    model_path: model_path.clone(),
+                    context: loaded.clone(),
+                });
+                loaded
+            }
+        };
 
-            let mut state = ctx.create_state().map_err(|e| format!("State error: {e}"))?;
-            let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-            // Force transcription mode (never auto-translate to English).
-            params.set_translate(false);
-            params.set_language(normalize_stt_language(&stt_language));
-            params.set_no_context(true);
-            params.set_print_realtime(false);
-            params.set_print_progress(false);
-            let n_threads = std::thread::available_parallelism()
-                .map(|n| n.get().clamp(1, 4) as i32)
-                .unwrap_or(2);
-            params.set_n_threads(n_threads);
-            state
-                .full(params, &samples)
-                .map_err(|e| format!("Transcription failed: {e}"))?;
+        let mut state = ctx.create_state().map_err(|e| format!("State error: {e}"))?;
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        // Force transcription mode (never auto-translate to English).
+        params.set_translate(false);
+        params.set_language(normalize_stt_language(&stt_language));
+        params.set_no_context(true);
+        params.set_print_realtime(false);
+        params.set_print_progress(false);
+        let n_threads = std::thread::available_parallelism()
+            .map(|n| n.get().clamp(1, 4) as i32)
+            .unwrap_or(2);
+        params.set_n_threads(n_threads);
+        state
+            .full(params, &samples)
+            .map_err(|e| format!("Transcription failed: {e}"))?;
 
-            let n = state.full_n_segments();
-            let mut result = String::new();
-            for i in 0..n {
-                if let Some(seg) = state.get_segment(i) {
-                    if let Ok(text) = seg.to_str_lossy() {
-                        result.push_str(&text);
-                    }
+        let n = state.full_n_segments();
+        let mut result = String::new();
+        for i in 0..n {
+            if let Some(seg) = state.get_segment(i) {
+                if let Ok(text) = seg.to_str_lossy() {
+                    result.push_str(&text);
                 }
             }
-            Ok(result.trim().to_string())
-        })
-        .await
-        .map_err(|e| format!("Blocking task panicked: {e}"))?
-    }
+        }
+        Ok(result.trim().to_string())
+    })
+    .await
+    .map_err(|e| format!("Blocking task panicked: {e}"))?
 }
 
 fn normalize_template_path(path: &std::path::Path) -> String {
@@ -841,7 +843,7 @@ fn is_effective_silence(samples: &[f32]) -> bool {
         return true;
     }
     let (rms, peak) = estimate_audio_levels(samples);
-    rms < 0.006 && peak < 0.03
+    rms < 0.0025 && peak < 0.015
 }
 
 fn sanitize_transcript_text(text: &str) -> String {
@@ -1088,5 +1090,11 @@ mod tests {
     fn test_effective_silence_detection() {
         let samples = vec![0.0001f32; 16000];
         assert!(is_effective_silence(&samples));
+    }
+
+    #[test]
+    fn test_quiet_speech_like_audio_is_not_silence() {
+        let samples = vec![0.02f32; 16000];
+        assert!(!is_effective_silence(&samples));
     }
 }

@@ -16,6 +16,7 @@ pub struct LocalSttModel {
     pub installed: bool,
     pub active: bool,
     pub model_path: String,
+    pub engine: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,19 +26,116 @@ pub(crate) struct LocalSttCatalogEntry {
     pub(crate) description: &'static str,
     pub(crate) speed: u8,
     pub(crate) accuracy: u8,
-    pub(crate) file_name: &'static str,
+    pub(crate) install: LocalSttInstallKind,
+    pub(crate) engine: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LocalSttArtifact {
+    pub(crate) relative_path: &'static str,
     pub(crate) download_url: &'static str,
 }
 
-const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 4] = [
+#[derive(Debug, Clone)]
+pub(crate) struct LocalSttInstallArtifact {
+    pub(crate) path: PathBuf,
+    pub(crate) download_url: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum LocalSttInstallKind {
+    SingleFile {
+        file_name: &'static str,
+        download_url: &'static str,
+    },
+    Bundle {
+        directory_name: &'static str,
+        artifacts: &'static [LocalSttArtifact],
+    },
+}
+
+const SENSEVOICE_SMALL_ARTIFACTS: &[LocalSttArtifact] = &[
+    LocalSttArtifact {
+        relative_path: "model.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "tokens.txt",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
+    },
+];
+
+const MOONSHINE_BASE_ARTIFACTS: &[LocalSttArtifact] = &[
+    LocalSttArtifact {
+        relative_path: "preprocess.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8/resolve/main/preprocess.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "encode.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8/resolve/main/encode.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "uncached_decode.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8/resolve/main/uncached_decode.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "cached_decode.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8/resolve/main/cached_decode.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "tokens.txt",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-base-en-int8/resolve/main/tokens.txt",
+    },
+];
+
+const MOONSHINE_TINY_ARTIFACTS: &[LocalSttArtifact] = &[
+    LocalSttArtifact {
+        relative_path: "preprocess.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/resolve/main/preprocess.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "encode.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/resolve/main/encode.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "uncached_decode.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/resolve/main/uncached_decode.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "cached_decode.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/resolve/main/cached_decode.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "tokens.txt",
+        download_url:
+            "https://huggingface.co/csukuangfj/sherpa-onnx-moonshine-tiny-en-int8/resolve/main/tokens.txt",
+    },
+];
+
+const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 7] = [
     LocalSttCatalogEntry {
         id: "whisper-small",
         name: "Whisper Small",
         description: "速度快，維持良好準確性，適合日常語音輸入。",
         speed: 4,
         accuracy: 3,
-        file_name: "ggml-small.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+        install: LocalSttInstallKind::SingleFile {
+            file_name: "ggml-small.bin",
+            download_url:
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+        },
+        engine: "whisper",
     },
     LocalSttCatalogEntry {
         id: "whisper-medium",
@@ -45,8 +143,12 @@ const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 4] = [
         description: "速度與準確性平衡，長句辨識更穩定。",
         speed: 3,
         accuracy: 4,
-        file_name: "ggml-medium.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
+        install: LocalSttInstallKind::SingleFile {
+            file_name: "ggml-medium.bin",
+            download_url:
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
+        },
+        engine: "whisper",
     },
     LocalSttCatalogEntry {
         id: "whisper-large",
@@ -54,8 +156,12 @@ const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 4] = [
         description: "準確性高，模型較大，推論較慢。",
         speed: 2,
         accuracy: 5,
-        file_name: "ggml-large-v3.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+        install: LocalSttInstallKind::SingleFile {
+            file_name: "ggml-large-v3.bin",
+            download_url:
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+        },
+        engine: "whisper",
     },
     LocalSttCatalogEntry {
         id: "whisper-turbo",
@@ -63,8 +169,48 @@ const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 4] = [
         description: "Large Turbo 版本，兼顧速度與高準確性。",
         speed: 5,
         accuracy: 4,
-        file_name: "ggml-large-v3-turbo.bin",
-        download_url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
+        install: LocalSttInstallKind::SingleFile {
+            file_name: "ggml-large-v3-turbo.bin",
+            download_url:
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
+        },
+        engine: "whisper",
+    },
+    LocalSttCatalogEntry {
+        id: "sensevoice-small",
+        name: "SenseVoice Small",
+        description: "SenseVoice 小型模型，支援中英日韓粵語。",
+        speed: 4,
+        accuracy: 4,
+        install: LocalSttInstallKind::Bundle {
+            directory_name: "sensevoice-small",
+            artifacts: SENSEVOICE_SMALL_ARTIFACTS,
+        },
+        engine: "sensevoice",
+    },
+    LocalSttCatalogEntry {
+        id: "moonshine-base",
+        name: "Moonshine Base",
+        description: "Moonshine Base 英文模型，速度快且輕量。",
+        speed: 5,
+        accuracy: 3,
+        install: LocalSttInstallKind::Bundle {
+            directory_name: "moonshine-base",
+            artifacts: MOONSHINE_BASE_ARTIFACTS,
+        },
+        engine: "moonshine",
+    },
+    LocalSttCatalogEntry {
+        id: "moonshine-tiny",
+        name: "Moonshine Tiny",
+        description: "Moonshine Tiny 英文模型，極致輕量與速度。",
+        speed: 5,
+        accuracy: 2,
+        install: LocalSttInstallKind::Bundle {
+            directory_name: "moonshine-tiny",
+            artifacts: MOONSHINE_TINY_ARTIFACTS,
+        },
+        engine: "moonshine",
     },
 ];
 
@@ -80,12 +226,51 @@ fn active_model_file_path() -> Result<PathBuf, String> {
     Ok(neuropen_dir()?.join("active_local_stt_model"))
 }
 
-pub(crate) fn catalog_entry_by_id(model_id: &str) -> Option<&'static LocalSttCatalogEntry> {
-    LOCAL_STT_CATALOG.iter().find(|entry| entry.id == model_id)
+fn install_root_path(entry: &LocalSttCatalogEntry) -> Result<PathBuf, String> {
+    let base = local_models_dir()?;
+    Ok(match entry.install {
+        LocalSttInstallKind::SingleFile { file_name, .. } => base.join(file_name),
+        LocalSttInstallKind::Bundle { directory_name, .. } => base.join(directory_name),
+    })
 }
 
-pub(crate) fn model_file_path(entry: &LocalSttCatalogEntry) -> Result<PathBuf, String> {
-    Ok(local_models_dir()?.join(entry.file_name))
+fn primary_file_name(entry: &LocalSttCatalogEntry) -> &'static str {
+    match entry.install {
+        LocalSttInstallKind::SingleFile { file_name, .. } => file_name,
+        LocalSttInstallKind::Bundle { directory_name, .. } => directory_name,
+    }
+}
+
+fn primary_download_url(entry: &LocalSttCatalogEntry) -> &'static str {
+    match entry.install {
+        LocalSttInstallKind::SingleFile { download_url, .. } => download_url,
+        LocalSttInstallKind::Bundle { artifacts, .. } => artifacts
+            .first()
+            .map(|artifact| artifact.download_url)
+            .unwrap_or(""),
+    }
+}
+
+fn artifact_paths(entry: &LocalSttCatalogEntry) -> Result<Vec<PathBuf>, String> {
+    let root = install_root_path(entry)?;
+    Ok(match entry.install {
+        LocalSttInstallKind::SingleFile { .. } => vec![root],
+        LocalSttInstallKind::Bundle { artifacts, .. } => artifacts
+            .iter()
+            .map(|artifact| root.join(artifact.relative_path))
+            .collect(),
+    })
+}
+
+fn is_entry_installed(entry: &LocalSttCatalogEntry) -> Result<bool, String> {
+    let root = install_root_path(entry)?;
+    match entry.install {
+        LocalSttInstallKind::SingleFile { .. } => Ok(root.is_file()),
+        LocalSttInstallKind::Bundle { .. } => Ok(root.is_dir()
+            && artifact_paths(entry)?
+                .into_iter()
+                .all(|artifact_path| artifact_path.is_file())),
+    }
 }
 
 fn read_active_model_id() -> Option<String> {
@@ -112,24 +297,51 @@ fn write_active_model_id(model_id: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn catalog_entry_by_id(model_id: &str) -> Option<&'static LocalSttCatalogEntry> {
+    LOCAL_STT_CATALOG.iter().find(|entry| entry.id == model_id)
+}
+
+pub(crate) fn install_artifacts(
+    entry: &LocalSttCatalogEntry,
+) -> Result<Vec<LocalSttInstallArtifact>, String> {
+    let root = install_root_path(entry)?;
+    Ok(match entry.install {
+        LocalSttInstallKind::SingleFile {
+            file_name,
+            download_url,
+        } => vec![LocalSttInstallArtifact {
+            path: root.with_file_name(file_name),
+            download_url,
+        }],
+        LocalSttInstallKind::Bundle { artifacts, .. } => artifacts
+            .iter()
+            .map(|artifact| LocalSttInstallArtifact {
+                path: root.join(artifact.relative_path),
+                download_url: artifact.download_url,
+            })
+            .collect(),
+    })
+}
+
 pub(crate) fn list_local_stt_models() -> Result<Vec<LocalSttModel>, String> {
     let active_model_id = read_active_model_id();
     LOCAL_STT_CATALOG
         .iter()
         .map(|entry| {
-            let path = model_file_path(entry)?;
-            let installed = path.is_file();
+            let install_path = install_root_path(entry)?;
+            let installed = is_entry_installed(entry)?;
             Ok(LocalSttModel {
                 id: entry.id.to_string(),
                 name: entry.name.to_string(),
                 description: entry.description.to_string(),
                 speed: entry.speed,
                 accuracy: entry.accuracy,
-                download_url: entry.download_url.to_string(),
-                file_name: entry.file_name.to_string(),
+                download_url: primary_download_url(entry).to_string(),
+                file_name: primary_file_name(entry).to_string(),
                 installed,
                 active: installed && active_model_id.as_deref() == Some(entry.id),
-                model_path: path.to_string_lossy().to_string(),
+                model_path: install_path.to_string_lossy().to_string(),
+                engine: entry.engine.to_string(),
             })
         })
         .collect()
@@ -138,9 +350,20 @@ pub(crate) fn list_local_stt_models() -> Result<Vec<LocalSttModel>, String> {
 pub(crate) fn delete_local_stt_model(model_id: String) -> Result<(), String> {
     let entry = catalog_entry_by_id(&model_id)
         .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
-    let target_path = model_file_path(entry)?;
-    if target_path.exists() {
-        std::fs::remove_file(&target_path).map_err(|e| format!("Failed to delete model file: {e}"))?;
+    let target_path = install_root_path(entry)?;
+    match entry.install {
+        LocalSttInstallKind::SingleFile { .. } => {
+            if target_path.exists() {
+                std::fs::remove_file(&target_path)
+                    .map_err(|e| format!("Failed to delete model file: {e}"))?;
+            }
+        }
+        LocalSttInstallKind::Bundle { .. } => {
+            if target_path.exists() {
+                std::fs::remove_dir_all(&target_path)
+                    .map_err(|e| format!("Failed to delete model directory: {e}"))?;
+            }
+        }
     }
     if read_active_model_id().as_deref() == Some(entry.id) {
         write_active_model_id(None)?;
@@ -151,10 +374,42 @@ pub(crate) fn delete_local_stt_model(model_id: String) -> Result<(), String> {
 pub(crate) fn select_local_stt_model(model_id: String) -> Result<String, String> {
     let entry = catalog_entry_by_id(&model_id)
         .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
-    let target_path = model_file_path(entry)?;
-    if !target_path.is_file() {
+    let target_path = install_root_path(entry)?;
+    if !is_entry_installed(entry)? {
         return Err("模型尚未安裝，請先安裝後再選擇。".into());
     }
     write_active_model_id(Some(entry.id))?;
     Ok(target_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundle_entries_report_directory_model_path() {
+        let entry = catalog_entry_by_id("sensevoice-small").expect("sensevoice entry");
+        let path = install_root_path(entry).expect("bundle path");
+        assert!(path.ends_with("sensevoice-small"));
+    }
+
+    #[test]
+    fn moonshine_bundle_lists_all_required_artifacts() {
+        let entry = catalog_entry_by_id("moonshine-base").expect("moonshine entry");
+        let artifacts = install_artifacts(entry).expect("moonshine artifacts");
+        let names: Vec<String> = artifacts
+            .iter()
+            .map(|artifact| artifact.path.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "preprocess.onnx",
+                "encode.int8.onnx",
+                "uncached_decode.int8.onnx",
+                "cached_decode.int8.onnx",
+                "tokens.txt"
+            ]
+        );
+    }
 }
