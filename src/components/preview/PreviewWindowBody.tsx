@@ -10,6 +10,19 @@ import type { QuickActionCommand } from "../../store/useAppStore";
 import { formatModeAText, normalizePreviewMarkdown, normalizeStructuredText } from "../../utils/appText";
 import type { PreviewAttachment } from "../../utils/previewAttachments";
 
+function getAttachmentFormatLabel(attachment: PreviewAttachment) {
+  const extensionIndex = attachment.name.lastIndexOf(".");
+  const extension =
+    extensionIndex > 0 ? attachment.name.slice(extensionIndex + 1).trim().toUpperCase() : "";
+  if (extension) {
+    return extension;
+  }
+  if (attachment.kind === "image") {
+    return attachment.mimeType.split("/").pop()?.toUpperCase() ?? "IMAGE";
+  }
+  return attachment.mimeType.split("/").pop()?.toUpperCase() ?? "FILE";
+}
+
 interface PreviewWindowBodyProps {
   attachments: PreviewAttachment[];
   animKey: number;
@@ -203,34 +216,19 @@ export default function PreviewWindowBody({
       </div>
 
       {attachments.length > 0 && (
-        <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80">
+        <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80 max-h-32 overflow-y-auto">
           <div className="flex flex-col gap-2">
             {attachments.map((attachment, index) => (
-              <div key={`${attachment.kind}-${attachment.name}-${index}`} className="flex items-center gap-2">
-                {attachment.kind === "image" ? (
-                  <img
-                    src={`data:${attachment.mimeType};base64,${attachment.base64Data}`}
-                    alt={
-                      attachment.source === "screenshot"
-                        ? t("preview.screenshotAttached")
-                        : t("preview.imageAttachmentAttached")
-                    }
-                    className="h-12 w-auto rounded border border-zinc-300 object-contain"
-                  />
-                ) : (
-                  <div className="h-12 w-12 shrink-0 rounded border border-zinc-300 bg-white text-zinc-500 flex items-center justify-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                      <path d="M14 2v6h6" />
-                      <path d="M16 13H8" />
-                      <path d="M16 17H8" />
-                      <path d="M10 9H8" />
-                    </svg>
-                  </div>
-                )}
+              <div
+                key={`${attachment.kind}-${attachment.name}-${index}`}
+                className="flex items-center gap-2 rounded-lg border border-blue-100 bg-white/90 px-2 py-1.5"
+              >
+                <span className="shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-blue-700">
+                  {getAttachmentFormatLabel(attachment)}
+                </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs text-zinc-600 truncate">{attachment.name}</div>
-                  <div className="text-[11px] text-zinc-500">
+                  <div className="text-xs text-zinc-700 truncate">{attachment.name}</div>
+                  <div className="text-[11px] text-zinc-500 leading-tight">
                     {attachment.source === "screenshot"
                       ? t("preview.screenshotAttached")
                       : attachment.kind === "image"

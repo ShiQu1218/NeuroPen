@@ -88,6 +88,11 @@ export interface LoadedAttachmentText {
 
 export type LoadedAttachment = LoadedAttachmentImage | LoadedAttachmentText;
 
+export interface PickAttachmentsResult {
+  attachments: LoadedAttachment[];
+  skippedCount: number;
+}
+
 export interface LlmImageAttachmentPayload {
   imageBase64: string;
   imageMimeType: string;
@@ -136,7 +141,7 @@ export const mainWindowService = {
   getForegroundWindowTitle: () => invoke<string>("get_foreground_window_title"),
   loadAttachment: (fileName: string, bytes: number[]) =>
     invoke<LoadedAttachment>("load_attachment", { fileName, bytes }),
-  pickAttachments: () => invoke<LoadedAttachment[]>("pick_attachments"),
+  pickAttachments: () => invoke<PickAttachmentsResult>("pick_attachments"),
   callLlm: (payload: LlmCallPayload) => invoke<void>("call_llm", payload),
   callLlmWithImages: (payload: LlmImagesCallPayload) =>
     invoke<void>("call_llm_with_images", payload),

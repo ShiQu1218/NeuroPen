@@ -100,6 +100,16 @@ function dedupeAttachments(attachments: PreviewAttachment[]) {
   });
 }
 
+function clearPreviewAttachments(session: PreviewSession | null): PreviewSession | null {
+  if (!session || session.attachments.length === 0) {
+    return session;
+  }
+  return {
+    ...session,
+    attachments: [],
+  };
+}
+
 export function usePreviewWindowController() {
   const [refinementInput, setRefinementInput] = useState("");
   const [previewSession, setPreviewSession] = useState<PreviewSession | null>(null);
@@ -212,6 +222,7 @@ export function usePreviewWindowController() {
       const instructionToSend = buildAttachmentInstruction(input, selectedText, attachments);
       const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
+      setPreviewSession((current) => clearPreviewAttachments(current));
       await emit("neuropen://llm-session-context", {
         mode: sourceMode,
         selectedText,
@@ -266,17 +277,21 @@ export function usePreviewWindowController() {
     await win.setAlwaysOnTop(false).catch(() => { });
     await setPreviewFocusable(true, true);
     try {
-      const loadedAttachments = await mainWindowService.pickAttachments();
+      const { attachments: loadedAttachments, skippedCount } = await mainWindowService.pickAttachments();
       const nextAttachments = loadedAttachments.map(toPreviewAttachment);
-      setPreviewSession((current) => ({
-        type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
-        selectedText: current?.selectedText ?? "",
-        sourceMode: current?.sourceMode ?? "C",
-        instruction: current?.instruction ?? "",
-        attachments: dedupeAttachments([...(current?.attachments ?? []), ...nextAttachments]),
-      }));
-      setLlmError("");
-      showToast(t("preview.attachmentReady"));
+      if (nextAttachments.length > 0) {
+        setPreviewSession((current) => ({
+          type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
+          selectedText: current?.selectedText ?? "",
+          sourceMode: current?.sourceMode ?? "C",
+          instruction: current?.instruction ?? "",
+          attachments: dedupeAttachments([...(current?.attachments ?? []), ...nextAttachments]),
+        }));
+        setLlmError("");
+        showToast(t("preview.attachmentReady"));
+      } else if (skippedCount > 0) {
+        setLlmError(t("preview.attachmentReadFailed"));
+      }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       if (reason && reason !== "No file selected.") {

@@ -22,13 +22,20 @@ pub enum LoadedAttachment {
     },
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PickAttachmentsResult {
+    attachments: Vec<LoadedAttachment>,
+    skipped_count: usize,
+}
+
 #[tauri::command]
 pub fn load_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachment, String> {
     parse_attachment(file_name, bytes)
 }
 
 #[tauri::command]
-pub async fn pick_attachments() -> Result<Vec<LoadedAttachment>, String> {
+pub async fn pick_attachments() -> Result<PickAttachmentsResult, String> {
     let files = AsyncFileDialog::new()
         .add_filter(
             "Supported files",
@@ -43,12 +50,19 @@ pub async fn pick_attachments() -> Result<Vec<LoadedAttachment>, String> {
         .ok_or_else(|| "No file selected.".to_string())?;
 
     let mut attachments = Vec::with_capacity(files.len());
+    let mut skipped_count = 0;
     for file in files {
         let file_name = file.file_name();
         let bytes = file.read().await;
-        attachments.push(parse_attachment(file_name, bytes)?);
+        match parse_attachment(file_name, bytes) {
+            Ok(attachment) => attachments.push(attachment),
+            Err(_) => skipped_count += 1,
+        }
     }
-    Ok(attachments)
+    Ok(PickAttachmentsResult {
+        attachments,
+        skipped_count,
+    })
 }
 
 fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachment, String> {
