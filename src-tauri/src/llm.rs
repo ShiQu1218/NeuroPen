@@ -851,6 +851,7 @@ async fn call_openai_compatible_with_image(
     system_prompt: &str,
     user_text: &str,
     image_base64: &str,
+    image_mime_type: &str,
 ) -> Result<String, String> {
     let body = serde_json::json!({
         "model": model,
@@ -859,7 +860,7 @@ async fn call_openai_compatible_with_image(
             { "role": "system", "content": system_prompt },
             { "role": "user", "content": [
                 { "type": "text", "text": user_text },
-                { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{image_base64}") } }
+                { "type": "image_url", "image_url": { "url": format!("data:{image_mime_type};base64,{image_base64}") } }
             ]}
         ]
     });
@@ -888,6 +889,7 @@ async fn call_gemini_with_image(
     system_prompt: &str,
     user_text: &str,
     image_base64: &str,
+    image_mime_type: &str,
 ) -> Result<String, String> {
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
@@ -897,7 +899,7 @@ async fn call_gemini_with_image(
         "system_instruction": { "parts": [{ "text": system_prompt }] },
         "contents": [{ "parts": [
             { "text": user_text },
-            { "inline_data": { "mime_type": "image/png", "data": image_base64 } }
+            { "inline_data": { "mime_type": image_mime_type, "data": image_base64 } }
         ]}],
     });
 
@@ -936,13 +938,14 @@ async fn call_claude_with_image(
     system_prompt: &str,
     user_text: &str,
     image_base64: &str,
+    image_mime_type: &str,
 ) -> Result<String, String> {
     let body = serde_json::json!({
         "model": model,
         "max_tokens": 4096,
         "system": system_prompt,
         "messages": [{ "role": "user", "content": [
-            { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": image_base64 } },
+            { "type": "image", "source": { "type": "base64", "media_type": image_mime_type, "data": image_base64 } },
             { "type": "text", "text": user_text }
         ]}],
     });
@@ -1023,13 +1026,43 @@ async fn call_provider_with_image(
     system_prompt: &str,
     user_text: &str,
     image_base64: &str,
+    image_mime_type: &str,
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
-        return call_openai_compatible_with_image(url, api_key, chosen_model, system_prompt, user_text, image_base64).await;
+        return call_openai_compatible_with_image(
+            url,
+            api_key,
+            chosen_model,
+            system_prompt,
+            user_text,
+            image_base64,
+            image_mime_type,
+        )
+        .await;
     }
     match provider {
-        LlmProvider::Gemini => call_gemini_with_image(api_key, chosen_model, system_prompt, user_text, image_base64).await,
-        LlmProvider::Claude => call_claude_with_image(api_key, chosen_model, system_prompt, user_text, image_base64).await,
+        LlmProvider::Gemini => {
+            call_gemini_with_image(
+                api_key,
+                chosen_model,
+                system_prompt,
+                user_text,
+                image_base64,
+                image_mime_type,
+            )
+            .await
+        }
+        LlmProvider::Claude => {
+            call_claude_with_image(
+                api_key,
+                chosen_model,
+                system_prompt,
+                user_text,
+                image_base64,
+                image_mime_type,
+            )
+            .await
+        }
         LlmProvider::Ollama => call_ollama_with_image(chosen_model, system_prompt, user_text, image_base64).await,
         _ => unreachable!(),
     }
@@ -1038,6 +1071,7 @@ async fn call_provider_with_image(
 pub async fn call_llm_with_image(
     api_key: &str,
     image_base64: &str,
+    image_mime_type: &str,
     instruction: &str,
     output_mode: OutputMode,
     stream_output: bool,
@@ -1075,7 +1109,13 @@ pub async fn call_llm_with_image(
     let chosen_model = resolve_model(model, &provider);
 
     let raw_output = call_provider_with_image(
-        api_key, &provider, &chosen_model, &system_prompt, instruction, image_base64,
+        api_key,
+        &provider,
+        &chosen_model,
+        &system_prompt,
+        instruction,
+        image_base64,
+        image_mime_type,
     )
     .await
     .map_err(|e| {

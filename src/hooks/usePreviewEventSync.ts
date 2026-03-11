@@ -5,13 +5,18 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
 import type { PreviewSourceMode } from "../utils/previewWindow";
+import type { PreviewAttachment } from "../utils/previewAttachments";
 
 const PREVIEW_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 340;
 
-export type PreviewSession =
-  | { type: "text"; selectedText: string; sourceMode: PreviewSourceMode; instruction: string }
-  | { type: "screenshot"; imageBase64: string; sourceMode: "C" };
+export interface PreviewSession {
+  type: "text" | "screenshot";
+  selectedText: string;
+  sourceMode: PreviewSourceMode;
+  instruction: string;
+  attachment: PreviewAttachment | null;
+}
 
 interface UsePreviewEventSyncOptions {
   fallbackTtsActiveRef: MutableRefObject<boolean>;
@@ -99,8 +104,10 @@ export function usePreviewEventSync({
           currentState.setIsLlmLoading(false);
           setPreviewSession({
             type: "screenshot",
-            imageBase64: "",
+            selectedText: "",
             sourceMode: "C",
+            instruction: "",
+            attachment: null,
           });
           return;
         }
@@ -109,6 +116,7 @@ export function usePreviewEventSync({
           selectedText: event.payload.selectedText ?? "",
           sourceMode: event.payload.sourceMode ?? "C",
           instruction: event.payload.instruction ?? "",
+          attachment: null,
         });
       });
 
@@ -197,8 +205,16 @@ export function usePreviewEventSync({
       await register<{ imageBase64: string }>("neuropen://screenshot-attached", (event) => {
         setPreviewSession({
           type: "screenshot",
-          imageBase64: event.payload.imageBase64 || "",
+          selectedText: "",
           sourceMode: "C",
+          instruction: "",
+          attachment: {
+            kind: "image",
+            name: "screenshot.png",
+            mimeType: "image/png",
+            base64Data: event.payload.imageBase64 || "",
+            source: "screenshot",
+          },
         });
         setAnimKey((key) => key + 1);
         const currentState = useAppStore.getState();

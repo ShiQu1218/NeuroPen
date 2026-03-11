@@ -40,6 +40,8 @@ futures-util = "0.3"
 rodio = { version = "0.19", features = ["mp3"] }
 png = "0.17"
 base64 = "0.22"
+pdf-extract = "0.10.0"
+rfd = "0.15"
 
 whisper-rs = "0.15"
 ort = { version = "2.0.0-rc.12", features = ["download-binaries"] }

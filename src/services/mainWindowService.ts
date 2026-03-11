@@ -67,6 +67,27 @@ export interface HistorySavePayload {
   model: string;
 }
 
+export interface LoadedAttachmentImage {
+  kind: "image";
+  name: string;
+  mimeType: string;
+  base64Data: string;
+  mime_type?: string;
+  base64_data?: string;
+}
+
+export interface LoadedAttachmentText {
+  kind: "text";
+  name: string;
+  mimeType: string;
+  textContent: string;
+  truncated: boolean;
+  mime_type?: string;
+  text_content?: string;
+}
+
+export type LoadedAttachment = LoadedAttachmentImage | LoadedAttachmentText;
+
 export const mainWindowService = {
   getRegisteredHotkeys: () => invoke<RegisteredHotkeys>("get_registered_hotkeys"),
   changeHotkey: (hotkeyStr: string) => invoke<void>("change_hotkey", { hotkeyStr }),
@@ -95,6 +116,9 @@ export const mainWindowService = {
       incognito,
     }),
   getForegroundWindowTitle: () => invoke<string>("get_foreground_window_title"),
+  loadAttachment: (fileName: string, bytes: number[]) =>
+    invoke<LoadedAttachment>("load_attachment", { fileName, bytes }),
+  pickAttachment: () => invoke<LoadedAttachment>("pick_attachment"),
   callLlm: (payload: LlmCallPayload) => invoke<void>("call_llm", payload),
   callLlmText: (payload: LlmTextCallPayload) => invoke<string>("call_llm_text", payload),
   verifyFocus: () => invoke<boolean>("verify_focus"),

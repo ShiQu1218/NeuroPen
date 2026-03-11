@@ -18,7 +18,16 @@ export const previewMessages = {
     "preview.quickActions": "預設指令",
     "preview.screenshotAttached": "截圖已附加",
     "preview.removeScreenshot": "移除截圖",
-    "preview.askAboutScreenshot": "輸入你想問的問題…"
+    "preview.askAboutScreenshot": "輸入你想問的問題…",
+    "preview.attachFile": "附加檔案",
+    "preview.removeAttachment": "移除附件",
+    "preview.imageAttachmentAttached": "圖片已附加",
+    "preview.fileAttachmentAttached": "檔案已附加",
+    "preview.askAboutImageAttachment": "輸入你想問的圖片問題…",
+    "preview.askAboutAttachment": "輸入你想問的檔案問題…",
+    "preview.attachmentTruncated": "內容已截斷",
+    "preview.attachmentReady": "附件已準備完成",
+    "preview.attachmentReadFailed": "讀取附件失敗"
   },
   "en-US": {
     "preview.title": "NeuroPen Preview",
@@ -39,7 +48,16 @@ export const previewMessages = {
     "preview.quickActions": "Preset Actions",
     "preview.screenshotAttached": "Screenshot attached",
     "preview.removeScreenshot": "Remove screenshot",
-    "preview.askAboutScreenshot": "Type your question about the screenshot…"
+    "preview.askAboutScreenshot": "Type your question about the screenshot…",
+    "preview.attachFile": "Attach file",
+    "preview.removeAttachment": "Remove attachment",
+    "preview.imageAttachmentAttached": "Image attached",
+    "preview.fileAttachmentAttached": "File attached",
+    "preview.askAboutImageAttachment": "Type your question about the image…",
+    "preview.askAboutAttachment": "Type your question about the file…",
+    "preview.attachmentTruncated": "Content truncated",
+    "preview.attachmentReady": "Attachment ready",
+    "preview.attachmentReadFailed": "Failed to read attachment"
   },
   "ja-JP": {
     "preview.title": "NeuroPen プレビュー",
@@ -60,7 +78,16 @@ export const previewMessages = {
     "preview.quickActions": "プリセットアクション",
     "preview.screenshotAttached": "スクリーンショット添付済み",
     "preview.removeScreenshot": "スクリーンショットを削除",
-    "preview.askAboutScreenshot": "スクリーンショットについて質問を入力…"
+    "preview.askAboutScreenshot": "スクリーンショットについて質問を入力…",
+    "preview.attachFile": "ファイルを添付",
+    "preview.removeAttachment": "添付を削除",
+    "preview.imageAttachmentAttached": "画像を添付しました",
+    "preview.fileAttachmentAttached": "ファイルを添付しました",
+    "preview.askAboutImageAttachment": "画像について質問を入力…",
+    "preview.askAboutAttachment": "ファイルについて質問を入力…",
+    "preview.attachmentTruncated": "内容を省略しました",
+    "preview.attachmentReady": "添付の準備ができました",
+    "preview.attachmentReadFailed": "添付の読み込みに失敗しました"
   },
   "zh-CN": {
     "preview.title": "NeuroPen 预览",
@@ -81,7 +108,16 @@ export const previewMessages = {
     "preview.quickActions": "预设指令",
     "preview.screenshotAttached": "截图已附加",
     "preview.removeScreenshot": "移除截图",
-    "preview.askAboutScreenshot": "输入你想问的问题…"
+    "preview.askAboutScreenshot": "输入你想问的问题…",
+    "preview.attachFile": "附加文件",
+    "preview.removeAttachment": "移除附件",
+    "preview.imageAttachmentAttached": "图片已附加",
+    "preview.fileAttachmentAttached": "文件已附加",
+    "preview.askAboutImageAttachment": "输入你想问的图片问题…",
+    "preview.askAboutAttachment": "输入你想问的文件问题…",
+    "preview.attachmentTruncated": "内容已截断",
+    "preview.attachmentReady": "附件已准备完成",
+    "preview.attachmentReadFailed": "读取附件失败"
   },
   "es-ES": {
     "preview.title": "NeuroPen Vista previa",
@@ -102,7 +138,16 @@ export const previewMessages = {
     "preview.quickActions": "Acciones preestablecidas",
     "preview.screenshotAttached": "Captura adjunta",
     "preview.removeScreenshot": "Eliminar captura",
-    "preview.askAboutScreenshot": "Escribe tu pregunta sobre la captura…"
+    "preview.askAboutScreenshot": "Escribe tu pregunta sobre la captura…",
+    "preview.attachFile": "Adjuntar archivo",
+    "preview.removeAttachment": "Eliminar adjunto",
+    "preview.imageAttachmentAttached": "Imagen adjunta",
+    "preview.fileAttachmentAttached": "Archivo adjunto",
+    "preview.askAboutImageAttachment": "Escribe tu pregunta sobre la imagen…",
+    "preview.askAboutAttachment": "Escribe tu pregunta sobre el archivo…",
+    "preview.attachmentTruncated": "Contenido truncado",
+    "preview.attachmentReady": "Adjunto listo",
+    "preview.attachmentReadFailed": "No se pudo leer el adjunto"
   },
   "ko-KR": {
     "preview.title": "NeuroPen 미리보기",
@@ -123,7 +168,16 @@ export const previewMessages = {
     "preview.quickActions": "사전 설정 작업",
     "preview.screenshotAttached": "스크린샷 첨부됨",
     "preview.removeScreenshot": "스크린샷 제거",
-    "preview.askAboutScreenshot": "스크린샷에 대한 질문을 입력하세요…"
+    "preview.askAboutScreenshot": "스크린샷에 대한 질문을 입력하세요…",
+    "preview.attachFile": "파일 첨부",
+    "preview.removeAttachment": "첨부 제거",
+    "preview.imageAttachmentAttached": "이미지 첨부됨",
+    "preview.fileAttachmentAttached": "파일 첨부됨",
+    "preview.askAboutImageAttachment": "이미지에 대한 질문을 입력하세요…",
+    "preview.askAboutAttachment": "파일에 대한 질문을 입력하세요…",
+    "preview.attachmentTruncated": "내용이 잘렸습니다",
+    "preview.attachmentReady": "첨부가 준비되었습니다",
+    "preview.attachmentReadFailed": "첨부를 읽지 못했습니다"
   },
   "de-DE": {
     "preview.title": "NeuroPen Vorschau",
@@ -144,7 +198,16 @@ export const previewMessages = {
     "preview.quickActions": "Voreingestellte Aktionen",
     "preview.screenshotAttached": "Screenshot angehängt",
     "preview.removeScreenshot": "Screenshot entfernen",
-    "preview.askAboutScreenshot": "Frage zum Screenshot eingeben…"
+    "preview.askAboutScreenshot": "Frage zum Screenshot eingeben…",
+    "preview.attachFile": "Datei anhängen",
+    "preview.removeAttachment": "Anhang entfernen",
+    "preview.imageAttachmentAttached": "Bild angehängt",
+    "preview.fileAttachmentAttached": "Datei angehängt",
+    "preview.askAboutImageAttachment": "Frage zum Bild eingeben…",
+    "preview.askAboutAttachment": "Frage zur Datei eingeben…",
+    "preview.attachmentTruncated": "Inhalt gekürzt",
+    "preview.attachmentReady": "Anhang bereit",
+    "preview.attachmentReadFailed": "Anhang konnte nicht gelesen werden"
   },
   "fr-FR": {
     "preview.title": "NeuroPen Aperçu",
@@ -165,7 +228,16 @@ export const previewMessages = {
     "preview.quickActions": "Actions prédéfinies",
     "preview.screenshotAttached": "Capture jointe",
     "preview.removeScreenshot": "Supprimer la capture",
-    "preview.askAboutScreenshot": "Tapez votre question sur la capture…"
+    "preview.askAboutScreenshot": "Tapez votre question sur la capture…",
+    "preview.attachFile": "Joindre un fichier",
+    "preview.removeAttachment": "Supprimer la pièce jointe",
+    "preview.imageAttachmentAttached": "Image jointe",
+    "preview.fileAttachmentAttached": "Fichier joint",
+    "preview.askAboutImageAttachment": "Posez votre question sur l'image…",
+    "preview.askAboutAttachment": "Posez votre question sur le fichier…",
+    "preview.attachmentTruncated": "Contenu tronqué",
+    "preview.attachmentReady": "Pièce jointe prête",
+    "preview.attachmentReadFailed": "Échec de lecture de la pièce jointe"
   },
   "ar-SA": {
     "preview.title": "معاينة NeuroPen",
@@ -186,7 +258,16 @@ export const previewMessages = {
     "preview.quickActions": "الإجراءات المحددة مسبقاً",
     "preview.screenshotAttached": "تم إرفاق لقطة الشاشة",
     "preview.removeScreenshot": "إزالة لقطة الشاشة",
-    "preview.askAboutScreenshot": "اكتب سؤالك حول لقطة الشاشة…"
+    "preview.askAboutScreenshot": "اكتب سؤالك حول لقطة الشاشة…",
+    "preview.attachFile": "إرفاق ملف",
+    "preview.removeAttachment": "إزالة المرفق",
+    "preview.imageAttachmentAttached": "تم إرفاق الصورة",
+    "preview.fileAttachmentAttached": "تم إرفاق الملف",
+    "preview.askAboutImageAttachment": "اكتب سؤالك حول الصورة…",
+    "preview.askAboutAttachment": "اكتب سؤالك حول الملف…",
+    "preview.attachmentTruncated": "تم اقتطاع المحتوى",
+    "preview.attachmentReady": "المرفق جاهز",
+    "preview.attachmentReadFailed": "تعذر قراءة المرفق"
   },
   "ru-RU": {
     "preview.title": "NeuroPen Просмотр",
@@ -207,6 +288,15 @@ export const previewMessages = {
     "preview.quickActions": "Предустановленные действия",
     "preview.screenshotAttached": "Скриншот прикреплён",
     "preview.removeScreenshot": "Удалить скриншот",
-    "preview.askAboutScreenshot": "Введите вопрос о скриншоте…"
+    "preview.askAboutScreenshot": "Введите вопрос о скриншоте…",
+    "preview.attachFile": "Прикрепить файл",
+    "preview.removeAttachment": "Удалить вложение",
+    "preview.imageAttachmentAttached": "Изображение прикреплено",
+    "preview.fileAttachmentAttached": "Файл прикреплён",
+    "preview.askAboutImageAttachment": "Введите вопрос об изображении…",
+    "preview.askAboutAttachment": "Введите вопрос о файле…",
+    "preview.attachmentTruncated": "Содержимое сокращено",
+    "preview.attachmentReady": "Вложение готово",
+    "preview.attachmentReadFailed": "Не удалось прочитать вложение"
   }
 } as const;

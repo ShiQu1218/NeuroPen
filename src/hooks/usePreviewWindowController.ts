@@ -8,12 +8,68 @@ import { usePreviewEventSync, type PreviewSession } from "./usePreviewEventSync"
 import { usePreviewTts } from "./usePreviewTts";
 import { useI18n } from "../i18n";
 import { useAppStore } from "../store/useAppStore";
+import { mainWindowService, type LoadedAttachment } from "../services/mainWindowService";
+import type { PreviewAttachment } from "../utils/previewAttachments";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
 const PREVIEW_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 340;
 const PREVIEW_MAX_HEIGHT = 620;
 const PREVIEW_CHROME_HEIGHT = 240;
+
+function toPreviewAttachment(attachment: LoadedAttachment): PreviewAttachment {
+  if (attachment.kind === "image") {
+    return {
+      kind: "image",
+      name: attachment.name,
+      mimeType: attachment.mimeType ?? attachment.mime_type ?? "image/png",
+      base64Data: attachment.base64Data ?? attachment.base64_data ?? "",
+      source: "file",
+    };
+  }
+  return {
+    kind: "text",
+    name: attachment.name,
+    mimeType: attachment.mimeType ?? attachment.mime_type ?? "text/plain",
+    textContent: attachment.textContent ?? attachment.text_content ?? "",
+    truncated: attachment.truncated,
+    source: "file",
+  };
+}
+
+function buildAttachmentInstruction(
+  input: string,
+  selectedText: string,
+  attachment: PreviewAttachment | null
+) {
+  if (!attachment) {
+    return input;
+  }
+  if (attachment.kind === "image") {
+    if (!selectedText.trim()) {
+      return input;
+    }
+    return `Selected text for context:\n${selectedText}\n\nUser request:\n${input}`;
+  }
+  const truncatedNote = attachment.truncated
+    ? "\n\nNote: The attached file was truncated to fit within the chat context."
+    : "";
+  return [
+    `Attached file: ${attachment.name}`,
+    `Type: ${attachment.mimeType}`,
+    "",
+    "File content:",
+    '"""',
+    attachment.textContent,
+    '"""',
+    truncatedNote,
+    "",
+    "User request:",
+    input,
+  ]
+    .filter((part) => part !== "")
+    .join("\n");
+}
 
 export function usePreviewWindowController() {
   const [refinementInput, setRefinementInput] = useState("");
@@ -104,6 +160,17 @@ export function usePreviewWindowController() {
     setPreviewSession,
   });
 
+  const showToast = useCallback((message: string, durationMs = 1600) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage(message);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage("");
+      toastTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
   const runPreviewInstruction = useCallback(
     async (instruction: string) => {
       const state = useAppStore.getState();
@@ -111,7 +178,9 @@ export function usePreviewWindowController() {
       if (!input) return;
       const selectedText = previewSession?.type === "text" ? previewSession.selectedText : "";
       const sourceMode = previewSession?.sourceMode ?? "C";
-      const screenshotToSend = previewSession?.type === "screenshot" ? previewSession.imageBase64 : "";
+      const attachment = previewSession?.attachment ?? null;
+      const imageAttachment = attachment?.kind === "image" ? attachment : null;
+      const instructionToSend = buildAttachmentInstruction(input, selectedText, attachment);
       const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
       await emit("neuropen://llm-session-context", {
@@ -119,17 +188,15 @@ export function usePreviewWindowController() {
         selectedText,
         instruction: input,
       });
-      if (screenshotToSend && previewSession?.type === "screenshot") {
-        setPreviewSession({ ...previewSession, imageBase64: "" });
-      }
       setLlmOutput("");
       setIsLlmLoading(true);
       setLlmError("");
       try {
-        if (screenshotToSend) {
+        if (imageAttachment) {
           await invoke("call_llm_with_image", {
-            imageBase64: screenshotToSend,
-            instruction: input,
+            imageBase64: imageAttachment.base64Data,
+            imageMimeType: imageAttachment.mimeType,
+            instruction: instructionToSend,
             outputMode: "PreviewStream",
             provider: state.llmProvider,
             model: state.llmModel,
@@ -141,7 +208,7 @@ export function usePreviewWindowController() {
         } else {
           await invoke("call_llm", {
             selectedText,
-            instruction: input,
+            instruction: instructionToSend,
             outputMode: "PreviewStream",
             provider: state.llmProvider,
             model: state.llmModel,
@@ -163,20 +230,48 @@ export function usePreviewWindowController() {
     [previewSession, resolvePromptForPreviewMode, resolveStreamingForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput]
   );
 
+  const handleAttachFile = useCallback(async () => {
+    const win = getCurrentWindow();
+    await win.setAlwaysOnTop(false).catch(() => { });
+    await setPreviewFocusable(true, true);
+    try {
+      const loaded = await mainWindowService.pickAttachment();
+      const nextAttachment = toPreviewAttachment(loaded);
+      setPreviewSession((current) => ({
+        type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
+        selectedText: current?.selectedText ?? "",
+        sourceMode: current?.sourceMode ?? "C",
+        instruction: current?.instruction ?? "",
+        attachment: nextAttachment,
+      }));
+      setLlmError("");
+      showToast(t("preview.attachmentReady"));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      if (reason && reason !== "No file selected.") {
+        setLlmError(reason || t("preview.attachmentReadFailed"));
+      }
+    } finally {
+      await win.setAlwaysOnTop(true).catch(() => { });
+      await setPreviewFocusable(true, true);
+    }
+  }, [setLlmError, setPreviewFocusable, showToast, t]);
+
+  const handleRemoveAttachment = useCallback(() => {
+    setPreviewSession((current) =>
+      current
+        ? {
+            ...current,
+            type: current.type === "screenshot" ? "text" : current.type,
+            attachment: null,
+          }
+        : current
+    );
+  }, []);
+
   useEffect(() => {
     void setPreviewFocusable(false);
   }, [setPreviewFocusable]);
-
-  const showToast = useCallback((message: string, durationMs = 1600) => {
-    if (toastTimerRef.current !== null) {
-      window.clearTimeout(toastTimerRef.current);
-    }
-    setToastMessage(message);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToastMessage("");
-      toastTimerRef.current = null;
-    }, durationMs);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -332,10 +427,13 @@ export function usePreviewWindowController() {
   }, [handleKeyDown]);
 
   return {
+    attachment: previewSession?.attachment ?? null,
     animKey,
+    handleAttachFile,
     handleClose,
     handleCopy,
     handleRefinement,
+    handleRemoveAttachment,
     handleReplace,
     handleStartDrag,
     handleTtsToggle,
@@ -354,7 +452,6 @@ export function usePreviewWindowController() {
     refinementInput,
     runPreviewInstruction,
     setPreviewFocusable,
-    setPreviewSession,
     setRefinementInput,
     sttDurationMs,
     swallowDragRelease,

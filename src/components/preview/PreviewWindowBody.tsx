@@ -8,12 +8,16 @@ import type { useI18n } from "../../i18n";
 import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
 import { formatModeAText, normalizePreviewMarkdown, normalizeStructuredText } from "../../utils/appText";
+import type { PreviewAttachment } from "../../utils/previewAttachments";
 
 interface PreviewWindowBodyProps {
+  attachment: PreviewAttachment | null;
   animKey: number;
+  handleAttachFile: () => Promise<void>;
   handleClose: () => Promise<void>;
   handleCopy: () => Promise<void>;
   handleRefinement: () => Promise<void>;
+  handleRemoveAttachment: () => void;
   handleReplace: () => Promise<void>;
   handleStartDrag: () => Promise<void>;
   handleTtsToggle: () => Promise<void>;
@@ -32,7 +36,6 @@ interface PreviewWindowBodyProps {
   refinementInput: string;
   runPreviewInstruction: (instruction: string) => Promise<void>;
   setPreviewFocusable: (focusable: boolean, focus?: boolean) => Promise<void>;
-  setPreviewSession: Dispatch<SetStateAction<PreviewSession | null>>;
   setRefinementInput: Dispatch<SetStateAction<string>>;
   sttDurationMs: number;
   swallowDragRelease: (event: MouseEvent<HTMLElement>) => void;
@@ -41,10 +44,13 @@ interface PreviewWindowBodyProps {
 }
 
 export default function PreviewWindowBody({
+  attachment,
   animKey,
+  handleAttachFile,
   handleClose,
   handleCopy,
   handleRefinement,
+  handleRemoveAttachment,
   handleReplace,
   handleStartDrag,
   handleTtsToggle,
@@ -63,7 +69,6 @@ export default function PreviewWindowBody({
   refinementInput,
   runPreviewInstruction,
   setPreviewFocusable,
-  setPreviewSession,
   setRefinementInput,
   sttDurationMs,
   swallowDragRelease,
@@ -75,6 +80,14 @@ export default function PreviewWindowBody({
   const isModeCPreview =
     (previewSession?.type === "text" && previewSession.sourceMode === "C") ||
     previewSession?.type === "screenshot";
+  const refinementPlaceholder =
+    attachment?.kind === "image"
+      ? attachment.source === "screenshot"
+        ? t("preview.askAboutScreenshot")
+        : t("preview.askAboutImageAttachment")
+      : attachment
+        ? t("preview.askAboutAttachment")
+        : t("preview.refinementPlaceholder");
   const renderedOutput =
     isModeALlmPreview
       ? normalizeStructuredText(llmOutput)
@@ -182,22 +195,44 @@ export default function PreviewWindowBody({
         </div>
       </div>
 
-      {previewSession?.type === "screenshot" && previewSession.imageBase64 && (
+      {attachment && (
         <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80">
-          <img
-            src={`data:image/png;base64,${previewSession.imageBase64}`}
-            alt={t("preview.screenshotAttached")}
-            className="h-12 w-auto rounded border border-zinc-300 object-contain"
-          />
-          <span className="text-xs text-zinc-500 flex-1">{t("preview.screenshotAttached")}</span>
+          {attachment.kind === "image" ? (
+            <img
+              src={`data:${attachment.mimeType};base64,${attachment.base64Data}`}
+              alt={
+                attachment.source === "screenshot"
+                  ? t("preview.screenshotAttached")
+                  : t("preview.imageAttachmentAttached")
+              }
+              className="h-12 w-auto rounded border border-zinc-300 object-contain"
+            />
+          ) : (
+            <div className="h-12 w-12 shrink-0 rounded border border-zinc-300 bg-white text-zinc-500 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+                <path d="M16 13H8" />
+                <path d="M16 17H8" />
+                <path d="M10 9H8" />
+              </svg>
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-zinc-600 truncate">{attachment.name}</div>
+            <div className="text-[11px] text-zinc-500">
+              {attachment.source === "screenshot"
+                ? t("preview.screenshotAttached")
+                : attachment.kind === "image"
+                  ? t("preview.imageAttachmentAttached")
+                  : t("preview.fileAttachmentAttached")}
+              {attachment.kind === "text" && attachment.truncated ? ` · ${t("preview.attachmentTruncated")}` : ""}
+            </div>
+          </div>
           <button
             className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
-            onClick={() =>
-              setPreviewSession((current) =>
-                current?.type === "screenshot" ? { ...current, imageBase64: "" } : current
-              )
-            }
-            title={t("preview.removeScreenshot")}
+            onClick={handleRemoveAttachment}
+            title={t("preview.removeAttachment")}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -229,14 +264,23 @@ export default function PreviewWindowBody({
       )}
 
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
+        <button
+          className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          disabled={isLlmLoading}
+          onClick={() => {
+            if (isDragInteractionLocked()) return;
+            void handleAttachFile();
+          }}
+          title={t("preview.attachFile")}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.48-8.48" />
+          </svg>
+        </button>
         <input
           ref={inputRef}
           className="flex-1 input-field px-2.5 py-1.5 text-sm"
-          placeholder={
-            previewSession?.type === "screenshot"
-              ? t("preview.askAboutScreenshot")
-              : t("preview.refinementPlaceholder")
-          }
+          placeholder={refinementPlaceholder}
           value={refinementInput}
           onChange={(event) => setRefinementInput(event.target.value)}
           onKeyDown={(event) => {

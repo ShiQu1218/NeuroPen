@@ -68,6 +68,7 @@ pub async fn call_llm_text(
 pub async fn call_llm_with_image(
     app: tauri::AppHandle,
     image_base64: String,
+    image_mime_type: Option<String>,
     instruction: String,
     output_mode: llm::OutputMode,
     stream_output: Option<bool>,
@@ -85,6 +86,7 @@ pub async fn call_llm_with_image(
     llm::call_llm_with_image(
         &api_key,
         &image_base64,
+        image_mime_type.as_deref().unwrap_or("image/png"),
         &instruction,
         output_mode,
         stream_output.unwrap_or(true),
