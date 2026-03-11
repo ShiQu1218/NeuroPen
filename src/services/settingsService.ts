@@ -26,6 +26,7 @@ const SETTINGS_COMMANDS = {
   setSttApiKey: "set_stt_api_key",
   changeHotkey: "change_hotkey",
   changeScreenshotHotkey: "change_screenshot_hotkey",
+  changeDialogHotkey: "change_dialog_hotkey",
   setLaunchOnStartup: "set_launch_on_startup",
   setAudioDevice: "set_audio_device",
   setRuntimeSttConfig: "set_runtime_stt_config",
@@ -47,6 +48,8 @@ export const settingsService = {
   changeHotkey: (hotkeyStr: string) => invoke<void>(SETTINGS_COMMANDS.changeHotkey, { hotkeyStr }),
   changeScreenshotHotkey: (hotkeyStr: string) =>
     invoke<void>(SETTINGS_COMMANDS.changeScreenshotHotkey, { hotkeyStr }),
+  changeDialogHotkey: (hotkeyStr: string) =>
+    invoke<void>(SETTINGS_COMMANDS.changeDialogHotkey, { hotkeyStr }),
   setLaunchOnStartup: (enabled: boolean) => invoke<void>(SETTINGS_COMMANDS.setLaunchOnStartup, { enabled }),
   setAudioDevice: (name: string) => invoke<void>(SETTINGS_COMMANDS.setAudioDevice, { name }),
   setRuntimeSttConfig: (config: RuntimeSttConfig) =>

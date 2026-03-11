@@ -27,6 +27,8 @@ export interface RegisteredHotkeys {
   triggerPersisted: boolean;
   screenshotHotkey: string;
   screenshotPersisted: boolean;
+  dialogHotkey: string;
+  dialogPersisted: boolean;
 }
 
 export type SettingsSection = "general" | "stt" | "quickAction" | "llm" | "tts" | "history" | "appProfile";

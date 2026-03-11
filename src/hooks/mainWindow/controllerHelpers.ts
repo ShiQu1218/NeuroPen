@@ -24,6 +24,7 @@ const MAIN_WINDOW_AUX_LABELS = [
 export interface SettingsSavedPayload {
   wakeWord: string;
   hotkey: string;
+  dialogHotkey?: string;
   sttEnabled?: boolean;
   selectionEnabled?: boolean;
   screenshotEnabled?: boolean;
@@ -108,12 +109,17 @@ export async function initializeMainWindowRuntime() {
     backendHotkeys?.triggerPersisted ? backendHotkeys.triggerHotkey : store.hotkey;
   const initialScreenshotHotkey =
     backendHotkeys?.screenshotPersisted ? backendHotkeys.screenshotHotkey : store.screenshotHotkey;
+  const initialDialogHotkey =
+    backendHotkeys?.dialogPersisted ? backendHotkeys.dialogHotkey : store.dialogHotkey;
 
   if (initialTriggerHotkey !== store.hotkey) {
     store.setHotkey(initialTriggerHotkey);
   }
   if (initialScreenshotHotkey !== store.screenshotHotkey) {
     store.setScreenshotHotkey(initialScreenshotHotkey);
+  }
+  if (initialDialogHotkey !== store.dialogHotkey) {
+    store.setDialogHotkey(initialDialogHotkey);
   }
   if (!backendHotkeys || backendHotkeys.triggerHotkey !== initialTriggerHotkey) {
     await mainWindowService.changeHotkey(initialTriggerHotkey).catch((err) => {
@@ -123,6 +129,11 @@ export async function initializeMainWindowRuntime() {
   if (!backendHotkeys || backendHotkeys.screenshotHotkey !== initialScreenshotHotkey) {
     await mainWindowService.changeScreenshotHotkey(initialScreenshotHotkey).catch((err) => {
       console.warn("[App] change_screenshot_hotkey init failed:", err);
+    });
+  }
+  if (!backendHotkeys || backendHotkeys.dialogHotkey !== initialDialogHotkey) {
+    await mainWindowService.changeDialogHotkey(initialDialogHotkey).catch((err) => {
+      console.warn("[App] change_dialog_hotkey init failed:", err);
     });
   }
 
@@ -151,6 +162,9 @@ export function applySettingsSavedPayload(
   }
   if (typeof payload.hotkey === "string") {
     store.setHotkey(payload.hotkey);
+  }
+  if (typeof payload.dialogHotkey === "string") {
+    store.setDialogHotkey(payload.dialogHotkey);
   }
   if (typeof payload.sttEnabled === "boolean") {
     store.setSttEnabled(payload.sttEnabled);

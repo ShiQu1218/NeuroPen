@@ -65,6 +65,7 @@ export default function Settings() {
     screenshotEnabled, setScreenshotEnabled,
     hotkey, setHotkey,
     screenshotHotkey, setScreenshotHotkey,
+    dialogHotkey, setDialogHotkey,
     sttEngine, setSttEngine,
     sttLanguage, setSttLanguage,
     preferredLanguage, setPreferredLanguage,
@@ -156,6 +157,7 @@ export default function Settings() {
   const [draftScreenshotEnabled, setDraftScreenshotEnabled] = useState(screenshotEnabled);
   const [draftHotkey, setDraftHotkey] = useState(hotkey);
   const [draftScreenshotHotkey, setDraftScreenshotHotkey] = useState(screenshotHotkey);
+  const [draftDialogHotkey, setDraftDialogHotkey] = useState(dialogHotkey);
   const [draftSttEngine, setDraftSttEngine] = useState(sttEngine);
   const [draftSttLanguage, setDraftSttLanguage] = useState<SttLanguage>(sttLanguage);
   const [draftSttModelChoice, setDraftSttModelChoice] = useState<string>(
@@ -274,10 +276,15 @@ export default function Settings() {
       const effectiveScreenshotHotkey = registeredHotkeys.screenshotPersisted
         ? registeredHotkeys.screenshotHotkey
         : currentState.screenshotHotkey;
+      const effectiveDialogHotkey = registeredHotkeys.dialogPersisted
+        ? registeredHotkeys.dialogHotkey
+        : currentState.dialogHotkey;
       setHotkey(effectiveTriggerHotkey);
       setScreenshotHotkey(effectiveScreenshotHotkey);
+      setDialogHotkey(effectiveDialogHotkey);
       setDraftHotkey(effectiveTriggerHotkey);
       setDraftScreenshotHotkey(effectiveScreenshotHotkey);
+      setDraftDialogHotkey(effectiveDialogHotkey);
     })();
   }, []);
 
@@ -296,6 +303,7 @@ export default function Settings() {
     setDraftScreenshotEnabled(screenshotEnabled);
     setDraftHotkey(hotkey);
     setDraftScreenshotHotkey(screenshotHotkey);
+    setDraftDialogHotkey(dialogHotkey);
     setDraftSttEngine(sttEngine);
     setDraftSttLanguage(sttLanguage);
     setDraftSttModelChoice(nextSttModelChoice);
@@ -330,6 +338,7 @@ export default function Settings() {
     screenshotEnabled,
     hotkey,
     screenshotHotkey,
+    dialogHotkey,
     sttEngine,
     sttLanguage,
     outputMode,
@@ -474,8 +483,10 @@ export default function Settings() {
   const handleSaveSettings = async () => {
     const normalizedHotkey = normalizeHotkey(draftHotkey);
     const normalizedScreenshotHotkey = normalizeHotkey(draftScreenshotHotkey);
+    const normalizedDialogHotkey = normalizeHotkey(draftDialogHotkey);
     const nextHotkey = draftHotkey.trim();
     const nextScreenshotHotkey = draftScreenshotHotkey.trim();
+    const nextDialogHotkey = draftDialogHotkey.trim();
     const normalizedUndoHotkey = normalizeHotkey("Alt+Z");
     if (normalizedHotkey && normalizedHotkey === normalizedScreenshotHotkey) {
       setHotkeyStatus("error");
@@ -487,7 +498,31 @@ export default function Settings() {
       }, STATUS_RESET_MS);
       return;
     }
-    if (normalizedHotkey === normalizedUndoHotkey || normalizedScreenshotHotkey === normalizedUndoHotkey) {
+    if (normalizedHotkey && normalizedHotkey === normalizedDialogHotkey) {
+      setHotkeyStatus("error");
+      setHotkeyErrorMessage(t("settings.hotkey.conflictTriggerDialog"));
+      setSettingsSaveStatus("error");
+      setTimeout(() => {
+        setHotkeyStatus("");
+        setSettingsSaveStatus("");
+      }, STATUS_RESET_MS);
+      return;
+    }
+    if (normalizedScreenshotHotkey && normalizedScreenshotHotkey === normalizedDialogHotkey) {
+      setHotkeyStatus("error");
+      setHotkeyErrorMessage(t("settings.hotkey.conflictScreenshotDialog"));
+      setSettingsSaveStatus("error");
+      setTimeout(() => {
+        setHotkeyStatus("");
+        setSettingsSaveStatus("");
+      }, STATUS_RESET_MS);
+      return;
+    }
+    if (
+      normalizedHotkey === normalizedUndoHotkey ||
+      normalizedScreenshotHotkey === normalizedUndoHotkey ||
+      normalizedDialogHotkey === normalizedUndoHotkey
+    ) {
       setHotkeyStatus("error");
       setHotkeyErrorMessage(t("settings.hotkey.conflictUndo"));
       setSettingsSaveStatus("error");
@@ -539,6 +574,9 @@ export default function Settings() {
       if (nextScreenshotHotkey !== screenshotHotkey) {
         await settingsService.changeScreenshotHotkey(nextScreenshotHotkey);
       }
+      if (nextDialogHotkey !== dialogHotkey) {
+        await settingsService.changeDialogHotkey(nextDialogHotkey);
+      }
       if (draftLaunchOnStartup !== launchOnStartup) {
         await settingsService.setLaunchOnStartup(draftLaunchOnStartup);
       }
@@ -552,6 +590,7 @@ export default function Settings() {
       setScreenshotEnabled(draftScreenshotEnabled);
       setHotkey(nextHotkey);
       setScreenshotHotkey(nextScreenshotHotkey);
+      setDialogHotkey(nextDialogHotkey);
       setSttEngine(nextSttEngine);
       setSttLanguage(nextSttLanguage);
       setSttModelPath(nextSttModelPath);
@@ -591,6 +630,7 @@ export default function Settings() {
         screenshotEnabled: draftScreenshotEnabled,
         hotkey: nextHotkey,
         screenshotHotkey: nextScreenshotHotkey,
+        dialogHotkey: nextDialogHotkey,
         sttEngine: nextSttEngine,
         sttLanguage: nextSttLanguage,
         sttModelPath: nextSttModelPath,
@@ -647,6 +687,7 @@ export default function Settings() {
     setDraftScreenshotEnabled(screenshotEnabled);
     setDraftHotkey(hotkey);
     setDraftScreenshotHotkey(screenshotHotkey);
+    setDraftDialogHotkey(dialogHotkey);
     setDraftSttEngine(sttEngine);
     setDraftSttLanguage(sttLanguage);
     setDraftSttModelChoice(nextSttModelChoice);
@@ -819,6 +860,7 @@ export default function Settings() {
             screenshotEnabled: draftScreenshotEnabled,
             hotkey: draftHotkey,
             screenshotHotkey: draftScreenshotHotkey,
+            dialogHotkey: draftDialogHotkey,
             sttEngine: "openAi",
             sttLanguage: draftSttLanguage,
             sttModelPath: "",
@@ -867,6 +909,7 @@ export default function Settings() {
       draftScreenshotEnabled !== screenshotEnabled ||
       draftHotkey !== hotkey ||
       draftScreenshotHotkey !== screenshotHotkey ||
+      draftDialogHotkey !== dialogHotkey ||
       draftSttEngine !== sttEngine ||
       draftSttLanguage !== sttLanguage ||
       draftSttModelChoice !== currentSttModelChoice ||
@@ -907,6 +950,8 @@ export default function Settings() {
       hotkey,
       draftScreenshotHotkey,
       screenshotHotkey,
+      draftDialogHotkey,
+      dialogHotkey,
       draftSttEngine,
       sttEngine,
       draftSttLanguage,
@@ -991,6 +1036,7 @@ export default function Settings() {
               draftScreenshotEnabled={draftScreenshotEnabled}
               draftHotkey={draftHotkey}
               draftScreenshotHotkey={draftScreenshotHotkey}
+              draftDialogHotkey={draftDialogHotkey}
               draftWakeWord={draftWakeWord}
               hotkeyStatus={hotkeyStatus}
               hotkeyErrorMessage={hotkeyErrorMessage}
@@ -1001,6 +1047,7 @@ export default function Settings() {
               onScreenshotEnabledChange={setDraftScreenshotEnabled}
               onHotkeyChange={setDraftHotkey}
               onScreenshotHotkeyChange={setDraftScreenshotHotkey}
+              onDialogHotkeyChange={setDraftDialogHotkey}
               onWakeWordChange={setDraftWakeWord}
               onClearHotkeyError={() => {
                 setHotkeyStatus("");

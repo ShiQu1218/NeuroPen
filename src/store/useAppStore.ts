@@ -56,6 +56,7 @@ interface AppState {
   screenshotEnabled: boolean;
   hotkey: string;
   screenshotHotkey: string;
+  dialogHotkey: string;
   sttEngine: SttEngine;
   sttLanguage: SttLanguage;
   sttOutputStrategy: SttOutputStrategy;
@@ -112,6 +113,7 @@ interface AppState {
   setScreenshotEnabled: (enabled: boolean) => void;
   setHotkey: (hotkey: string) => void;
   setScreenshotHotkey: (hotkey: string) => void;
+  setDialogHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
   setSttLanguage: (language: SttLanguage) => void;
   setSttOutputStrategy: (strategy: SttOutputStrategy) => void;
@@ -206,6 +208,7 @@ export const useAppStore = create<AppState>()(
       screenshotEnabled: true,
       hotkey: "Alt+`",
       screenshotHotkey: "Alt+S",
+      dialogHotkey: "Alt+Shift+D",
       sttEngine: "openAi",
       sttLanguage: "auto",
       sttOutputStrategy: "raw",
@@ -273,6 +276,7 @@ export const useAppStore = create<AppState>()(
       setScreenshotEnabled: (screenshotEnabled) => set({ screenshotEnabled }),
       setHotkey: (hotkey) => set({ hotkey }),
       setScreenshotHotkey: (screenshotHotkey) => set({ screenshotHotkey }),
+      setDialogHotkey: (dialogHotkey) => set({ dialogHotkey }),
       setSttEngine: (engine) => set({ sttEngine: engine }),
       setSttLanguage: (sttLanguage) => set({ sttLanguage }),
       setSttOutputStrategy: (strategy) => set({ sttOutputStrategy: strategy }),
@@ -348,6 +352,7 @@ export const useAppStore = create<AppState>()(
         screenshotEnabled: state.screenshotEnabled,
         hotkey: state.hotkey,
         screenshotHotkey: state.screenshotHotkey,
+        dialogHotkey: state.dialogHotkey,
         sttEngine: state.sttEngine,
         sttLanguage: state.sttLanguage,
         sttOutputStrategy: state.sttOutputStrategy,

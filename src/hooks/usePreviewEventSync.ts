@@ -70,8 +70,10 @@ export function usePreviewEventSync({
         instruction?: string;
         sessionType?: "text" | "screenshot";
         sourceMode?: PreviewSourceMode;
+        startLoading?: boolean;
       }>("neuropen://preview-session", (event) => {
-        llmStartTime = Date.now();
+        const startLoading = event.payload.startLoading ?? true;
+        llmStartTime = startLoading ? Date.now() : 0;
         void invoke("clear_conversation");
         void (async () => {
           try {
@@ -86,7 +88,7 @@ export function usePreviewEventSync({
         setAnimKey((key) => key + 1);
         const currentState = useAppStore.getState();
         currentState.setLlmOutput("");
-        currentState.setIsLlmLoading(true);
+        currentState.setIsLlmLoading(startLoading);
         currentState.setLlmError("");
         currentState.setLastSelectedText(event.payload.selectedText ?? "");
         currentState.setLastInstruction(event.payload.instruction ?? "");

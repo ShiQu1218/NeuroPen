@@ -5,6 +5,8 @@ export interface RegisteredHotkeys {
   triggerPersisted: boolean;
   screenshotHotkey: string;
   screenshotPersisted: boolean;
+  dialogHotkey: string;
+  dialogPersisted: boolean;
 }
 
 export interface SelectionState {
@@ -69,6 +71,7 @@ export const mainWindowService = {
   getRegisteredHotkeys: () => invoke<RegisteredHotkeys>("get_registered_hotkeys"),
   changeHotkey: (hotkeyStr: string) => invoke<void>("change_hotkey", { hotkeyStr }),
   changeScreenshotHotkey: (hotkeyStr: string) => invoke<void>("change_screenshot_hotkey", { hotkeyStr }),
+  changeDialogHotkey: (hotkeyStr: string) => invoke<void>("change_dialog_hotkey", { hotkeyStr }),
   setRuntimeSttConfig: (engine: string, modelPath: string, sttLanguage: string) =>
     invoke<void>("set_runtime_stt_config", { engine, modelPath, sttLanguage }),
   setAudioDevice: (name: string) => invoke<void>("set_audio_device", { name }),

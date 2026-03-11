@@ -16,6 +16,7 @@ import { registerSelectionListeners } from "./mainWindow/selectionListeners";
 import { registerSttFinalRouter } from "./mainWindow/sttFinalRouter";
 import { mainWindowService } from "../services/mainWindowService";
 import { useAppStore } from "../store/useAppStore";
+import { openAssistantDialog } from "../utils/previewWindow";
 import { normalizeSttEngine, normalizeSttLanguage } from "../utils/appText";
 
 export function useMainWindowController() {
@@ -202,6 +203,15 @@ export function useMainWindowController() {
         pendingHotkeyReleaseAt = Date.now();
         console.log("[App] hotkey released → stopping recording");
         await stopRecordingNow();
+      });
+
+      await safeRegister("hotkey://dialog", async () => {
+        const store = useAppStore.getState();
+        if (store.isRecording) {
+          return;
+        }
+        store.setCurrentMode("C");
+        await openAssistantDialog();
       });
 
       await registerScreenshotListeners({

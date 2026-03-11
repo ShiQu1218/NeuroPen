@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
@@ -166,6 +166,31 @@ export function usePreviewWindowController() {
   }, [setPreviewFocusable]);
 
   useEffect(() => {
+    setRefinementInput("");
+  }, [previewSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    void (async () => {
+      const dispose = await listen("neuropen://preview-focus-input", () => {
+        inputRef.current?.focus();
+      });
+      if (cancelled) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!outputRef.current) {
       return;
     }
@@ -236,6 +261,7 @@ export function usePreviewWindowController() {
     setLlmOutput("");
     setIsLlmLoading(false);
     setLlmError("");
+    setRefinementInput("");
     setPreviewSession(null);
   }, [setIsLlmLoading, setLlmError, setLlmOutput, setPreviewFocusable, stopFallbackTts]);
 

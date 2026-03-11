@@ -11,6 +11,7 @@ export type PreviewSessionPayload =
     sourceMode: PreviewSourceMode;
     selectedText: string;
     instruction: string;
+    startLoading?: boolean;
   }
   | {
     sessionType: "screenshot";
@@ -38,6 +39,26 @@ export const emitPreviewSession = async (payload: PreviewSessionPayload) => {
 
 export const emitPreviewStaticOutput = async (text: string) => {
   await emit("neuropen://preview-static-output", { text });
+};
+
+export const openAssistantDialog = async () => {
+  const previewWin = await WebviewWindow.getByLabel("preview");
+  if (!previewWin) return null;
+
+  const isVisible = await previewWin.isVisible().catch(() => false);
+  if (!isVisible) {
+    await emitPreviewSession({
+      sessionType: "text",
+      sourceMode: "C",
+      selectedText: "",
+      instruction: "",
+      startLoading: false,
+    });
+  }
+
+  await showPreviewWindow({ focusable: true, focus: true });
+  await emit("neuropen://preview-focus-input");
+  return previewWin;
 };
 
 export const showPreviewWindow = async (options: ShowPreviewWindowOptions = {}) => {

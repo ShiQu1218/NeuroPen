@@ -11,6 +11,7 @@ interface SettingsGeneralSectionProps {
   draftScreenshotEnabled: boolean;
   draftHotkey: string;
   draftScreenshotHotkey: string;
+  draftDialogHotkey: string;
   draftWakeWord: string;
   hotkeyStatus: "" | "error";
   hotkeyErrorMessage: string;
@@ -21,6 +22,7 @@ interface SettingsGeneralSectionProps {
   onScreenshotEnabledChange: (value: boolean) => void;
   onHotkeyChange: (value: string) => void;
   onScreenshotHotkeyChange: (value: string) => void;
+  onDialogHotkeyChange: (value: string) => void;
   onWakeWordChange: (value: string) => void;
   onClearHotkeyError: () => void;
   t: ReturnType<typeof useI18n>["t"];
@@ -54,6 +56,7 @@ export default function SettingsGeneralSection({
   draftScreenshotEnabled,
   draftHotkey,
   draftScreenshotHotkey,
+  draftDialogHotkey,
   draftWakeWord,
   hotkeyStatus,
   hotkeyErrorMessage,
@@ -64,6 +67,7 @@ export default function SettingsGeneralSection({
   onScreenshotEnabledChange,
   onHotkeyChange,
   onScreenshotHotkeyChange,
+  onDialogHotkeyChange,
   onWakeWordChange,
   onClearHotkeyError,
   t,
@@ -210,6 +214,49 @@ export default function SettingsGeneralSection({
             {t("settings.hotkey.clear")}
           </button>
           {!draftScreenshotHotkey && (
+            <span className="text-xs text-amber-700">{t("settings.hotkey.emptyHint")}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <label className="font-medium">{t("settings.dialog.label")} Hotkey</label>
+        <input
+          className="w-full input-field px-2 py-1"
+          value={draftDialogHotkey}
+          readOnly
+          placeholder={t("settings.hotkey.placeholder")}
+          onKeyDown={(event) => {
+            event.preventDefault();
+            const nextHotkey = toHotkeyText(event);
+            if (!nextHotkey) return;
+            onDialogHotkeyChange(nextHotkey);
+            onClearHotkeyError();
+          }}
+        />
+        <p className="text-xs text-gray-400">{t("settings.dialog.hint")}</p>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              onDialogHotkeyChange("Alt+Shift+D");
+              onClearHotkeyError();
+            }}
+            className="btn-secondary px-2 py-1 text-xs"
+          >
+            {t("settings.dialog.reset")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onDialogHotkeyChange("");
+              onClearHotkeyError();
+            }}
+            className="btn-secondary px-2 py-1 text-xs"
+          >
+            {t("settings.hotkey.clear")}
+          </button>
+          {!draftDialogHotkey && (
             <span className="text-xs text-amber-700">{t("settings.hotkey.emptyHint")}</span>
           )}
         </div>

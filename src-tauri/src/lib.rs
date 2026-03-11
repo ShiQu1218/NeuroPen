@@ -51,6 +51,8 @@ pub struct RegisteredHotkeys {
     pub trigger_persisted: bool,
     pub screenshot_hotkey: String,
     pub screenshot_persisted: bool,
+    pub dialog_hotkey: String,
+    pub dialog_persisted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -348,15 +350,33 @@ fn change_screenshot_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result
     Ok(())
 }
 
+/// Change the assistant dialog hotkey at runtime.
+#[tauri::command]
+fn change_dialog_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
+    let normalized = hotkey_str.trim();
+    if normalized.is_empty() {
+        hotkey::clear_dialog(&app)?;
+        hotkey::persist_dialog_hotkey("")?;
+        return Ok(());
+    }
+    let (modifiers, code) = hotkey::parse_hotkey(normalized)?;
+    hotkey::change_dialog(&app, modifiers, code)?;
+    hotkey::persist_dialog_hotkey(normalized)?;
+    Ok(())
+}
+
 #[tauri::command]
 fn get_registered_hotkeys() -> RegisteredHotkeys {
     let (trigger_hotkey, trigger_persisted) = hotkey::current_trigger_hotkey();
     let (screenshot_hotkey, screenshot_persisted) = hotkey::current_screenshot_hotkey();
+    let (dialog_hotkey, dialog_persisted) = hotkey::current_dialog_hotkey();
     RegisteredHotkeys {
         trigger_hotkey,
         trigger_persisted,
         screenshot_hotkey,
         screenshot_persisted,
+        dialog_hotkey,
+        dialog_persisted,
     }
 }
 
@@ -428,6 +448,7 @@ pub fn run() {
             route_on_trigger,
             change_hotkey,
             change_screenshot_hotkey,
+            change_dialog_hotkey,
             get_registered_hotkeys,
             history_list,
             history_save,
@@ -491,6 +512,9 @@ pub fn run() {
             let handle = app.handle().clone();
             if let Err(e) = hotkey::register_undo(&handle) {
                 eprintln!("[setup] Failed to register undo hotkey: {e}");
+            }
+            if let Err(e) = hotkey::register_dialog(&handle) {
+                eprintln!("[setup] Failed to register dialog hotkey: {e}");
             }
             if let Err(e) = hotkey::register_trigger(&handle) {
                 eprintln!("[setup] Failed to register trigger hotkey: {e}");

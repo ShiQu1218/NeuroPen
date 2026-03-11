@@ -4,6 +4,7 @@
 //! - Trigger hotkey released                → emit `hotkey://release`
 //! - `Alt+Z` pressed                       → emit `hotkey://undo`
 //! - `Alt+S` pressed                       → emit `hotkey://screenshot`
+//! - `Alt+Shift+D` pressed                 → emit `hotkey://dialog`
 //!
 //! Uses `tauri-plugin-global-shortcut` with a **single global handler**
 //! instead of per-shortcut `on_shortcut()` calls. This avoids the ghost-
@@ -19,8 +20,11 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 static CURRENT_TRIGGER: Mutex<Option<Shortcut>> = Mutex::new(None);
 /// The currently registered screenshot shortcut.
 static CURRENT_SCREENSHOT: Mutex<Option<Shortcut>> = Mutex::new(None);
+/// The currently registered dialog shortcut.
+static CURRENT_DIALOG: Mutex<Option<Shortcut>> = Mutex::new(None);
 const DEFAULT_TRIGGER_HOTKEY: &str = "Alt+Backquote";
 const DEFAULT_SCREENSHOT_HOTKEY: &str = "Alt+S";
+const DEFAULT_DIALOG_HOTKEY: &str = "Alt+Shift+D";
 
 /// The fixed undo shortcut.
 fn undo_shortcut() -> Shortcut {
@@ -30,6 +34,11 @@ fn undo_shortcut() -> Shortcut {
 /// The default screenshot shortcut.
 fn default_screenshot_shortcut() -> Shortcut {
     Shortcut::new(Some(Modifiers::ALT), Code::KeyS)
+}
+
+/// The default dialog shortcut.
+fn default_dialog_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyD)
 }
 
 fn hotkey_file(file_name: &str) -> Option<PathBuf> {
@@ -60,6 +69,10 @@ pub fn persist_screenshot_hotkey(hotkey: &str) -> Result<(), String> {
     persist_hotkey("screenshot_hotkey", "screenshot", hotkey)
 }
 
+pub fn persist_dialog_hotkey(hotkey: &str) -> Result<(), String> {
+    persist_hotkey("dialog_hotkey", "dialog", hotkey)
+}
+
 pub fn current_trigger_hotkey() -> (String, bool) {
     match load_persisted_hotkey("trigger_hotkey") {
         Some(hotkey) => (hotkey, true),
@@ -71,6 +84,13 @@ pub fn current_screenshot_hotkey() -> (String, bool) {
     match load_persisted_hotkey("screenshot_hotkey") {
         Some(hotkey) => (hotkey, true),
         None => (DEFAULT_SCREENSHOT_HOTKEY.to_string(), false),
+    }
+}
+
+pub fn current_dialog_hotkey() -> (String, bool) {
+    match load_persisted_hotkey("dialog_hotkey") {
+        Some(hotkey) => (hotkey, true),
+        None => (DEFAULT_DIALOG_HOTKEY.to_string(), false),
     }
 }
 
@@ -92,6 +112,12 @@ pub fn build_plugin<R: Runtime>() -> TauriPlugin<R> {
                 .and_then(|guard| *guard)
                 .map(|s| s == *shortcut)
                 .unwrap_or(false);
+            let is_dialog = CURRENT_DIALOG
+                .lock()
+                .ok()
+                .and_then(|guard| *guard)
+                .map(|d| d == *shortcut)
+                .unwrap_or(false);
 
             if is_trigger {
                 match event.state {
@@ -107,6 +133,9 @@ pub fn build_plugin<R: Runtime>() -> TauriPlugin<R> {
             } else if *shortcut == undo_shortcut() && event.state == ShortcutState::Pressed {
                 let _ = app.emit("hotkey://undo", ());
                 println!("[hotkey] Alt+Z triggered (undo)");
+            } else if is_dialog && event.state == ShortcutState::Pressed {
+                let _ = app.emit("hotkey://dialog", ());
+                println!("[hotkey] Dialog hotkey triggered");
             } else if is_screenshot && event.state == ShortcutState::Pressed {
                 let _ = app.emit("hotkey://screenshot", ());
                 println!("[hotkey] Screenshot hotkey triggered");
@@ -122,6 +151,35 @@ pub fn register_undo(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::E
         app.global_shortcut().register(sc)?;
         println!("[hotkey] Registered undo shortcut (Alt+Z)");
     }
+    Ok(())
+}
+
+/// Register the dialog hotkey from persisted config or fallback default.
+pub fn register_dialog(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let (hotkey, persisted) = current_dialog_hotkey();
+    if persisted && hotkey.trim().is_empty() {
+        if let Ok(mut guard) = CURRENT_DIALOG.lock() {
+            *guard = None;
+        }
+        println!("[hotkey] Dialog hotkey disabled");
+        return Ok(());
+    }
+    let sc = if persisted {
+        if let Ok((mods, code)) = parse_hotkey(&hotkey) {
+            Shortcut::new(mods, code)
+        } else {
+            default_dialog_shortcut()
+        }
+    } else {
+        default_dialog_shortcut()
+    };
+    if !app.global_shortcut().is_registered(sc) {
+        app.global_shortcut().register(sc)?;
+    }
+    if let Ok(mut guard) = CURRENT_DIALOG.lock() {
+        *guard = Some(sc);
+    }
+    println!("[hotkey] Registered dialog shortcut ({hotkey})");
     Ok(())
 }
 
@@ -265,6 +323,50 @@ pub fn clear_screenshot(app: &tauri::AppHandle) -> Result<(), String> {
         *guard = None;
     }
     println!("[hotkey] Screenshot hotkey cleared");
+    Ok(())
+}
+
+/// Register (or change) the dialog hotkey.
+pub fn change_dialog(
+    app: &tauri::AppHandle,
+    modifiers: Option<Modifiers>,
+    code: Code,
+) -> Result<(), String> {
+    let new_shortcut = Shortcut::new(modifiers, code);
+
+    if let Some(old) = CURRENT_DIALOG.lock().ok().and_then(|guard| *guard) {
+        if app.global_shortcut().is_registered(old) {
+            app.global_shortcut()
+                .unregister(old)
+                .map_err(|e| format!("Failed to unregister old dialog hotkey: {e}"))?;
+            println!("[hotkey] Unregistered old dialog shortcut");
+        }
+    }
+
+    app.global_shortcut()
+        .register(new_shortcut)
+        .map_err(|e| format!("Failed to register dialog hotkey: {e}"))?;
+
+    if let Ok(mut guard) = CURRENT_DIALOG.lock() {
+        *guard = Some(new_shortcut);
+    }
+
+    println!("[hotkey] Registered dialog shortcut: {modifiers:?}+{code:?}");
+    Ok(())
+}
+
+pub fn clear_dialog(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(old) = CURRENT_DIALOG.lock().ok().and_then(|guard| *guard) {
+        if app.global_shortcut().is_registered(old) {
+            app.global_shortcut()
+                .unregister(old)
+                .map_err(|e| format!("Failed to unregister dialog hotkey: {e}"))?;
+        }
+    }
+    if let Ok(mut guard) = CURRENT_DIALOG.lock() {
+        *guard = None;
+    }
+    println!("[hotkey] Dialog hotkey cleared");
     Ok(())
 }
 
