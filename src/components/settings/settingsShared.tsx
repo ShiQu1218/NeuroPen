@@ -14,6 +14,20 @@ export interface LocalSttModel {
   engine: string;
 }
 
+export interface LocalTtsModel {
+  id: string;
+  name: string;
+  description: string;
+  language: string;
+  quality: string;
+  speakerCount: number;
+  downloadUrl: string;
+  fileName: string;
+  installed: boolean;
+  active: boolean;
+  modelPath: string;
+}
+
 export interface ModelDownloadProgressEvent {
   modelId: string;
   status: "start" | "downloading" | "done" | "cancelled" | "error";

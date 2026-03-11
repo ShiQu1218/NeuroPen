@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { LocalSttModel, RegisteredHotkeys } from "../components/settings/settingsShared";
+import type { LocalSttModel, LocalTtsModel, RegisteredHotkeys } from "../components/settings/settingsShared";
 import type { SttLanguage } from "../store/useAppStore";
 
 export interface SttCapabilities {
@@ -34,6 +34,12 @@ const SETTINGS_COMMANDS = {
   installLocalSttModel: "install_local_stt_model",
   cancelLocalSttDownload: "cancel_local_stt_download",
   deleteLocalSttModel: "delete_local_stt_model",
+  selectLocalSttModel: "select_local_stt_model",
+  listLocalTtsModels: "list_local_tts_models",
+  installLocalTtsModel: "install_local_tts_model",
+  cancelLocalTtsDownload: "cancel_local_tts_download",
+  deleteLocalTtsModel: "delete_local_tts_model",
+  selectLocalTtsModel: "select_local_tts_model",
 } as const;
 
 export const settingsService = {
@@ -62,4 +68,10 @@ export const settingsService = {
   installLocalSttModel: (modelId: string) => invoke<void>(SETTINGS_COMMANDS.installLocalSttModel, { modelId }),
   cancelLocalSttDownload: () => invoke<void>(SETTINGS_COMMANDS.cancelLocalSttDownload),
   deleteLocalSttModel: (modelId: string) => invoke<void>(SETTINGS_COMMANDS.deleteLocalSttModel, { modelId }),
+  selectLocalSttModel: (modelId: string) => invoke<string>(SETTINGS_COMMANDS.selectLocalSttModel, { modelId }),
+  listLocalTtsModels: () => invoke<LocalTtsModel[]>(SETTINGS_COMMANDS.listLocalTtsModels),
+  installLocalTtsModel: (modelId: string) => invoke<void>(SETTINGS_COMMANDS.installLocalTtsModel, { modelId }),
+  cancelLocalTtsDownload: () => invoke<void>(SETTINGS_COMMANDS.cancelLocalTtsDownload),
+  deleteLocalTtsModel: (modelId: string) => invoke<void>(SETTINGS_COMMANDS.deleteLocalTtsModel, { modelId }),
+  selectLocalTtsModel: (modelId: string) => invoke<string>(SETTINGS_COMMANDS.selectLocalTtsModel, { modelId }),
 };

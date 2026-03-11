@@ -50,7 +50,7 @@
 | **本地 STT 模型管理** | 支援 Whisper 模型安裝/切換/刪除、下載進度與取消 |
 | **多 LLM 提供商** | OpenAI、Gemini、Claude、Grok、Qwen、豆包、DeepSeek、Ollama |
 | **截圖多模態流程** | `Alt + S` 區域截圖後可直接進入 LLM 圖像問答流程 |
-| **TTS 朗讀** | 內建 Edge TTS，支援 voice/rate/pitch 設定 |
+| **TTS 朗讀** | 內建 Piper TTS，支援模型路徑 / 語速 / speaker id 設定 |
 | **歷史紀錄控制** | 本地歷史紀錄（最多 200 筆） |
 | **應用程式設定檔** | 依前景應用程式自動套用語調、提示詞、語言、輸出模式與直接貼上設定 — 關鍵字首配對勝出 |
 | **操作設定** | 開機啟動、麥克風來源、快捷鍵、語言偏好等 |
@@ -138,7 +138,7 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 
 | Engine | Notes |
 |--------|-------|
-| Edge TTS | 本地播放，支援 voice/rate/pitch 調整與多語音對應 |
+| Piper TTS | 本地播放，支援模型路徑、語速與 speaker id 設定 |
 
 ---
 

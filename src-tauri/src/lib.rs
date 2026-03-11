@@ -10,26 +10,35 @@ mod screenshot;
 mod selection;
 mod stt;
 mod tts;
+mod tts_models;
 mod undo;
 mod window_focus;
 
+use commands::history_commands::{
+    history_clear, history_delete, history_list, history_save, history_search,
+    history_toggle_favorite,
+};
+use commands::llm_commands::{call_llm, call_llm_text, call_llm_with_image, clear_conversation};
+use commands::media_commands::{
+    take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop,
+};
+use commands::stt_commands::{
+    cancel_local_stt_download, delete_local_stt_model, get_stt_capabilities, has_api_key,
+    has_stt_api_key, install_local_stt_model, is_recording, list_audio_devices,
+    list_local_stt_models, select_local_stt_model, set_api_key, set_audio_device, set_stt_api_key,
+};
+use commands::tts_commands::{
+    cancel_local_tts_download, delete_local_tts_model, install_local_tts_model,
+    list_local_tts_models, select_local_tts_model,
+};
 use serde::Serialize;
 use std::io::ErrorKind;
 use std::sync::Mutex;
-use tauri::{Emitter, Listener, Manager};
 #[cfg(desktop)]
 use tauri::menu::{Menu, MenuItem};
 #[cfg(desktop)]
 use tauri::tray::TrayIconBuilder;
-use commands::history_commands::{history_clear, history_delete, history_list, history_save, history_search, history_toggle_favorite};
-use commands::llm_commands::{call_llm, call_llm_text, call_llm_with_image, clear_conversation};
-use commands::media_commands::{take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop};
-use commands::stt_commands::{
-    cancel_local_stt_download, delete_local_stt_model, get_stt_capabilities, has_api_key,
-    has_stt_api_key, install_local_stt_model, is_recording, list_audio_devices,
-    list_local_stt_models, select_local_stt_model, set_api_key, set_audio_device,
-    set_stt_api_key,
-};
+use tauri::{Emitter, Listener, Manager};
 
 // ── Tauri command return types ──────────────────────────────────────────
 
@@ -74,9 +83,13 @@ fn get_effective_stt_config(
         .lock()
         .ok()
         .and_then(|guard| {
-            guard
-                .as_ref()
-                .map(|cfg| (cfg.engine.clone(), cfg.model_path.clone(), cfg.stt_language.clone()))
+            guard.as_ref().map(|cfg| {
+                (
+                    cfg.engine.clone(),
+                    cfg.model_path.clone(),
+                    cfg.stt_language.clone(),
+                )
+            })
         })
         .unwrap_or((engine, model_path, "auto".to_string()))
 }
@@ -198,7 +211,12 @@ fn start_streaming_stt(
 ) -> Result<(), String> {
     let (effective_engine, effective_model_path, effective_stt_language) =
         get_effective_stt_config(engine, model_path);
-    stt::start_streaming_stt(app, effective_engine, effective_model_path, effective_stt_language)
+    stt::start_streaming_stt(
+        app,
+        effective_engine,
+        effective_model_path,
+        effective_stt_language,
+    )
 }
 
 /// Stop microphone audio capture and transcribe via the selected engine.
@@ -210,7 +228,12 @@ fn stop_recording(
 ) -> Result<(), String> {
     let (effective_engine, effective_model_path, effective_stt_language) =
         get_effective_stt_config(engine, model_path);
-    stt::stop_recording(app, effective_engine, effective_model_path, effective_stt_language)
+    stt::stop_recording(
+        app,
+        effective_engine,
+        effective_model_path,
+        effective_stt_language,
+    )
 }
 
 #[tauri::command]
@@ -244,7 +267,8 @@ fn set_windows_launch_on_startup(enabled: bool) -> Result<(), String> {
         let (run_key, _) = hkcu
             .create_subkey(WINDOWS_RUN_KEY_PATH)
             .map_err(|e| format!("Failed to open Run key: {e}"))?;
-        let exe = std::env::current_exe().map_err(|e| format!("Failed to get current exe path: {e}"))?;
+        let exe =
+            std::env::current_exe().map_err(|e| format!("Failed to get current exe path: {e}"))?;
         let value = format!("\"{}\"", exe.display());
         run_key
             .set_value(WINDOWS_RUN_VALUE_NAME, &value)
@@ -258,7 +282,8 @@ fn set_windows_launch_on_startup(enabled: bool) -> Result<(), String> {
                     }
                 }
             }
-            Err(e) if e.kind() == ErrorKind::NotFound => { /* key doesn't exist, nothing to delete */ }
+            Err(e) if e.kind() == ErrorKind::NotFound => { /* key doesn't exist, nothing to delete */
+            }
             Err(e) => return Err(format!("Failed to open Run key: {e}")),
         }
     }
@@ -436,6 +461,11 @@ pub fn run() {
             cancel_local_stt_download,
             delete_local_stt_model,
             select_local_stt_model,
+            list_local_tts_models,
+            install_local_tts_model,
+            cancel_local_tts_download,
+            delete_local_tts_model,
+            select_local_tts_model,
             list_audio_devices,
             set_audio_device,
             set_launch_on_startup,
@@ -477,8 +507,8 @@ pub fn run() {
                 let quit_item =
                     MenuItem::with_id(app, "tray_quit", "離開", true, Option::<&str>::None)
                         .map_err(|e| e.to_string())?;
-                let tray_menu =
-                    Menu::with_items(app, &[&settings_item, &quit_item]).map_err(|e| e.to_string())?;
+                let tray_menu = Menu::with_items(app, &[&settings_item, &quit_item])
+                    .map_err(|e| e.to_string())?;
 
                 let mut tray_builder = TrayIconBuilder::with_id("neuropen-tray")
                     .menu(&tray_menu)
@@ -546,12 +576,15 @@ pub fn run() {
 
                 let initial_mode = mode_router::route_on_trigger(has_selection);
 
-                let _ = handle_press.emit("neuropen://mode-start", serde_json::json!({
-                    "has_selection": has_selection,
-                    "selected_text": selected_text,
-                    "initial_mode": initial_mode,
-                    "hwnd": window_focus::get_locked_hwnd(),
-                }));
+                let _ = handle_press.emit(
+                    "neuropen://mode-start",
+                    serde_json::json!({
+                        "has_selection": has_selection,
+                        "selected_text": selected_text,
+                        "initial_mode": initial_mode,
+                        "hwnd": window_focus::get_locked_hwnd(),
+                    }),
+                );
             });
 
             // ── hotkey://release → stop recording ──
@@ -567,13 +600,22 @@ pub fn run() {
                 println!("[event] hotkey://undo received");
                 match undo::undo_last_injection() {
                     Ok(true) => {
-                        let _ = handle_undo.emit("neuropen://undo-result", serde_json::json!({ "success": true }));
+                        let _ = handle_undo.emit(
+                            "neuropen://undo-result",
+                            serde_json::json!({ "success": true }),
+                        );
                     }
                     Ok(false) => {
-                        let _ = handle_undo.emit("neuropen://undo-result", serde_json::json!({ "success": false, "reason": "nothing_to_undo" }));
+                        let _ = handle_undo.emit(
+                            "neuropen://undo-result",
+                            serde_json::json!({ "success": false, "reason": "nothing_to_undo" }),
+                        );
                     }
                     Err(e) => {
-                        let _ = handle_undo.emit("neuropen://undo-result", serde_json::json!({ "success": false, "reason": e }));
+                        let _ = handle_undo.emit(
+                            "neuropen://undo-result",
+                            serde_json::json!({ "success": false, "reason": e }),
+                        );
                     }
                 }
             });

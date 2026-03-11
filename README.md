@@ -50,7 +50,7 @@
 | **Local STT model management** | Install/select/delete Whisper models with download progress and cancellation |
 | **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, and Ollama |
 | **Screenshot-to-LLM workflow** | `Alt + S` region capture and multimodal prompt flow in preview window |
-| **TTS playback** | Built-in read-aloud via Edge TTS with configurable voice/rate/pitch |
+| **TTS playback** | Built-in read-aloud via Piper TTS with configurable model/speed/speaker |
 | **History controls** | Searchable local history (up to 200 entries) |
 | **App Profiles** | Per-app automatic tone, prompt, language, output mode, and direct-paste tuning — keyword-based, first-match-wins priority |
 | **Operational settings** | Startup launch toggle, microphone selection, hotkey customization, language settings |
@@ -138,7 +138,7 @@ If focus changes during processing, injection is cancelled and clipboard is rest
 
 | Engine | Notes |
 |--------|-------|
-| Edge TTS | Local playback with configurable voice/rate/pitch and multi-language voice mapping |
+| Piper TTS | Local playback with configurable model path, speed, and speaker id |
 
 ---
 

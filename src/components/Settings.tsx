@@ -44,6 +44,7 @@ import {
   RATING_INDICES,
   STATUS_RESET_MS,
   type LocalSttModel,
+  type LocalTtsModel,
   type ModelDownloadProgressEvent,
   type SettingsSection,
 } from "./settings/settingsShared";
@@ -196,6 +197,16 @@ export default function Settings() {
   const [localModelDownloadProgress, setLocalModelDownloadProgress] = useState<Record<string, ModelDownloadProgressEvent>>({});
   const [failedDownloadModelId, setFailedDownloadModelId] = useState("");
   const [localModelStatus, setLocalModelStatus] = useState<{ type: "" | "success" | "error"; message: string }>({
+    type: "",
+    message: "",
+  });
+  const [localTtsModels, setLocalTtsModels] = useState<LocalTtsModel[]>([]);
+  const [localTtsModelsLoading, setLocalTtsModelsLoading] = useState(false);
+  const [ttsModelBusyId, setTtsModelBusyId] = useState("");
+  const [ttsModelBusyAction, setTtsModelBusyAction] = useState<"" | "install" | "delete" | "select">("");
+  const [ttsModelDownloadProgress, setTtsModelDownloadProgress] = useState<Record<string, ModelDownloadProgressEvent>>({});
+  const [failedTtsDownloadModelId, setFailedTtsDownloadModelId] = useState("");
+  const [ttsModelStatus, setTtsModelStatus] = useState<{ type: "" | "success" | "error"; message: string }>({
     type: "",
     message: "",
   });
@@ -383,9 +394,26 @@ export default function Settings() {
     }
   }, [t]);
 
+  const loadLocalTtsModels = useCallback(async () => {
+    setLocalTtsModelsLoading(true);
+    try {
+      const models = await settingsService.listLocalTtsModels();
+      setLocalTtsModels(models);
+    } catch (err) {
+      console.error("[Settings] list_local_tts_models failed:", err);
+      setTtsModelStatus({ type: "error", message: t("settings.error.loadTtsModels") });
+    } finally {
+      setLocalTtsModelsLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     void loadLocalModels();
   }, [loadLocalModels]);
+
+  useEffect(() => {
+    void loadLocalTtsModels();
+  }, [loadLocalTtsModels]);
 
   useEffect(() => {
     let disposed = false;
@@ -398,6 +426,31 @@ export default function Settings() {
         setFailedDownloadModelId("");
       } else if (payload.status === "cancelled" || payload.status === "error") {
         setFailedDownloadModelId(payload.modelId);
+      }
+    }).then((unlistenFn) => {
+      if (disposed) {
+        unlistenFn();
+      } else {
+        unlistenProgress = unlistenFn;
+      }
+    });
+    return () => {
+      disposed = true;
+      unlistenProgress?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenProgress: (() => void) | undefined;
+    void listen<ModelDownloadProgressEvent>("tts://model-download-progress", (event) => {
+      if (disposed) return;
+      const payload = event.payload;
+      setTtsModelDownloadProgress((prev) => ({ ...prev, [payload.modelId]: payload }));
+      if (payload.status === "done") {
+        setFailedTtsDownloadModelId("");
+      } else if (payload.status === "cancelled" || payload.status === "error") {
+        setFailedTtsDownloadModelId(payload.modelId);
       }
     }).then((unlistenFn) => {
       if (disposed) {
@@ -477,6 +530,31 @@ export default function Settings() {
     } finally {
       setLocalModelBusyId("");
       setLocalModelBusyAction("");
+    }
+  };
+
+  const withTtsModelBusy = async (
+    modelId: string,
+    action: "install" | "delete" | "select",
+    fn: () => Promise<void>,
+    successMsg: string,
+    errorMsg: string,
+  ) => {
+    setTtsModelBusyId(modelId);
+    setTtsModelBusyAction(action);
+    setTtsModelStatus({ type: "", message: "" });
+    try {
+      await fn();
+      await loadLocalTtsModels();
+      setTtsModelStatus({ type: "success", message: successMsg });
+      return true;
+    } catch (err) {
+      console.error(`[Settings] ${action}_local_tts_model failed:`, err);
+      setTtsModelStatus({ type: "error", message: errorMsg });
+      return false;
+    } finally {
+      setTtsModelBusyId("");
+      setTtsModelBusyAction("");
     }
   };
 
@@ -836,6 +914,75 @@ export default function Settings() {
   const handleCancelLocalModelDownload = async () => {
     await settingsService.cancelLocalSttDownload();
   };
+
+  const handleInstallLocalTtsModel = async (modelId: string) => {
+    setFailedTtsDownloadModelId("");
+    setTtsModelDownloadProgress((prev) => ({
+      ...prev,
+      [modelId]: {
+        modelId,
+        status: "start",
+        downloadedBytes: 0,
+        totalBytes: prev[modelId]?.totalBytes ?? 0,
+        progressPct: 0,
+      },
+    }));
+    const success = await withTtsModelBusy(
+      modelId,
+      "install",
+      () => settingsService.installLocalTtsModel(modelId),
+      t("settings.status.ttsModelInstalled"),
+      t("settings.status.ttsModelInstallFailed"),
+    );
+    if (!success) {
+      setFailedTtsDownloadModelId(modelId);
+    }
+  };
+
+  const handleCancelLocalTtsModelDownload = async () => {
+    await settingsService.cancelLocalTtsDownload();
+  };
+
+  const handleSelectLocalTtsModel = (modelId: string) =>
+    withTtsModelBusy(
+      modelId,
+      "select",
+      async () => {
+        const modelPath = await settingsService.selectLocalTtsModel(modelId);
+        setDraftTtsVoice(modelPath);
+        setTtsVoice(modelPath);
+        await emit("neuropen://settings-saved", {
+          ttsVoice: modelPath,
+          ttsRate: draftTtsRate,
+          ttsPitch: draftTtsPitch,
+        });
+      },
+      t("settings.status.ttsModelSelected"),
+      t("settings.status.ttsModelSelectFailed"),
+    );
+
+  const handleDeleteLocalTtsModel = (modelId: string) =>
+    withTtsModelBusy(
+      modelId,
+      "delete",
+      async () => {
+        const deleting = localTtsModels.find((model) => model.id === modelId);
+        await settingsService.deleteLocalTtsModel(modelId);
+        if (deleting && deleting.modelPath === draftTtsVoice) {
+          setDraftTtsVoice("");
+        }
+        if (deleting && deleting.modelPath === ttsVoice) {
+          setTtsVoice("");
+          await emit("neuropen://settings-saved", {
+            ttsVoice: "",
+            ttsRate: draftTtsRate,
+            ttsPitch: draftTtsPitch,
+          });
+        }
+      },
+      t("settings.status.ttsModelDeleted"),
+      t("settings.status.ttsModelDeleteFailed"),
+    );
 
   const handleDeleteLocalModel = (modelId: string) =>
     withModelBusy(
@@ -1434,10 +1581,22 @@ export default function Settings() {
               draftTtsPitch={draftTtsPitch}
               draftTtsRate={draftTtsRate}
               draftTtsVoice={draftTtsVoice}
+              failedTtsDownloadModelId={failedTtsDownloadModelId}
+              formatBytes={formatBytes}
+              localTtsModels={localTtsModels}
+              localTtsModelsLoading={localTtsModelsLoading}
+              onCancelDownload={handleCancelLocalTtsModelDownload}
+              onDeleteModel={handleDeleteLocalTtsModel}
+              onInstallModel={handleInstallLocalTtsModel}
               onPitchChange={setDraftTtsPitch}
               onRateChange={setDraftTtsRate}
+              onSelectModel={handleSelectLocalTtsModel}
               onVoiceChange={setDraftTtsVoice}
               t={t}
+              ttsModelBusyAction={ttsModelBusyAction}
+              ttsModelBusyId={ttsModelBusyId}
+              ttsModelDownloadProgress={ttsModelDownloadProgress}
+              ttsModelStatus={ttsModelStatus}
             />
           )}
 
