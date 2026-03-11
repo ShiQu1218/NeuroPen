@@ -14,7 +14,7 @@ export type AppLanguage =
   | "ar-SA"
   | "ru-RU";
 
-export type SttEngine = "openAi" | "localWhisper";
+export type SttEngine = "openAi" | "localWhisper" | "senseVoice" | "moonshine";
 export type SttLanguage = "auto" | "zh" | "en" | "ja" | "ko" | "de" | "fr" | "es" | "ru" | "ar";
 export type PreferredLanguage = "auto" | AppLanguage;
 

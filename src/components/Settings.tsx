@@ -101,29 +101,42 @@ export default function Settings() {
     "whisper-medium": "settings.stt.model.whisper-medium.name",
     "whisper-large": "settings.stt.model.whisper-large.name",
     "whisper-turbo": "settings.stt.model.whisper-turbo.name",
+    "sensevoice-small": "settings.stt.model.sensevoice-small.name",
+    "moonshine-base": "settings.stt.model.moonshine-base.name",
+    "moonshine-tiny": "settings.stt.model.moonshine-tiny.name",
   };
   const sttModelDescriptionKey: Partial<Record<string, TranslationKey>> = {
     "whisper-small": "settings.stt.model.whisper-small.description",
     "whisper-medium": "settings.stt.model.whisper-medium.description",
     "whisper-large": "settings.stt.model.whisper-large.description",
     "whisper-turbo": "settings.stt.model.whisper-turbo.description",
+    "sensevoice-small": "settings.stt.model.sensevoice-small.description",
+    "moonshine-base": "settings.stt.model.moonshine-base.description",
+    "moonshine-tiny": "settings.stt.model.moonshine-tiny.description",
   };
   const getLocalizedModelName = (model: LocalSttModel) =>
     sttModelNameKey[model.id] ? t(sttModelNameKey[model.id]!) : model.name;
   const getLocalizedModelDescription = (model: LocalSttModel) =>
     sttModelDescriptionKey[model.id] ? t(sttModelDescriptionKey[model.id]!) : model.description;
-  const resolveEngineAndPathByModel = (modelChoice: string): { engine: "openAi" | "localWhisper"; modelPath: string } => {
+  const engineFromModelEngine = (eng: string): "openAi" | "localWhisper" | "senseVoice" | "moonshine" => {
+    switch (eng) {
+      case "sensevoice": return "senseVoice";
+      case "moonshine": return "moonshine";
+      default: return "localWhisper";
+    }
+  };
+  const resolveEngineAndPathByModel = (modelChoice: string): { engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine"; modelPath: string } => {
     if (modelChoice === OPENAI_STT_MODEL) {
       return { engine: "openAi", modelPath: "" };
     }
     const matchedLocalModel = localModels.find((model) => model.id === modelChoice && model.installed);
     if (matchedLocalModel) {
-      return { engine: "localWhisper", modelPath: matchedLocalModel.modelPath };
+      return { engine: engineFromModelEngine(matchedLocalModel.engine), modelPath: matchedLocalModel.modelPath };
     }
     const fallbackLocal = localModels.find((model) => model.installed && model.modelPath === sttModelPath)
       ?? localModels.find((model) => model.installed && model.active);
     if (fallbackLocal) {
-      return { engine: "localWhisper", modelPath: fallbackLocal.modelPath };
+      return { engine: engineFromModelEngine(fallbackLocal.engine), modelPath: fallbackLocal.modelPath };
     }
     return { engine: "openAi", modelPath: "" };
   };
@@ -1027,16 +1040,6 @@ export default function Settings() {
                     ))}
                 </select>
                 <p className="text-xs text-gray-500">{t("settings.stt.modelHint")}</p>
-                {!localSttAvailable && (
-                  <div className="mt-1.5 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    <p className="font-medium">{t("settings.stt.localDisabledTitle")}</p>
-                    <p className="mt-0.5 text-amber-700">
-                      {t("settings.stt.localDisabledHintPrefix")}
-                      <code className="mx-1 font-mono bg-amber-100 px-1 rounded">cargo build --features local-stt</code>
-                      {t("settings.stt.localDisabledHintSuffix")}
-                    </p>
-                  </div>
-                )}
               </div>
 
               <div className="space-y-1">

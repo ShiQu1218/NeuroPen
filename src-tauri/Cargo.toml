@@ -9,8 +9,7 @@ edition = "2021"
 
 [features]
 default = []
-local-stt = ["dep:whisper-rs"]
-local-stt-gpu = ["local-stt", "whisper-rs/vulkan"]
+local-stt-gpu = ["whisper-rs/vulkan"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -42,7 +41,9 @@ rodio = { version = "0.19", features = ["mp3"] }
 png = "0.17"
 base64 = "0.22"
 
-whisper-rs = { version = "0.15", optional = true }
+whisper-rs = "0.15"
+ort = { version = "2.0.0-rc.12", features = ["download-binaries"] }
+rustfft = "6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [

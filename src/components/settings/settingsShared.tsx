@@ -11,6 +11,7 @@ export interface LocalSttModel {
   installed: boolean;
   active: boolean;
   modelPath: string;
+  engine: string;
 }
 
 export interface ModelDownloadProgressEvent {

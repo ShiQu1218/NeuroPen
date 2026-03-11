@@ -160,8 +160,16 @@ export const normalizeStructuredText = (text: string) =>
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-export const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" =>
-  engine === "localWhisper" ? "localWhisper" : "openAi";
+export const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" | "senseVoice" | "moonshine" => {
+  switch (engine) {
+    case "localWhisper":
+    case "senseVoice":
+    case "moonshine":
+      return engine;
+    default:
+      return "openAi";
+  }
+};
 
 export const normalizeSttLanguage = (language: unknown): SttLanguage => {
   switch (String(language ?? "").trim().toLowerCase()) {
