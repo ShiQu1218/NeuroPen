@@ -18,7 +18,7 @@ use commands::history_commands::{
     history_clear, history_delete, history_list, history_save, history_search,
     history_toggle_favorite,
 };
-use commands::attachment_commands::{load_attachment, pick_attachments};
+use commands::attachment_commands::{load_attachment, load_attachments_from_paths, pick_attachments};
 use commands::llm_commands::{call_llm, call_llm_text, call_llm_with_image, call_llm_with_images, clear_conversation};
 use commands::media_commands::{
     take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop,
@@ -448,6 +448,7 @@ pub fn run() {
             copy_to_clipboard,
             restore_clipboard,
             load_attachment,
+            load_attachments_from_paths,
             pick_attachments,
             start_recording,
             start_streaming_stt,

@@ -141,6 +141,8 @@ export const mainWindowService = {
   getForegroundWindowTitle: () => invoke<string>("get_foreground_window_title"),
   loadAttachment: (fileName: string, bytes: number[]) =>
     invoke<LoadedAttachment>("load_attachment", { fileName, bytes }),
+  loadAttachmentsFromPaths: (paths: string[]) =>
+    invoke<PickAttachmentsResult>("load_attachments_from_paths", { paths }),
   pickAttachments: () => invoke<PickAttachmentsResult>("pick_attachments"),
   callLlm: (payload: LlmCallPayload) => invoke<void>("call_llm", payload),
   callLlmWithImages: (payload: LlmImagesCallPayload) =>

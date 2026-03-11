@@ -36,6 +36,7 @@ interface PreviewWindowBodyProps {
   handleTtsToggle: () => Promise<void>;
   hasOutput: boolean;
   inputRef: RefObject<HTMLInputElement | null>;
+  isFileDragActive: boolean;
   isDragInteractionLocked: () => boolean;
   isLlmLoading: boolean;
   isTtsPlaying: boolean;
@@ -69,6 +70,7 @@ export default function PreviewWindowBody({
   handleTtsToggle,
   hasOutput,
   inputRef,
+  isFileDragActive,
   isDragInteractionLocked,
   isLlmLoading,
   isTtsPlaying,
@@ -196,83 +198,85 @@ export default function PreviewWindowBody({
         </div>
       </div>
 
-      <div
-        ref={outputRef}
-        className="flex-1 overflow-auto p-4 text-sm border-b border-zinc-200 bg-zinc-50/80 preview-markdown"
-      >
-        <div ref={outputContentRef}>
-          {llmError ? (
-            <span className="text-red-500">{llmError}</span>
-          ) : isLlmLoading && !hasOutput ? (
-            <span className="text-gray-400">{t("preview.loading")}</span>
-          ) : hasOutput ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
-              {renderedOutput}
-            </ReactMarkdown>
-          ) : (
-            <span className="text-gray-400">{t("preview.empty")}</span>
-          )}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div
+          ref={outputRef}
+          className="flex-1 min-h-0 overflow-auto p-4 text-sm border-b border-zinc-200 bg-zinc-50/80 preview-markdown"
+        >
+          <div ref={outputContentRef}>
+            {llmError ? (
+              <span className="text-red-500">{llmError}</span>
+            ) : isLlmLoading && !hasOutput ? (
+              <span className="text-gray-400">{t("preview.loading")}</span>
+            ) : hasOutput ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
+                {renderedOutput}
+              </ReactMarkdown>
+            ) : (
+              <span className="text-gray-400">{t("preview.empty")}</span>
+            )}
+          </div>
         </div>
-      </div>
 
-      {attachments.length > 0 && (
-        <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80 max-h-32 overflow-y-auto">
-          <div className="flex flex-col gap-2">
-            {attachments.map((attachment, index) => (
-              <div
-                key={`${attachment.kind}-${attachment.name}-${index}`}
-                className="flex items-center gap-2 rounded-lg border border-blue-100 bg-white/90 px-2 py-1.5"
-              >
-                <span className="shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-blue-700">
-                  {getAttachmentFormatLabel(attachment)}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs text-zinc-700 truncate">{attachment.name}</div>
-                  <div className="text-[11px] text-zinc-500 leading-tight">
-                    {attachment.source === "screenshot"
-                      ? t("preview.screenshotAttached")
-                      : attachment.kind === "image"
-                        ? t("preview.imageAttachmentAttached")
-                        : t("preview.fileAttachmentAttached")}
-                    {attachment.kind === "text" && attachment.truncated ? ` · ${t("preview.attachmentTruncated")}` : ""}
-                  </div>
-                </div>
-                <button
-                  className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
-                  onClick={() => handleRemoveAttachment(index)}
-                  title={t("preview.removeAttachment")}
+        {attachments.length > 0 && (
+          <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80 max-h-32 overflow-y-auto">
+            <div className="flex flex-col gap-2">
+              {attachments.map((attachment, index) => (
+                <div
+                  key={`${attachment.kind}-${attachment.name}-${index}`}
+                  className="flex items-center gap-2 rounded-lg border border-blue-100 bg-white/90 px-2 py-1.5"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </div>
-            ))}
+                  <span className="shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-blue-700">
+                    {getAttachmentFormatLabel(attachment)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs text-zinc-700 truncate">{attachment.name}</div>
+                    <div className="text-[11px] text-zinc-500 leading-tight">
+                      {attachment.source === "screenshot"
+                        ? t("preview.screenshotAttached")
+                        : attachment.kind === "image"
+                          ? t("preview.imageAttachmentAttached")
+                          : t("preview.fileAttachmentAttached")}
+                      {attachment.kind === "text" && attachment.truncated ? ` · ${t("preview.attachmentTruncated")}` : ""}
+                    </div>
+                  </div>
+                  <button
+                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
+                    onClick={() => handleRemoveAttachment(index)}
+                    title={t("preview.removeAttachment")}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {quickActionCommands.length > 0 && (
-        <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
-          <div className="text-[11px] font-medium text-zinc-500 mb-1.5">{t("preview.quickActions")}</div>
-          <div className="flex flex-wrap gap-1.5">
-            {quickActionCommands.map((command) => (
-              <button
-                key={`preview-command-${command.id}`}
-                className="btn-secondary px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed"
-                disabled={isLlmLoading}
-                onClick={() => {
-                  if (isDragInteractionLocked()) return;
-                  void runPreviewInstruction(command.instruction);
-                }}
-              >
-                {command.label}
-              </button>
-            ))}
+        {quickActionCommands.length > 0 && (
+          <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70 max-h-28 overflow-y-auto">
+            <div className="text-[11px] font-medium text-zinc-500 mb-1.5">{t("preview.quickActions")}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {quickActionCommands.map((command) => (
+                <button
+                  key={`preview-command-${command.id}`}
+                  className="btn-secondary px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed"
+                  disabled={isLlmLoading}
+                  onClick={() => {
+                    if (isDragInteractionLocked()) return;
+                    void runPreviewInstruction(command.instruction);
+                  }}
+                >
+                  {command.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
         <button
@@ -322,11 +326,14 @@ export default function PreviewWindowBody({
           onPointerCancel={() => {
             copyPointerArmedRef.current = false;
           }}
+          onPointerLeave={() => {
+            copyPointerArmedRef.current = false;
+          }}
           onBlur={() => {
             copyPointerArmedRef.current = false;
           }}
-          onClick={(event) => {
-            if (event.detail > 0 && !copyPointerArmedRef.current) return;
+          onClick={() => {
+            if (!copyPointerArmedRef.current) return;
             copyPointerArmedRef.current = false;
             if (isDragInteractionLocked()) return;
             void handleCopy();
@@ -363,6 +370,15 @@ export default function PreviewWindowBody({
           <div className="flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full text-sm shadow-lg backdrop-blur-sm max-w-[400px] animate-scaleUp">
             <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-400" />
             <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {isFileDragActive && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-blue-100/50 backdrop-blur-[1px]">
+          <div className="rounded-2xl border-2 border-dashed border-blue-400 bg-white/85 px-6 py-4 text-center shadow-lg">
+            <div className="text-sm font-semibold text-blue-700">{t("preview.attachFile")}</div>
+            <div className="mt-1 text-xs text-blue-600">Drop files here</div>
           </div>
         </div>
       )}

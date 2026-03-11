@@ -114,6 +114,7 @@ export function usePreviewWindowController() {
   const [refinementInput, setRefinementInput] = useState("");
   const [previewSession, setPreviewSession] = useState<PreviewSession | null>(null);
   const [animKey, setAnimKey] = useState(0);
+  const [isFileDragActive, setIsFileDragActive] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
   const outputContentRef = useRef<HTMLDivElement>(null);
@@ -210,6 +211,22 @@ export function usePreviewWindowController() {
     }, durationMs);
   }, []);
 
+  const appendLoadedAttachments = useCallback((loadedAttachments: LoadedAttachment[]) => {
+    const nextAttachments = loadedAttachments.map(toPreviewAttachment);
+    if (nextAttachments.length === 0) {
+      return false;
+    }
+    setPreviewSession((current) => ({
+      type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
+      selectedText: current?.selectedText ?? "",
+      sourceMode: current?.sourceMode ?? "C",
+      instruction: current?.instruction ?? "",
+      attachments: dedupeAttachments([...(current?.attachments ?? []), ...nextAttachments]),
+    }));
+    setLlmError("");
+    return true;
+  }, [setLlmError]);
+
   const runPreviewInstruction = useCallback(
     async (instruction: string) => {
       const state = useAppStore.getState();
@@ -278,16 +295,7 @@ export function usePreviewWindowController() {
     await setPreviewFocusable(true, true);
     try {
       const { attachments: loadedAttachments, skippedCount } = await mainWindowService.pickAttachments();
-      const nextAttachments = loadedAttachments.map(toPreviewAttachment);
-      if (nextAttachments.length > 0) {
-        setPreviewSession((current) => ({
-          type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
-          selectedText: current?.selectedText ?? "",
-          sourceMode: current?.sourceMode ?? "C",
-          instruction: current?.instruction ?? "",
-          attachments: dedupeAttachments([...(current?.attachments ?? []), ...nextAttachments]),
-        }));
-        setLlmError("");
+      if (appendLoadedAttachments(loadedAttachments)) {
         showToast(t("preview.attachmentReady"));
       } else if (skippedCount > 0) {
         setLlmError(t("preview.attachmentReadFailed"));
@@ -301,7 +309,7 @@ export function usePreviewWindowController() {
       await win.setAlwaysOnTop(true).catch(() => { });
       await setPreviewFocusable(true, true);
     }
-  }, [setLlmError, setPreviewFocusable, showToast, t]);
+  }, [appendLoadedAttachments, setLlmError, setPreviewFocusable, showToast, t]);
 
   const handleRemoveAttachment = useCallback((indexToRemove: number) => {
     setPreviewSession((current) =>
@@ -351,6 +359,56 @@ export function usePreviewWindowController() {
       unlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    void (async () => {
+      const win = getCurrentWindow();
+      const dispose = await win.onDragDropEvent(async (event) => {
+        if (event.payload.type === "enter" || event.payload.type === "over") {
+          setIsFileDragActive(true);
+          return;
+        }
+
+        if (event.payload.type === "leave") {
+          setIsFileDragActive(false);
+          return;
+        }
+
+        setIsFileDragActive(false);
+        const droppedPaths = event.payload.paths.filter((path) => path.trim().length > 0);
+        if (droppedPaths.length === 0) {
+          return;
+        }
+
+        try {
+          const { attachments: loadedAttachments, skippedCount } =
+            await mainWindowService.loadAttachmentsFromPaths(droppedPaths);
+          if (appendLoadedAttachments(loadedAttachments)) {
+            showToast(t("preview.attachmentReady"));
+          } else if (skippedCount > 0) {
+            setLlmError(t("preview.attachmentReadFailed"));
+          }
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          setLlmError(reason || t("preview.attachmentReadFailed"));
+        }
+      });
+
+      if (cancelled) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+    })();
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [appendLoadedAttachments, setLlmError, showToast, t]);
 
   useEffect(() => {
     if (!outputRef.current) {
@@ -492,6 +550,7 @@ export function usePreviewWindowController() {
     handleTtsToggle,
     hasOutput: llmOutput.length > 0,
     inputRef,
+    isFileDragActive,
     isDragInteractionLocked,
     isLlmLoading,
     isTtsPlaying,

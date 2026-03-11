@@ -49,20 +49,53 @@ pub async fn pick_attachments() -> Result<PickAttachmentsResult, String> {
         .await
         .ok_or_else(|| "No file selected.".to_string())?;
 
+    let mut loaded_files = Vec::with_capacity(files.len());
+    for file in files {
+        loaded_files.push((file.file_name(), file.read().await));
+    }
+    Ok(parse_attachment_batch(loaded_files))
+}
+
+#[tauri::command]
+pub fn load_attachments_from_paths(paths: Vec<String>) -> Result<PickAttachmentsResult, String> {
+    if paths.is_empty() {
+        return Err("No file selected.".to_string());
+    }
+
+    let mut loaded_files = Vec::with_capacity(paths.len());
+    for path in paths {
+        let normalized_path = path.trim();
+        if normalized_path.is_empty() {
+            continue;
+        }
+        let file_name = Path::new(normalized_path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| normalized_path.to_string());
+        match std::fs::read(normalized_path) {
+            Ok(bytes) => loaded_files.push((file_name, bytes)),
+            Err(_) => loaded_files.push((file_name, Vec::new())),
+        }
+    }
+
+    Ok(parse_attachment_batch(loaded_files))
+}
+
+fn parse_attachment_batch(files: Vec<(String, Vec<u8>)>) -> PickAttachmentsResult {
     let mut attachments = Vec::with_capacity(files.len());
     let mut skipped_count = 0;
-    for file in files {
-        let file_name = file.file_name();
-        let bytes = file.read().await;
+    for (file_name, bytes) in files {
         match parse_attachment(file_name, bytes) {
             Ok(attachment) => attachments.push(attachment),
             Err(_) => skipped_count += 1,
         }
     }
-    Ok(PickAttachmentsResult {
+
+    PickAttachmentsResult {
         attachments,
         skipped_count,
-    })
+    }
 }
 
 fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachment, String> {
