@@ -19,9 +19,11 @@ export function usePreviewWindowController() {
   const [refinementInput, setRefinementInput] = useState("");
   const [previewSession, setPreviewSession] = useState<PreviewSession | null>(null);
   const [animKey, setAnimKey] = useState(0);
+  const [toastMessage, setToastMessage] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
   const outputContentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const toastTimerRef = useRef<number | null>(null);
   const { t } = useI18n();
 
   const llmOutput = useAppStore((state) => state.llmOutput);
@@ -165,6 +167,25 @@ export function usePreviewWindowController() {
     void setPreviewFocusable(false);
   }, [setPreviewFocusable]);
 
+  const showToast = useCallback((message: string, durationMs = 1600) => {
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    setToastMessage(message);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage("");
+      toastTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     setRefinementInput("");
   }, [previewSession]);
@@ -229,7 +250,8 @@ export function usePreviewWindowController() {
 
   const handleCopy = useCallback(async () => {
     await invoke("copy_to_clipboard", { text: llmOutput });
-  }, [llmOutput]);
+    showToast(t("preview.copySuccess"));
+  }, [llmOutput, showToast, t]);
 
   const handleReplace = useCallback(async () => {
     const restored = await invoke<boolean>("restore_focus");
@@ -247,8 +269,10 @@ export function usePreviewWindowController() {
     await invoke("inject_text", { text: llmOutput, recordForUndo: true });
     await new Promise((resolve) => setTimeout(resolve, 150));
     await invoke("restore_clipboard");
+    showToast(t("preview.replaceSuccess"), 900);
+    await new Promise((resolve) => setTimeout(resolve, 900));
     await getCurrentWindow().hide();
-  }, [llmOutput, setLlmError, t]);
+  }, [llmOutput, setLlmError, showToast, t]);
 
   const handleClose = useCallback(async () => {
     stopFallbackTts();
@@ -261,6 +285,7 @@ export function usePreviewWindowController() {
     setIsLlmLoading(false);
     setLlmError("");
     setRefinementInput("");
+    setToastMessage("");
     setPreviewSession(null);
   }, [setIsLlmLoading, setLlmError, setLlmOutput, setPreviewFocusable, stopFallbackTts]);
 
@@ -334,5 +359,6 @@ export function usePreviewWindowController() {
     sttDurationMs,
     swallowDragRelease,
     t,
+    toastMessage,
   };
 }

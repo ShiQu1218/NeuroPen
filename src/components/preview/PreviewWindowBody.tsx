@@ -37,6 +37,7 @@ interface PreviewWindowBodyProps {
   sttDurationMs: number;
   swallowDragRelease: (event: MouseEvent<HTMLElement>) => void;
   t: ReturnType<typeof useI18n>["t"];
+  toastMessage: string;
 }
 
 export default function PreviewWindowBody({
@@ -67,6 +68,7 @@ export default function PreviewWindowBody({
   sttDurationMs,
   swallowDragRelease,
   t,
+  toastMessage,
 }: PreviewWindowBodyProps) {
   const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
   const isModeALlmPreview = isModeAPreview && !!previewSession?.instruction.trim();
@@ -85,7 +87,7 @@ export default function PreviewWindowBody({
   return (
     <div
       key={animKey}
-      className="flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp"
+      className="relative flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp"
       onMouseUpCapture={swallowDragRelease}
       onClickCapture={swallowDragRelease}
       onMouseDownCapture={(event) => {
@@ -288,6 +290,15 @@ export default function PreviewWindowBody({
           {t("preview.close")}
         </button>
       </div>
+
+      {toastMessage && (
+        <div className="pointer-events-none absolute bottom-14 left-1/2 -translate-x-1/2">
+          <div className="flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full text-sm shadow-lg backdrop-blur-sm max-w-[400px] animate-scaleUp">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-emerald-400" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
