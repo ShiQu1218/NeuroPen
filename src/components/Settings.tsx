@@ -36,12 +36,13 @@ import SettingsGeneralSection from "./settings/SettingsGeneralSection";
 import SettingsHistorySection from "./settings/SettingsHistorySection";
 import SettingsLlmSection from "./settings/SettingsLlmSection";
 import SettingsQuickActionSection from "./settings/SettingsQuickActionSection";
+import SettingsShortcutsSection from "./settings/SettingsShortcutsSection";
 import SettingsSidebar from "./settings/SettingsSidebar";
+import SettingsSttSection from "./settings/SettingsSttSection";
 import SettingsTtsSection from "./settings/SettingsTtsSection";
 import {
   NAV_ITEMS,
   OPENAI_STT_MODEL,
-  RATING_INDICES,
   STATUS_RESET_MS,
   type LocalSttModel,
   type LocalTtsModel,
@@ -91,12 +92,13 @@ export default function Settings() {
   const { t } = useI18n();
   const sectionLabelKey: Record<SettingsSection, TranslationKey> = {
     general: "settings.section.general",
+    shortcuts: "settings.section.shortcuts",
     stt: "settings.section.stt",
-    quickAction: "settings.section.quickAction",
     llm: "settings.section.llm",
+    quickAction: "settings.section.quickAction",
     tts: "settings.section.tts",
-    history: "settings.section.history",
     appProfile: "settings.section.appProfile",
+    history: "settings.section.history",
   };
   const sttModelNameKey: Partial<Record<string, TranslationKey>> = {
     "whisper-small": "settings.stt.model.whisper-small.name",
@@ -1163,7 +1165,7 @@ export default function Settings() {
         <p className="text-xs text-slate-500 mt-1">{t("settings.subtitle")}</p>
       </div>
 
-      <div className="mt-4 grid grid-cols-[210px_minmax(0,1fr)] gap-4 flex-1 min-h-0">
+      <div className="mt-4 grid flex-1 min-h-0 gap-4 grid-cols-[230px_minmax(0,1fr)]">
         <SettingsSidebar
           activeSection={activeSection}
           navItems={NAV_ITEMS}
@@ -1174,448 +1176,173 @@ export default function Settings() {
 
         <div className="glass-panel-md p-4 min-h-0 flex flex-col">
           <div className="space-y-5 min-h-0 overflow-y-auto pr-1">
-          {activeSection === "general" && (
-            <SettingsGeneralSection
-              draftLanguage={draftLanguage}
-              draftLaunchOnStartup={draftLaunchOnStartup}
-              draftSttEnabled={draftSttEnabled}
-              draftSelectionEnabled={draftSelectionEnabled}
-              draftScreenshotEnabled={draftScreenshotEnabled}
-              draftHotkey={draftHotkey}
-              draftScreenshotHotkey={draftScreenshotHotkey}
-              draftDialogHotkey={draftDialogHotkey}
-              draftWakeWord={draftWakeWord}
-              hotkeyStatus={hotkeyStatus}
-              hotkeyErrorMessage={hotkeyErrorMessage}
-              onLanguageChange={setDraftLanguage}
-              onLaunchOnStartupChange={setDraftLaunchOnStartup}
-              onSttEnabledChange={setDraftSttEnabled}
-              onSelectionEnabledChange={setDraftSelectionEnabled}
-              onScreenshotEnabledChange={setDraftScreenshotEnabled}
-              onHotkeyChange={setDraftHotkey}
-              onScreenshotHotkeyChange={setDraftScreenshotHotkey}
-              onDialogHotkeyChange={setDraftDialogHotkey}
-              onWakeWordChange={setDraftWakeWord}
-              onClearHotkeyError={() => {
-                setHotkeyStatus("");
-                setHotkeyErrorMessage("");
-              }}
-              t={t}
-            />
-          )}
+            {activeSection === "general" && (
+              <SettingsGeneralSection
+                draftLanguage={draftLanguage}
+                draftLaunchOnStartup={draftLaunchOnStartup}
+                draftSttEnabled={draftSttEnabled}
+                draftSelectionEnabled={draftSelectionEnabled}
+                draftScreenshotEnabled={draftScreenshotEnabled}
+                onLanguageChange={setDraftLanguage}
+                onLaunchOnStartupChange={setDraftLaunchOnStartup}
+                onSttEnabledChange={setDraftSttEnabled}
+                onSelectionEnabledChange={setDraftSelectionEnabled}
+                onScreenshotEnabledChange={setDraftScreenshotEnabled}
+                t={t}
+              />
+            )}
 
-          {activeSection === "stt" && (
-            <>
-              {!draftSttEnabled && (
-                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  {t("settings.stt.disabledHint")}
-                </div>
-              )}
-              {/* STT model selector */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.modelLabel")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftSttModelChoice}
-                  onChange={(e) => {
-                    const nextChoice = e.target.value;
-                    setDraftSttModelChoice(nextChoice);
-                    const { engine } = resolveEngineAndPathByModel(nextChoice);
-                    setDraftSttEngine(engine);
-                  }}
-                >
-                  <option value={OPENAI_STT_MODEL}>OpenAI Whisper API{t("settings.stt.modelCloud")}</option>
-                  {localModels
-                    .filter((model) => model.installed)
-                    .map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {getLocalizedModelName(model)}{t("settings.stt.modelLocal")}
-                      </option>
-                    ))}
-                </select>
-                <p className="text-xs text-gray-500">{t("settings.stt.modelHint")}</p>
-              </div>
+            {activeSection === "shortcuts" && (
+              <SettingsShortcutsSection
+                draftHotkey={draftHotkey}
+                draftScreenshotHotkey={draftScreenshotHotkey}
+                draftDialogHotkey={draftDialogHotkey}
+                hotkeyStatus={hotkeyStatus}
+                hotkeyErrorMessage={hotkeyErrorMessage}
+                onHotkeyChange={setDraftHotkey}
+                onScreenshotHotkeyChange={setDraftScreenshotHotkey}
+                onDialogHotkeyChange={setDraftDialogHotkey}
+                onClearHotkeyError={() => {
+                  setHotkeyStatus("");
+                  setHotkeyErrorMessage("");
+                }}
+                t={t}
+              />
+            )}
 
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.language.label")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftSttLanguage}
-                  onChange={(e) => setDraftSttLanguage(e.target.value as SttLanguage)}
-                >
-                  <option value="auto">{t("settings.stt.language.auto")}</option>
-                  <option value="zh">中文</option>
-                  <option value="en">English</option>
-                  <option value="ja">日本語</option>
-                  <option value="ko">한국어</option>
-                  <option value="de">Deutsch</option>
-                  <option value="fr">Français</option>
-                  <option value="es">Español</option>
-                  <option value="ru">Русский</option>
-                  <option value="ar">العربية</option>
-                </select>
-                <p className="text-xs text-gray-500">{t("settings.stt.language.hint")}</p>
-              </div>
+            {activeSection === "stt" && (
+              <SettingsSttSection
+                draftWakeWord={draftWakeWord}
+                draftSttEnabled={draftSttEnabled}
+                draftSttModelChoice={draftSttModelChoice}
+                draftSttLanguage={draftSttLanguage}
+                draftMicrophoneSource={draftMicrophoneSource}
+                draftTranslationTarget={draftTranslationTarget}
+                draftSttOutputStrategy={draftSttOutputStrategy}
+                draftPunctuationMode={draftPunctuationMode}
+                draftVocabularyTerms={draftVocabularyTerms}
+                audioDevices={audioDevices}
+                audioDevicesLoading={audioDevicesLoading}
+                localSttAvailable={localSttAvailable}
+                localModels={localModels}
+                localModelsLoading={localModelsLoading}
+                localModelBusyId={localModelBusyId}
+                localModelBusyAction={localModelBusyAction}
+                localModelDownloadProgress={localModelDownloadProgress}
+                failedDownloadModelId={failedDownloadModelId}
+                localModelStatus={localModelStatus}
+                sttApiKeyInput={sttApiKeyInput}
+                sttApiKeySet={sttApiKeySet}
+                sttApiKeySaveStatus={sttApiKeySaveStatus}
+                formatBytes={formatBytes}
+                getLocalizedModelName={getLocalizedModelName}
+                getLocalizedModelDescription={getLocalizedModelDescription}
+                onWakeWordChange={setDraftWakeWord}
+                onSttModelChoiceChange={(nextChoice) => {
+                  setDraftSttModelChoice(nextChoice);
+                  const { engine } = resolveEngineAndPathByModel(nextChoice);
+                  setDraftSttEngine(engine);
+                }}
+                onSttLanguageChange={setDraftSttLanguage}
+                onMicrophoneSourceChange={setDraftMicrophoneSource}
+                onSttApiKeyInputChange={setSttApiKeyInput}
+                onSaveSttApiKey={handleSaveSttApiKey}
+                onSttOutputStrategyChange={setDraftSttOutputStrategy}
+                onTranslationTargetChange={setDraftTranslationTarget}
+                onPunctuationModeChange={setDraftPunctuationMode}
+                onVocabularyTermsChange={setDraftVocabularyTerms}
+                onImportVocabularyFile={handleImportVocabularyFile}
+                onInstallLocalModel={handleInstallLocalModel}
+                onCancelLocalModelDownload={handleCancelLocalModelDownload}
+                onDeleteLocalModel={handleDeleteLocalModel}
+                t={t}
+              />
+            )}
 
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.microphoneSource")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftMicrophoneSource}
-                  onChange={(e) => setDraftMicrophoneSource(e.target.value)}
-                  disabled={audioDevicesLoading}
-                >
-                  <option value="">{t("settings.stt.defaultMicrophone")}</option>
-                  {audioDevices.map((device) => (
-                    <option key={device} value={device}>
-                      {device}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-gray-500">{t("settings.stt.microphoneHint")}</p>
-              </div>
+            {activeSection === "llm" && (
+              <SettingsLlmSection
+                draftOutputMode={draftOutputMode}
+                draftModeAStreamOutput={draftModeAStreamOutput}
+                draftModeBStreamOutput={draftModeBStreamOutput}
+                draftLlmProvider={draftLlmProvider}
+                draftLlmModel={draftLlmModel}
+                draftLlmModelOptions={draftLlmModelOptions}
+                draftPreferredLanguage={draftPreferredLanguage}
+                draftModeAPrompt={draftModeAPrompt}
+                draftModeBPrompt={draftModeBPrompt}
+                draftModeCPrompt={draftModeCPrompt}
+                apiKeySet={apiKeySet}
+                apiKeyInput={apiKeyInput}
+                apiKeySaveStatus={apiKeySaveStatus}
+                onOutputModeChange={setDraftOutputMode}
+                onModeAStreamOutputChange={setDraftModeAStreamOutput}
+                onModeBStreamOutputChange={setDraftModeBStreamOutput}
+                onLlmProviderChange={setDraftLlmProvider}
+                onLlmModelChange={setDraftLlmModel}
+                onAddLlmModelOption={handleAddLlmModelOption}
+                onDeleteLlmModelOption={handleDeleteLlmModelOption}
+                onPreferredLanguageChange={setDraftPreferredLanguage}
+                onModeAPromptChange={setDraftModeAPrompt}
+                onModeBPromptChange={setDraftModeBPrompt}
+                onModeCPromptChange={setDraftModeCPrompt}
+                onApiKeyInputChange={setApiKeyInput}
+                onSaveApiKey={handleSaveApiKey}
+                t={t}
+              />
+            )}
 
-              {draftSttModelChoice === OPENAI_STT_MODEL && (
-                <div className="space-y-1">
-                  <label className="font-medium">{t("settings.stt.sttApiKeyLabel")}</label>
-                  {sttApiKeySet && (
-                    <p className="text-xs text-green-600">{t("settings.stt.sttApiKeySet")}</p>
-                  )}
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      className="flex-1 input-field px-2 py-1 font-mono text-xs"
-                      value={sttApiKeyInput}
-                      onChange={(e) => setSttApiKeyInput(e.target.value)}
-                      placeholder={sttApiKeySet ? "••••••••" : t("settings.stt.sttApiKeyPlaceholder")}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && sttApiKeyInput) handleSaveSttApiKey();
-                      }}
-                    />
-                    <button
-                      onClick={handleSaveSttApiKey}
-                      disabled={!sttApiKeyInput || sttApiKeySaveStatus === "saving"}
-                      className="px-3 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {sttApiKeySaveStatus === "saving" ? t("settings.llm.saving") : t("settings.llm.save")}
-                    </button>
-                  </div>
-                  {sttApiKeySaveStatus === "saved" && (
-                    <p className="text-xs text-green-600">{t("settings.stt.sttApiKeySaved")}</p>
-                  )}
-                  {sttApiKeySaveStatus === "error" && (
-                    <p className="text-xs text-red-600">{t("settings.stt.sttApiKeySaveFailed")}</p>
-                  )}
-                </div>
-              )}
+            {activeSection === "quickAction" && (
+              <SettingsQuickActionSection
+                commands={draftQuickActionCommands}
+                onAdd={handleAddQuickActionCommand}
+                onDelete={handleDeleteQuickActionCommand}
+                onMove={handleMoveQuickActionCommand}
+                onUpdate={handleUpdateQuickActionCommand}
+                t={t}
+              />
+            )}
 
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.outputStrategy")}</label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="sttOutputStrategy"
-                      value="raw"
-                      checked={draftSttOutputStrategy === "raw"}
-                      onChange={() => {
-                        setDraftSttOutputStrategy("raw");
-                        setDraftTranslationTarget("off");
-                      }}
-                    />
-                    {t("settings.stt.outputRaw")}
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="sttOutputStrategy"
-                      value="llmRefine"
-                      checked={draftSttOutputStrategy === "llmRefine"}
-                      onChange={() => setDraftSttOutputStrategy("llmRefine")}
-                    />
-                    {t("settings.stt.outputLlmRefine")}
-                  </label>
-                </div>
-              </div>
+            {activeSection === "tts" && (
+              <SettingsTtsSection
+                draftTtsPitch={draftTtsPitch}
+                draftTtsRate={draftTtsRate}
+                draftTtsVoice={draftTtsVoice}
+                failedTtsDownloadModelId={failedTtsDownloadModelId}
+                formatBytes={formatBytes}
+                localTtsModels={localTtsModels}
+                localTtsModelsLoading={localTtsModelsLoading}
+                onCancelDownload={handleCancelLocalTtsModelDownload}
+                onDeleteModel={handleDeleteLocalTtsModel}
+                onInstallModel={handleInstallLocalTtsModel}
+                onPitchChange={setDraftTtsPitch}
+                onRateChange={setDraftTtsRate}
+                onSelectModel={handleSelectLocalTtsModel}
+                onVoiceChange={setDraftTtsVoice}
+                t={t}
+                ttsModelBusyAction={ttsModelBusyAction}
+                ttsModelBusyId={ttsModelBusyId}
+                ttsModelDownloadProgress={ttsModelDownloadProgress}
+                ttsModelStatus={ttsModelStatus}
+              />
+            )}
 
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.translation.label")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftTranslationTarget}
-                  onChange={(e) => setDraftTranslationTarget(e.target.value as TranslationTarget)}
-                  disabled={draftSttOutputStrategy !== "llmRefine"}
-                >
-                  <option value="off">{t("settings.translation.off")}</option>
-                  <option value="en-US">English</option>
-                  <option value="zh-TW">{t("settings.language.zh-TW")}</option>
-                  <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-                  <option value="ja-JP">{t("settings.language.ja-JP")}</option>
-                  <option value="ko-KR">{t("settings.language.ko-KR")}</option>
-                  <option value="es-ES">{t("settings.language.es-ES")}</option>
-                  <option value="de-DE">{t("settings.language.de-DE")}</option>
-                  <option value="fr-FR">{t("settings.language.fr-FR")}</option>
-                  <option value="ru-RU">{t("settings.language.ru-RU")}</option>
-                  <option value="ar-SA">{t("settings.language.ar-SA")}</option>
-                </select>
-                <p className="text-xs text-gray-500">{t("settings.translation.hint")}</p>
-                {draftSttOutputStrategy !== "llmRefine" && (
-                  <p className="text-xs text-amber-700">{t("settings.stt.translationRequiresRefine")}</p>
-                )}
-              </div>
+            {activeSection === "appProfile" && (
+              <SettingsAppProfileSection
+                profiles={draftAppProfiles}
+                onChange={setDraftAppProfiles}
+                contextAwareTone={draftContextAwareTone}
+                onContextAwareToneChange={setDraftContextAwareTone}
+                t={t}
+              />
+            )}
 
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.punctuation")}</label>
-                <select
-                  className="w-full input-field px-2 py-1"
-                  value={draftPunctuationMode}
-                  onChange={(e) => setDraftPunctuationMode(e.target.value as PunctuationMode)}
-                >
-                  <option value="off">{t("settings.stt.punctuationOff")}</option>
-                  <option value="balanced">{t("settings.stt.punctuationBalanced")}</option>
-                  <option value="aggressive">{t("settings.stt.punctuationAggressive")}</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.vocabulary")}</label>
-                <textarea
-                  className="w-full min-h-[96px] input-field px-2 py-1 text-xs font-mono"
-                  value={draftVocabularyTerms}
-                  onChange={(e) => setDraftVocabularyTerms(e.target.value)}
-                  placeholder={t("settings.stt.vocabularyPlaceholder")}
-                />
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    accept=".txt,.csv"
-                    onChange={(e) => void handleImportVocabularyFile(e.target.files?.[0] ?? null)}
-                    className="text-xs"
-                  />
-                  <span className="text-xs text-gray-500">{t("settings.stt.vocabularyFileHint")}</span>
-                </div>
-              </div>
-
-              {/* Local STT model manager */}
-              <div className="space-y-1">
-                <label className="font-medium">{t("settings.stt.modelDownloadTitle")}</label>
-                <p className="text-xs text-gray-400">{t("settings.stt.modelDownloadHint")}</p>
-                {!localSttAvailable && (
-                  <p className="text-xs text-amber-700">{t("settings.stt.localNotEnabledHint")}</p>
-                )}
-                <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
-                  {localModelsLoading && (
-                    <div className="text-xs text-gray-500">{t("settings.stt.loadingModels")}</div>
-                  )}
-                  {!localModelsLoading && localModels.map((model) => {
-                    const isBusy = localModelBusyId === model.id;
-                    const downloadProgress = localModelDownloadProgress[model.id];
-                    const isInstalling = isBusy && localModelBusyAction === "install";
-                    const isDownloadActive =
-                      downloadProgress?.status === "start" || downloadProgress?.status === "downloading";
-                    const progressPct = Math.max(0, Math.min(100, Math.round(downloadProgress?.progressPct ?? 0)));
-                    const downloadedBytes = downloadProgress?.downloadedBytes ?? 0;
-                    const totalBytes = downloadProgress?.totalBytes ?? 0;
-                    return (
-                      <div key={model.id} className="rounded border border-gray-200 bg-gray-50 p-3 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="font-medium text-sm">{getLocalizedModelName(model)}</p>
-                            <p className="text-xs text-gray-500">{getLocalizedModelDescription(model)}</p>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            {model.active && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">{t("settings.stt.inUse")}</span>
-                            )}
-                            {model.installed && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">{t("settings.stt.installed")}</span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-[11px] text-gray-600">
-                            <span className="w-10">{t("settings.stt.speed")}</span>
-                            <div className="flex gap-1">
-                              {RATING_INDICES.map((idx) => (
-                                <span
-                                  key={`speed-${model.id}-${idx}`}
-                                  className={`h-1.5 w-4 rounded ${idx < model.speed ? "bg-emerald-500" : "bg-gray-200"}`}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px] text-gray-600">
-                            <span className="w-10">{t("settings.stt.accuracy")}</span>
-                            <div className="flex gap-1">
-                              {RATING_INDICES.map((idx) => (
-                                <span
-                                  key={`accuracy-${model.id}-${idx}`}
-                                  className={`h-1.5 w-4 rounded ${idx < model.accuracy ? "bg-blue-500" : "bg-gray-200"}`}
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          {!model.installed ? (
-                            <>
-                              <button
-                                onClick={() => void handleInstallLocalModel(model.id)}
-                                disabled={!!localModelBusyId}
-                                className="px-2.5 py-1 rounded text-xs font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                              >
-                                {isDownloadActive || isInstalling
-                                  ? `${t("settings.stt.installing")} ${progressPct}%`
-                                  : failedDownloadModelId === model.id
-                                    ? t("settings.stt.retry")
-                                    : t("settings.stt.install")}
-                              </button>
-                              {(isDownloadActive || isInstalling) && (
-                                <button
-                                  onClick={() => void handleCancelLocalModelDownload()}
-                                  className="px-2.5 py-1 rounded text-xs font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 transition-colors"
-                                >
-                                  {t("settings.cancel")}
-                                </button>
-                              )}
-                            </>
-                          ) : (
-                            <button
-                              onClick={() => handleDeleteLocalModel(model.id)}
-                              disabled={!!localModelBusyId}
-                              className="btn-danger px-2.5 py-1 rounded text-xs"
-                            >
-                              {isBusy && localModelBusyAction === "delete" ? t("settings.stt.deleting") : t("settings.stt.delete")}
-                            </button>
-                          )}
-                        </div>
-                        {downloadProgress && (
-                          <div className="space-y-1">
-                            <div className="h-1.5 w-full rounded bg-gray-200 overflow-hidden">
-                              <div
-                                className={`h-full transition-all ${
-                                  downloadProgress.status === "error"
-                                    ? "bg-red-500"
-                                    : downloadProgress.status === "cancelled"
-                                      ? "bg-amber-500"
-                                      : "bg-blue-500"
-                                }`}
-                                style={{ width: `${progressPct}%` }}
-                              />
-                            </div>
-                            <p className="text-[11px] text-gray-600">
-                              {progressPct}% ({formatBytes(downloadedBytes)} / {formatBytes(totalBytes)})
-                            </p>
-                            <p className="text-[11px] text-gray-500">
-                              {downloadProgress.status === "downloading" || downloadProgress.status === "start"
-                                ? t("settings.stt.installing")
-                                : downloadProgress.status === "done"
-                                  ? t("settings.status.modelInstalled")
-                                  : downloadProgress.status === "cancelled"
-                                    ? t("settings.status.modelInstallCancelled")
-                                    : t("settings.status.modelInstallFailed")}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {localModelStatus.type === "success" && (
-                  <p className="text-xs text-green-600">{localModelStatus.message}</p>
-                )}
-                {localModelStatus.type === "error" && (
-                  <p className="text-xs text-red-600">{localModelStatus.message}</p>
-                )}
-              </div>
-            </>
-          )}
-
-          {activeSection === "quickAction" && (
-            <SettingsQuickActionSection
-              commands={draftQuickActionCommands}
-              onAdd={handleAddQuickActionCommand}
-              onDelete={handleDeleteQuickActionCommand}
-              onMove={handleMoveQuickActionCommand}
-              onUpdate={handleUpdateQuickActionCommand}
-              t={t}
-            />
-          )}
-
-          {activeSection === "llm" && (
-            <SettingsLlmSection
-              draftOutputMode={draftOutputMode}
-              draftModeAStreamOutput={draftModeAStreamOutput}
-              draftModeBStreamOutput={draftModeBStreamOutput}
-              draftLlmProvider={draftLlmProvider}
-              draftLlmModel={draftLlmModel}
-              draftLlmModelOptions={draftLlmModelOptions}
-              draftPreferredLanguage={draftPreferredLanguage}
-              draftModeAPrompt={draftModeAPrompt}
-              draftModeBPrompt={draftModeBPrompt}
-              draftModeCPrompt={draftModeCPrompt}
-              apiKeySet={apiKeySet}
-              apiKeyInput={apiKeyInput}
-              apiKeySaveStatus={apiKeySaveStatus}
-              onOutputModeChange={setDraftOutputMode}
-              onModeAStreamOutputChange={setDraftModeAStreamOutput}
-              onModeBStreamOutputChange={setDraftModeBStreamOutput}
-              onLlmProviderChange={setDraftLlmProvider}
-              onLlmModelChange={setDraftLlmModel}
-              onAddLlmModelOption={handleAddLlmModelOption}
-              onDeleteLlmModelOption={handleDeleteLlmModelOption}
-              onPreferredLanguageChange={setDraftPreferredLanguage}
-              onModeAPromptChange={setDraftModeAPrompt}
-              onModeBPromptChange={setDraftModeBPrompt}
-              onModeCPromptChange={setDraftModeCPrompt}
-              onApiKeyInputChange={setApiKeyInput}
-              onSaveApiKey={handleSaveApiKey}
-              t={t}
-            />
-          )}
-
-          {activeSection === "tts" && (
-            <SettingsTtsSection
-              draftTtsPitch={draftTtsPitch}
-              draftTtsRate={draftTtsRate}
-              draftTtsVoice={draftTtsVoice}
-              failedTtsDownloadModelId={failedTtsDownloadModelId}
-              formatBytes={formatBytes}
-              localTtsModels={localTtsModels}
-              localTtsModelsLoading={localTtsModelsLoading}
-              onCancelDownload={handleCancelLocalTtsModelDownload}
-              onDeleteModel={handleDeleteLocalTtsModel}
-              onInstallModel={handleInstallLocalTtsModel}
-              onPitchChange={setDraftTtsPitch}
-              onRateChange={setDraftTtsRate}
-              onSelectModel={handleSelectLocalTtsModel}
-              onVoiceChange={setDraftTtsVoice}
-              t={t}
-              ttsModelBusyAction={ttsModelBusyAction}
-              ttsModelBusyId={ttsModelBusyId}
-              ttsModelDownloadProgress={ttsModelDownloadProgress}
-              ttsModelStatus={ttsModelStatus}
-            />
-          )}
-
-          {activeSection === "history" && (
-            <SettingsHistorySection
-              draftHistoryEnabled={draftHistoryEnabled}
-              onToggle={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
-              t={t}
-            />
-          )}
-          {activeSection === "appProfile" && (
-            <SettingsAppProfileSection
-              profiles={draftAppProfiles}
-              onChange={setDraftAppProfiles}
-              contextAwareTone={draftContextAwareTone}
-              onContextAwareToneChange={setDraftContextAwareTone}
-              t={t}
-            />
-          )}
+            {activeSection === "history" && (
+              <SettingsHistorySection
+                draftHistoryEnabled={draftHistoryEnabled}
+                onToggle={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
+                t={t}
+              />
+            )}
           </div>
         </div>
       </div>

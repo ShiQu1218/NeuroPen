@@ -5,21 +5,6 @@ import { DEFAULT_APP_PROFILES } from "../../store/appStoreDefaults";
 
 const ALL_MODES: AppProfileMode[] = ["A", "B1", "B2", "C"];
 
-const LANGUAGE_OPTIONS: Array<{ value: PreferredLanguage | ""; label: string }> = [
-  { value: "", label: "" },
-  { value: "auto", label: "Auto" },
-  { value: "zh-TW", label: "繁體中文" },
-  { value: "en-US", label: "English" },
-  { value: "ja-JP", label: "日本語" },
-  { value: "es-ES", label: "Español" },
-  { value: "ko-KR", label: "한국어" },
-  { value: "zh-CN", label: "简体中文" },
-  { value: "de-DE", label: "Deutsch" },
-  { value: "fr-FR", label: "Français" },
-  { value: "ar-SA", label: "العربية" },
-  { value: "ru-RU", label: "Русский" },
-];
-
 const OUTPUT_MODE_OPTIONS: Array<{ value: OutputMode | ""; labelKey: TranslationKey }> = [
   { value: "", labelKey: "settings.appProfile.useGlobal" },
   { value: "PreviewStream", labelKey: "settings.llm.previewStream" },
@@ -43,6 +28,20 @@ export default function SettingsAppProfileSection({
 }: SettingsAppProfileSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [keywordInputs, setKeywordInputs] = useState<Record<string, string>>({});
+  const languageOptions: Array<{ value: PreferredLanguage | ""; label: string }> = [
+    { value: "", label: "" },
+    { value: "auto", label: t("settings.preferredLanguage.auto") },
+    { value: "zh-TW", label: t("settings.language.zh-TW") },
+    { value: "en-US", label: t("settings.language.en-US") },
+    { value: "ja-JP", label: t("settings.language.ja-JP") },
+    { value: "es-ES", label: t("settings.language.es-ES") },
+    { value: "ko-KR", label: t("settings.language.ko-KR") },
+    { value: "zh-CN", label: t("settings.language.zh-CN") },
+    { value: "de-DE", label: t("settings.language.de-DE") },
+    { value: "fr-FR", label: t("settings.language.fr-FR") },
+    { value: "ar-SA", label: t("settings.language.ar-SA") },
+    { value: "ru-RU", label: t("settings.language.ru-RU") },
+  ];
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -376,7 +375,7 @@ export default function SettingsAppProfileSection({
                           })
                         }
                       >
-                        {LANGUAGE_OPTIONS.map((opt) => (
+                        {languageOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.value === "" ? t("settings.appProfile.useGlobal") : opt.label}
                           </option>
