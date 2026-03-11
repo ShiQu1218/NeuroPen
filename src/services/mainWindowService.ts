@@ -88,6 +88,24 @@ export interface LoadedAttachmentText {
 
 export type LoadedAttachment = LoadedAttachmentImage | LoadedAttachmentText;
 
+export interface LlmImageAttachmentPayload {
+  imageBase64: string;
+  imageMimeType: string;
+}
+
+export interface LlmImagesCallPayload {
+  [key: string]: unknown;
+  instruction: string;
+  images: LlmImageAttachmentPayload[];
+  outputMode: "DirectInject" | "PreviewStream";
+  provider: string;
+  model: string;
+  preferredLanguage: string;
+  promptMode: string;
+  promptOverride: string;
+  streamOutput: boolean;
+}
+
 export const mainWindowService = {
   getRegisteredHotkeys: () => invoke<RegisteredHotkeys>("get_registered_hotkeys"),
   changeHotkey: (hotkeyStr: string) => invoke<void>("change_hotkey", { hotkeyStr }),
@@ -118,8 +136,10 @@ export const mainWindowService = {
   getForegroundWindowTitle: () => invoke<string>("get_foreground_window_title"),
   loadAttachment: (fileName: string, bytes: number[]) =>
     invoke<LoadedAttachment>("load_attachment", { fileName, bytes }),
-  pickAttachment: () => invoke<LoadedAttachment>("pick_attachment"),
+  pickAttachments: () => invoke<LoadedAttachment[]>("pick_attachments"),
   callLlm: (payload: LlmCallPayload) => invoke<void>("call_llm", payload),
+  callLlmWithImages: (payload: LlmImagesCallPayload) =>
+    invoke<void>("call_llm_with_images", payload),
   callLlmText: (payload: LlmTextCallPayload) => invoke<string>("call_llm_text", payload),
   verifyFocus: () => invoke<boolean>("verify_focus"),
   restoreFocus: () => invoke<boolean>("restore_focus"),

@@ -15,7 +15,7 @@ export interface PreviewSession {
   selectedText: string;
   sourceMode: PreviewSourceMode;
   instruction: string;
-  attachment: PreviewAttachment | null;
+  attachments: PreviewAttachment[];
 }
 
 interface UsePreviewEventSyncOptions {
@@ -107,7 +107,7 @@ export function usePreviewEventSync({
             selectedText: "",
             sourceMode: "C",
             instruction: "",
-            attachment: null,
+            attachments: [],
           });
           return;
         }
@@ -116,7 +116,7 @@ export function usePreviewEventSync({
           selectedText: event.payload.selectedText ?? "",
           sourceMode: event.payload.sourceMode ?? "C",
           instruction: event.payload.instruction ?? "",
-          attachment: null,
+          attachments: [],
         });
       });
 
@@ -208,13 +208,13 @@ export function usePreviewEventSync({
           selectedText: "",
           sourceMode: "C",
           instruction: "",
-          attachment: {
+          attachments: [{
             kind: "image",
             name: "screenshot.png",
             mimeType: "image/png",
             base64Data: event.payload.imageBase64 || "",
             source: "screenshot",
-          },
+          }],
         });
         setAnimKey((key) => key + 1);
         const currentState = useAppStore.getState();

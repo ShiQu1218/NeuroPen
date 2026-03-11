@@ -1,4 +1,4 @@
-import type { Dispatch, MouseEvent, RefObject, SetStateAction } from "react";
+import { useRef, type Dispatch, type MouseEvent, type RefObject, type SetStateAction } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
@@ -11,13 +11,13 @@ import { formatModeAText, normalizePreviewMarkdown, normalizeStructuredText } fr
 import type { PreviewAttachment } from "../../utils/previewAttachments";
 
 interface PreviewWindowBodyProps {
-  attachment: PreviewAttachment | null;
+  attachments: PreviewAttachment[];
   animKey: number;
   handleAttachFile: () => Promise<void>;
   handleClose: () => Promise<void>;
   handleCopy: () => Promise<void>;
   handleRefinement: () => Promise<void>;
-  handleRemoveAttachment: () => void;
+  handleRemoveAttachment: (index: number) => void;
   handleReplace: () => Promise<void>;
   handleStartDrag: () => Promise<void>;
   handleTtsToggle: () => Promise<void>;
@@ -44,7 +44,7 @@ interface PreviewWindowBodyProps {
 }
 
 export default function PreviewWindowBody({
-  attachment,
+  attachments,
   animKey,
   handleAttachFile,
   handleClose,
@@ -75,17 +75,19 @@ export default function PreviewWindowBody({
   t,
   toastMessage,
 }: PreviewWindowBodyProps) {
+  const copyPointerArmedRef = useRef(false);
   const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
   const isModeALlmPreview = isModeAPreview && !!previewSession?.instruction.trim();
   const isModeCPreview =
     (previewSession?.type === "text" && previewSession.sourceMode === "C") ||
     previewSession?.type === "screenshot";
+  const hasImageAttachment = attachments.some((attachment) => attachment.kind === "image");
   const refinementPlaceholder =
-    attachment?.kind === "image"
-      ? attachment.source === "screenshot"
+    hasImageAttachment
+      ? attachments.some((attachment) => attachment.kind === "image" && attachment.source === "screenshot")
         ? t("preview.askAboutScreenshot")
         : t("preview.askAboutImageAttachment")
-      : attachment
+      : attachments.length > 0
         ? t("preview.askAboutAttachment")
         : t("preview.refinementPlaceholder");
   const renderedOutput =
@@ -103,6 +105,11 @@ export default function PreviewWindowBody({
       className="relative flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp"
       onMouseUpCapture={swallowDragRelease}
       onClickCapture={swallowDragRelease}
+      onPointerDownCapture={(event) => {
+        if (!(event.target as HTMLElement).closest('[data-preview-action="copy"]')) {
+          copyPointerArmedRef.current = false;
+        }
+      }}
       onMouseDownCapture={(event) => {
         if ((event.target as HTMLElement).closest("button,input,textarea")) {
           void setPreviewFocusable(true, true);
@@ -195,50 +202,56 @@ export default function PreviewWindowBody({
         </div>
       </div>
 
-      {attachment && (
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80">
-          {attachment.kind === "image" ? (
-            <img
-              src={`data:${attachment.mimeType};base64,${attachment.base64Data}`}
-              alt={
-                attachment.source === "screenshot"
-                  ? t("preview.screenshotAttached")
-                  : t("preview.imageAttachmentAttached")
-              }
-              className="h-12 w-auto rounded border border-zinc-300 object-contain"
-            />
-          ) : (
-            <div className="h-12 w-12 shrink-0 rounded border border-zinc-300 bg-white text-zinc-500 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <path d="M14 2v6h6" />
-                <path d="M16 13H8" />
-                <path d="M16 17H8" />
-                <path d="M10 9H8" />
-              </svg>
-            </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="text-xs text-zinc-600 truncate">{attachment.name}</div>
-            <div className="text-[11px] text-zinc-500">
-              {attachment.source === "screenshot"
-                ? t("preview.screenshotAttached")
-                : attachment.kind === "image"
-                  ? t("preview.imageAttachmentAttached")
-                  : t("preview.fileAttachmentAttached")}
-              {attachment.kind === "text" && attachment.truncated ? ` · ${t("preview.attachmentTruncated")}` : ""}
-            </div>
+      {attachments.length > 0 && (
+        <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80">
+          <div className="flex flex-col gap-2">
+            {attachments.map((attachment, index) => (
+              <div key={`${attachment.kind}-${attachment.name}-${index}`} className="flex items-center gap-2">
+                {attachment.kind === "image" ? (
+                  <img
+                    src={`data:${attachment.mimeType};base64,${attachment.base64Data}`}
+                    alt={
+                      attachment.source === "screenshot"
+                        ? t("preview.screenshotAttached")
+                        : t("preview.imageAttachmentAttached")
+                    }
+                    className="h-12 w-auto rounded border border-zinc-300 object-contain"
+                  />
+                ) : (
+                  <div className="h-12 w-12 shrink-0 rounded border border-zinc-300 bg-white text-zinc-500 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <path d="M14 2v6h6" />
+                      <path d="M16 13H8" />
+                      <path d="M16 17H8" />
+                      <path d="M10 9H8" />
+                    </svg>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs text-zinc-600 truncate">{attachment.name}</div>
+                  <div className="text-[11px] text-zinc-500">
+                    {attachment.source === "screenshot"
+                      ? t("preview.screenshotAttached")
+                      : attachment.kind === "image"
+                        ? t("preview.imageAttachmentAttached")
+                        : t("preview.fileAttachmentAttached")}
+                    {attachment.kind === "text" && attachment.truncated ? ` · ${t("preview.attachmentTruncated")}` : ""}
+                  </div>
+                </div>
+                <button
+                  className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
+                  onClick={() => handleRemoveAttachment(index)}
+                  title={t("preview.removeAttachment")}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+            ))}
           </div>
-          <button
-            className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
-            onClick={handleRemoveAttachment}
-            title={t("preview.removeAttachment")}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
         </div>
       )}
 
@@ -304,7 +317,19 @@ export default function PreviewWindowBody({
         <button
           className="btn-secondary px-3 py-1.5 text-xs"
           disabled={!hasOutput}
-          onClick={() => {
+          data-preview-action="copy"
+          onPointerDown={() => {
+            copyPointerArmedRef.current = true;
+          }}
+          onPointerCancel={() => {
+            copyPointerArmedRef.current = false;
+          }}
+          onBlur={() => {
+            copyPointerArmedRef.current = false;
+          }}
+          onClick={(event) => {
+            if (event.detail > 0 && !copyPointerArmedRef.current) return;
+            copyPointerArmedRef.current = false;
             if (isDragInteractionLocked()) return;
             void handleCopy();
           }}

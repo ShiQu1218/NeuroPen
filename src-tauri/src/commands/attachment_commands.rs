@@ -28,8 +28,8 @@ pub fn load_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttach
 }
 
 #[tauri::command]
-pub async fn pick_attachment() -> Result<LoadedAttachment, String> {
-    let file = AsyncFileDialog::new()
+pub async fn pick_attachments() -> Result<Vec<LoadedAttachment>, String> {
+    let files = AsyncFileDialog::new()
         .add_filter(
             "Supported files",
             &[
@@ -38,15 +38,17 @@ pub async fn pick_attachment() -> Result<LoadedAttachment, String> {
                 "yaml", "yml", "xml", "log", "ini", "toml",
             ],
         )
-        .pick_file()
+        .pick_files()
         .await
         .ok_or_else(|| "No file selected.".to_string())?;
 
-    let file_name = file.file_name();
-    let bytes = file
-        .read()
-        .await;
-    parse_attachment(file_name, bytes)
+    let mut attachments = Vec::with_capacity(files.len());
+    for file in files {
+        let file_name = file.file_name();
+        let bytes = file.read().await;
+        attachments.push(parse_attachment(file_name, bytes)?);
+    }
+    Ok(attachments)
 }
 
 fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachment, String> {

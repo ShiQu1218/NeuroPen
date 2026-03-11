@@ -844,24 +844,27 @@ pub async fn call_llm_text(
 
 // ── Multimodal (image + text) support ───────────────────────────────────
 
-async fn call_openai_compatible_with_image(
+async fn call_openai_compatible_with_images(
     base_url: &str,
     api_key: &str,
     model: &str,
     system_prompt: &str,
     user_text: &str,
-    image_base64: &str,
-    image_mime_type: &str,
+    images: &[(&str, &str)],
 ) -> Result<String, String> {
+    let mut content = vec![serde_json::json!({ "type": "text", "text": user_text })];
+    for (image_base64, image_mime_type) in images {
+        content.push(serde_json::json!({
+            "type": "image_url",
+            "image_url": { "url": format!("data:{image_mime_type};base64,{image_base64}") }
+        }));
+    }
     let body = serde_json::json!({
         "model": model,
         "stream": false,
         "messages": [
             { "role": "system", "content": system_prompt },
-            { "role": "user", "content": [
-                { "type": "text", "text": user_text },
-                { "type": "image_url", "image_url": { "url": format!("data:{image_mime_type};base64,{image_base64}") } }
-            ]}
+            { "role": "user", "content": content }
         ]
     });
 
@@ -883,24 +886,26 @@ async fn call_openai_compatible_with_image(
     extract_openai_text(&parsed).ok_or_else(|| format!("Unexpected response: {body}"))
 }
 
-async fn call_gemini_with_image(
+async fn call_gemini_with_images(
     api_key: &str,
     model: &str,
     system_prompt: &str,
     user_text: &str,
-    image_base64: &str,
-    image_mime_type: &str,
+    images: &[(&str, &str)],
 ) -> Result<String, String> {
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
         model
     );
+    let mut parts = vec![serde_json::json!({ "text": user_text })];
+    for (image_base64, image_mime_type) in images {
+        parts.push(serde_json::json!({
+            "inline_data": { "mime_type": image_mime_type, "data": image_base64 }
+        }));
+    }
     let body = serde_json::json!({
         "system_instruction": { "parts": [{ "text": system_prompt }] },
-        "contents": [{ "parts": [
-            { "text": user_text },
-            { "inline_data": { "mime_type": image_mime_type, "data": image_base64 } }
-        ]}],
+        "contents": [{ "parts": parts }],
     });
 
     let resp = HTTP_CLIENT
@@ -932,22 +937,26 @@ async fn call_gemini_with_image(
     Ok(out)
 }
 
-async fn call_claude_with_image(
+async fn call_claude_with_images(
     api_key: &str,
     model: &str,
     system_prompt: &str,
     user_text: &str,
-    image_base64: &str,
-    image_mime_type: &str,
+    images: &[(&str, &str)],
 ) -> Result<String, String> {
+    let mut content = Vec::with_capacity(images.len() + 1);
+    for (image_base64, image_mime_type) in images {
+        content.push(serde_json::json!({
+            "type": "image",
+            "source": { "type": "base64", "media_type": image_mime_type, "data": image_base64 }
+        }));
+    }
+    content.push(serde_json::json!({ "type": "text", "text": user_text }));
     let body = serde_json::json!({
         "model": model,
         "max_tokens": 4096,
         "system": system_prompt,
-        "messages": [{ "role": "user", "content": [
-            { "type": "image", "source": { "type": "base64", "media_type": image_mime_type, "data": image_base64 } },
-            { "type": "text", "text": user_text }
-        ]}],
+        "messages": [{ "role": "user", "content": content }],
     });
 
     let resp = HTTP_CLIENT
@@ -982,18 +991,18 @@ async fn call_claude_with_image(
     Ok(out)
 }
 
-async fn call_ollama_with_image(
+async fn call_ollama_with_images(
     model: &str,
     system_prompt: &str,
     user_text: &str,
-    image_base64: &str,
+    images: &[(&str, &str)],
 ) -> Result<String, String> {
     let body = serde_json::json!({
         "model": model,
         "stream": false,
         "messages": [
             { "role": "system", "content": system_prompt },
-            { "role": "user", "content": user_text, "images": [image_base64] }
+            { "role": "user", "content": user_text, "images": images.iter().map(|(image_base64, _)| *image_base64).collect::<Vec<_>>() }
         ]
     });
 
@@ -1019,51 +1028,47 @@ async fn call_ollama_with_image(
     Err(format!("Unexpected Ollama response: {body}"))
 }
 
-async fn call_provider_with_image(
+async fn call_provider_with_images(
     api_key: &str,
     provider: &LlmProvider,
     chosen_model: &str,
     system_prompt: &str,
     user_text: &str,
-    image_base64: &str,
-    image_mime_type: &str,
+    images: &[(&str, &str)],
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
-        return call_openai_compatible_with_image(
+        return call_openai_compatible_with_images(
             url,
             api_key,
             chosen_model,
             system_prompt,
             user_text,
-            image_base64,
-            image_mime_type,
+            images,
         )
         .await;
     }
     match provider {
         LlmProvider::Gemini => {
-            call_gemini_with_image(
+            call_gemini_with_images(
                 api_key,
                 chosen_model,
                 system_prompt,
                 user_text,
-                image_base64,
-                image_mime_type,
+                images,
             )
             .await
         }
         LlmProvider::Claude => {
-            call_claude_with_image(
+            call_claude_with_images(
                 api_key,
                 chosen_model,
                 system_prompt,
                 user_text,
-                image_base64,
-                image_mime_type,
+                images,
             )
             .await
         }
-        LlmProvider::Ollama => call_ollama_with_image(chosen_model, system_prompt, user_text, image_base64).await,
+        LlmProvider::Ollama => call_ollama_with_images(chosen_model, system_prompt, user_text, images).await,
         _ => unreachable!(),
     }
 }
@@ -1082,21 +1087,53 @@ pub async fn call_llm_with_image(
     prompt_override: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    call_llm_with_images(
+        api_key,
+        &[(image_base64, image_mime_type)],
+        instruction,
+        output_mode,
+        stream_output,
+        provider,
+        model,
+        preferred_language,
+        prompt_mode,
+        prompt_override,
+        app,
+    )
+    .await
+}
+
+pub async fn call_llm_with_images(
+    api_key: &str,
+    images: &[(&str, &str)],
+    instruction: &str,
+    output_mode: OutputMode,
+    stream_output: bool,
+    provider: LlmProvider,
+    model: &str,
+    preferred_language: Option<String>,
+    prompt_mode: Option<String>,
+    prompt_override: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
     let language_hint = preferred_language_hint(preferred_language.as_deref())
         .map(|h| format!(" {h}"))
         .unwrap_or_default();
+    let mode = PromptMode::from_input(prompt_mode.as_deref(), false);
+    let image_count = images.len();
     let base_prompt = format!(
-        "You are a helpful assistant. The user has sent a screenshot and a question about it. \
+        "You are a helpful assistant. The user has sent {image_count} image attachment(s) and a question about them. \
          Answer concisely based on the image content. \
+         If there are multiple images, compare and synthesize across all relevant images. \
          If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
          Never leave equations as plain text without LaTeX delimiters.{language_hint}"
     );
-    let mode = PromptMode::from_input(prompt_mode.as_deref(), false);
     let system_prompt = if mode == PromptMode::C {
         merge_prompt_override(
             format!(
-                "You are handling a Mode C screenshot query. \
+                "You are handling a Mode C image-attachment query. \
                  Answer based on the image content in clean Markdown with short paragraphs and bullets only when useful. \
+                 If there are multiple images, use all of them and call out disagreements or comparisons explicitly. \
                  OCR may produce imperfect symbols, so normalize detected formulas into valid LaTeX. \
                  If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
                  Never leave equations as plain text without LaTeX delimiters.{language_hint}"
@@ -1108,14 +1145,13 @@ pub async fn call_llm_with_image(
     };
     let chosen_model = resolve_model(model, &provider);
 
-    let raw_output = call_provider_with_image(
+    let raw_output = call_provider_with_images(
         api_key,
         &provider,
         &chosen_model,
         &system_prompt,
         instruction,
-        image_base64,
-        image_mime_type,
+        images,
     )
     .await
     .map_err(|e| {
@@ -1135,15 +1171,11 @@ pub async fn call_llm_with_image(
     }
     let _ = app.emit("llm://done", ());
 
-    // Save to conversation history so follow-up questions retain context.
-    // We prefix the user message with [Image attached] so the LLM knows
-    // an image was part of this turn even though subsequent text-only calls
-    // won't re-send the image bytes.
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         let mut guard = CONVERSATION_HISTORY.lock().unwrap();
         guard.push(ConversationMessage {
             role: "user".to_string(),
-            content: format!("[Image attached] {}", instruction),
+            content: format!("[{} image attachment(s)] {}", images.len(), instruction),
         });
         guard.push(ConversationMessage {
             role: "assistant".to_string(),

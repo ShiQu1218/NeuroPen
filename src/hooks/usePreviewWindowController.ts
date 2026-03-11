@@ -16,6 +16,7 @@ const PREVIEW_WIDTH = 480;
 const PREVIEW_MIN_HEIGHT = 340;
 const PREVIEW_MAX_HEIGHT = 620;
 const PREVIEW_CHROME_HEIGHT = 240;
+const MAX_ATTACHMENT_CONTEXT_CHARS = 24_000;
 
 function toPreviewAttachment(attachment: LoadedAttachment): PreviewAttachment {
   if (attachment.kind === "image") {
@@ -40,35 +41,63 @@ function toPreviewAttachment(attachment: LoadedAttachment): PreviewAttachment {
 function buildAttachmentInstruction(
   input: string,
   selectedText: string,
-  attachment: PreviewAttachment | null
+  attachments: PreviewAttachment[]
 ) {
-  if (!attachment) {
+  if (attachments.length === 0) {
     return input;
   }
-  if (attachment.kind === "image") {
-    if (!selectedText.trim()) {
-      return input;
-    }
-    return `Selected text for context:\n${selectedText}\n\nUser request:\n${input}`;
+  const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
+  const textAttachments = attachments.filter((attachment) => attachment.kind === "text");
+  const sections: string[] = [];
+
+  if (selectedText.trim()) {
+    sections.push(`Selected text for context:\n${selectedText}`);
   }
-  const truncatedNote = attachment.truncated
-    ? "\n\nNote: The attached file was truncated to fit within the chat context."
-    : "";
-  return [
-    `Attached file: ${attachment.name}`,
-    `Type: ${attachment.mimeType}`,
-    "",
-    "File content:",
-    '"""',
-    attachment.textContent,
-    '"""',
-    truncatedNote,
-    "",
-    "User request:",
-    input,
-  ]
-    .filter((part) => part !== "")
-    .join("\n");
+
+  if (imageAttachments.length > 0) {
+    sections.push(`Attached images (${imageAttachments.length}):\n${imageAttachments.map((attachment, index) => `${index + 1}. ${attachment.name}`).join("\n")}`);
+  }
+
+  if (textAttachments.length > 0) {
+    let remainingChars = MAX_ATTACHMENT_CONTEXT_CHARS;
+    const renderedTextAttachments = textAttachments
+      .map((attachment, index) => {
+        const content = attachment.textContent.slice(0, remainingChars);
+        remainingChars = Math.max(0, remainingChars - content.length);
+        const truncated = attachment.truncated || content.length < attachment.textContent.length;
+        return [
+          `Document ${index + 1}: ${attachment.name}`,
+          `Type: ${attachment.mimeType}`,
+          "Content:",
+          '"""',
+          content,
+          '"""',
+          truncated ? "Note: This document was truncated to fit within the chat context." : "",
+        ]
+          .filter((part) => part !== "")
+          .join("\n");
+      })
+      .join("\n\n");
+    sections.push(`Attached documents:\n${renderedTextAttachments}`);
+  }
+
+  sections.push(`User request:\n${input}`);
+  return sections.join("\n\n");
+}
+
+function dedupeAttachments(attachments: PreviewAttachment[]) {
+  const seen = new Set<string>();
+  return attachments.filter((attachment) => {
+    const identity =
+      attachment.kind === "image"
+        ? `${attachment.kind}:${attachment.name}:${attachment.base64Data.slice(0, 48)}`
+        : `${attachment.kind}:${attachment.name}:${attachment.textContent.slice(0, 48)}`;
+    if (seen.has(identity)) {
+      return false;
+    }
+    seen.add(identity);
+    return true;
+  });
 }
 
 export function usePreviewWindowController() {
@@ -178,9 +207,9 @@ export function usePreviewWindowController() {
       if (!input) return;
       const selectedText = previewSession?.type === "text" ? previewSession.selectedText : "";
       const sourceMode = previewSession?.sourceMode ?? "C";
-      const attachment = previewSession?.attachment ?? null;
-      const imageAttachment = attachment?.kind === "image" ? attachment : null;
-      const instructionToSend = buildAttachmentInstruction(input, selectedText, attachment);
+      const attachments = previewSession?.attachments ?? [];
+      const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
+      const instructionToSend = buildAttachmentInstruction(input, selectedText, attachments);
       const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
       await emit("neuropen://llm-session-context", {
@@ -192,16 +221,18 @@ export function usePreviewWindowController() {
       setIsLlmLoading(true);
       setLlmError("");
       try {
-        if (imageAttachment) {
-          await invoke("call_llm_with_image", {
-            imageBase64: imageAttachment.base64Data,
-            imageMimeType: imageAttachment.mimeType,
+        if (imageAttachments.length > 0) {
+          await mainWindowService.callLlmWithImages({
             instruction: instructionToSend,
+            images: imageAttachments.map((attachment) => ({
+              imageBase64: attachment.base64Data,
+              imageMimeType: attachment.mimeType,
+            })),
             outputMode: "PreviewStream",
             provider: state.llmProvider,
             model: state.llmModel,
             preferredLanguage: state.preferredLanguage,
-            promptMode,
+            promptMode: promptMode as "A" | "B" | "C",
             promptOverride,
             streamOutput,
           });
@@ -235,14 +266,14 @@ export function usePreviewWindowController() {
     await win.setAlwaysOnTop(false).catch(() => { });
     await setPreviewFocusable(true, true);
     try {
-      const loaded = await mainWindowService.pickAttachment();
-      const nextAttachment = toPreviewAttachment(loaded);
+      const loadedAttachments = await mainWindowService.pickAttachments();
+      const nextAttachments = loadedAttachments.map(toPreviewAttachment);
       setPreviewSession((current) => ({
         type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
         selectedText: current?.selectedText ?? "",
         sourceMode: current?.sourceMode ?? "C",
         instruction: current?.instruction ?? "",
-        attachment: nextAttachment,
+        attachments: dedupeAttachments([...(current?.attachments ?? []), ...nextAttachments]),
       }));
       setLlmError("");
       showToast(t("preview.attachmentReady"));
@@ -257,13 +288,13 @@ export function usePreviewWindowController() {
     }
   }, [setLlmError, setPreviewFocusable, showToast, t]);
 
-  const handleRemoveAttachment = useCallback(() => {
+  const handleRemoveAttachment = useCallback((indexToRemove: number) => {
     setPreviewSession((current) =>
       current
         ? {
             ...current,
             type: current.type === "screenshot" ? "text" : current.type,
-            attachment: null,
+            attachments: current.attachments.filter((_, index) => index !== indexToRemove),
           }
         : current
     );
@@ -393,12 +424,19 @@ export function usePreviewWindowController() {
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isEditableTarget =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
       if (event.key === "Escape") {
         event.preventDefault();
         void handleClose();
         return;
       }
-      if (event.ctrlKey && event.key === "c" && !window.getSelection()?.toString()) {
+      if (event.ctrlKey && event.key === "c" && !isEditableTarget && !window.getSelection()?.toString()) {
         event.preventDefault();
         void handleCopy();
         return;
@@ -427,7 +465,7 @@ export function usePreviewWindowController() {
   }, [handleKeyDown]);
 
   return {
-    attachment: previewSession?.attachment ?? null,
+    attachments: previewSession?.attachments ?? [],
     animKey,
     handleAttachFile,
     handleClose,
