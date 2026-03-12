@@ -236,6 +236,18 @@ export function useMainWindowController() {
         setSttError,
       });
 
+      await safeRegister<{ text: string; outputMode: "DirectInject" | "PreviewStream" }>(
+        "llm://result",
+        (event) => {
+          if (event.payload.outputMode !== "DirectInject") {
+            return;
+          }
+          // Direct inject skips preview token updates, so keep the final output in
+          // store long enough for the shared history-save handler to persist it.
+          useAppStore.getState().setLlmOutput(event.payload.text);
+        }
+      );
+
       // ── 3.5. History save on LLM done (Feature 3) ──
       await safeRegister("llm://done", () => {
         const s = useAppStore.getState();

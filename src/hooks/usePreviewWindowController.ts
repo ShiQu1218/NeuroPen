@@ -248,6 +248,7 @@ export function usePreviewWindowController() {
       const selectedText = previewSession?.type === "text" ? previewSession.selectedText : "";
       const sourceMode = previewSession?.sourceMode ?? "C";
       const attachments = previewSession?.attachments ?? [];
+      const attachmentsSnapshot = attachments;
       const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
       const instructionToSend = buildAttachmentInstruction(input, selectedText, attachments);
       const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
@@ -294,6 +295,19 @@ export function usePreviewWindowController() {
         }
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
+        if (attachmentsSnapshot.length > 0) {
+          // Restore one-shot attachments when the request fails so the user can
+          // retry without re-picking files or losing screenshot context.
+          setPreviewSession((current) => {
+            if (!current || current.attachments.length > 0) {
+              return current;
+            }
+            return {
+              ...current,
+              attachments: attachmentsSnapshot,
+            };
+          });
+        }
         setIsLlmLoading(false);
         setLlmError(reason);
       } finally {

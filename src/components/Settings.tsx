@@ -13,7 +13,7 @@
  * State is persisted via the Zustand store (localStorage), except API key
  * which is stored only in Rust process memory via the set_api_key command.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n, type TranslationKey } from "../i18n";
@@ -214,6 +214,8 @@ export default function Settings() {
   });
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [storeHydrated, setStoreHydrated] = useState(useAppStore.persist.hasHydrated());
+  const pendingStoreSyncRef = useRef(false);
+  const draftSyncBlockedRef = useRef(false);
 
   // Prevent the settings window from being destroyed on close — hide it instead.
   useEffect(() => {
@@ -304,9 +306,7 @@ export default function Settings() {
     })();
   }, []);
 
-  // Sync all drafts from store (2a: merged 7 useEffects into 1)
-  useEffect(() => {
-    if (!storeHydrated) return;
+  const syncDraftsFromStore = useCallback(() => {
     const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
       ?? localModels.find((model) => model.active);
     const nextSttModelChoice =
@@ -348,42 +348,54 @@ export default function Settings() {
     setDraftAppProfiles(appProfiles);
     setDraftTranslationTarget(translationTarget);
   }, [
-    wakeWord,
-    sttEnabled,
-    selectionEnabled,
-    screenshotEnabled,
-    hotkey,
-    screenshotHotkey,
-    dialogHotkey,
-    sttEngine,
-    sttLanguage,
-    outputMode,
-    sttOutputStrategy,
-    punctuationMode,
+    appProfiles,
     contextAwareTone,
-    vocabularyTerms,
-    llmProvider,
+    historyEnabled,
+    hotkey,
+    language,
+    launchOnStartup,
     llmModel,
     llmModelOptions,
-    ttsVoice,
-    ttsRate,
-    ttsPitch,
-    modeAPrompt,
-    modeBPrompt,
-    modeCPrompt,
-    modeAStreamOutput,
-    modeBStreamOutput,
-    preferredLanguage,
-    microphoneSource,
-    launchOnStartup,
-    quickActionCommands,
-    language,
-    historyEnabled,
-    appProfiles,
-    translationTarget,
+    llmProvider,
     localModels,
+    microphoneSource,
+    modeAPrompt,
+    modeAStreamOutput,
+    modeBPrompt,
+    modeBStreamOutput,
+    modeCPrompt,
+    outputMode,
+    preferredLanguage,
+    punctuationMode,
+    quickActionCommands,
+    screenshotEnabled,
+    screenshotHotkey,
+    selectionEnabled,
+    sttEnabled,
+    sttEngine,
+    sttLanguage,
     sttModelPath,
+    sttOutputStrategy,
+    translationTarget,
+    ttsPitch,
+    ttsRate,
+    ttsVoice,
+    vocabularyTerms,
+    wakeWord,
+    dialogHotkey,
+  ]);
+
+  // Sync all drafts from store when the form is clean, or right after a successful save.
+  useEffect(() => {
+    if (!storeHydrated) return;
+    if (draftSyncBlockedRef.current && !pendingStoreSyncRef.current) {
+      return;
+    }
+    syncDraftsFromStore();
+    pendingStoreSyncRef.current = false;
+  }, [
     storeHydrated,
+    syncDraftsFromStore,
   ]);
 
   const loadLocalModels = useCallback(async () => {
@@ -649,24 +661,47 @@ export default function Settings() {
       return;
     }
 
+    const appliedSideEffects = {
+      hotkey: false,
+      screenshotHotkey: false,
+      dialogHotkey: false,
+      launchOnStartup: false,
+      audioDevice: false,
+      runtimeSttConfig: false,
+    };
+
     try {
       setHotkeyErrorMessage("");
       if (nextHotkey !== hotkey) {
         await settingsService.changeHotkey(nextHotkey);
+        appliedSideEffects.hotkey = true;
       }
       if (nextScreenshotHotkey !== screenshotHotkey) {
         await settingsService.changeScreenshotHotkey(nextScreenshotHotkey);
+        appliedSideEffects.screenshotHotkey = true;
       }
       if (nextDialogHotkey !== dialogHotkey) {
         await settingsService.changeDialogHotkey(nextDialogHotkey);
+        appliedSideEffects.dialogHotkey = true;
       }
       if (draftLaunchOnStartup !== launchOnStartup) {
         await settingsService.setLaunchOnStartup(draftLaunchOnStartup);
+        appliedSideEffects.launchOnStartup = true;
       }
       if (draftMicrophoneSource !== microphoneSource) {
         await settingsService.setAudioDevice(draftMicrophoneSource);
+        appliedSideEffects.audioDevice = true;
       }
+      await settingsService.setRuntimeSttConfig({
+        engine: nextSttEngine,
+        modelPath: nextSttModelPath,
+        sttLanguage: nextSttLanguage,
+      });
+      appliedSideEffects.runtimeSttConfig = true;
 
+      // Mark the next store-driven draft refresh as intentional so the post-save
+      // sync can replace the just-saved form instead of being blocked as "dirty".
+      pendingStoreSyncRef.current = true;
       setWakeWord(nextWakeWord);
       setSttEnabled(draftSttEnabled);
       setSelectionEnabled(draftSelectionEnabled);
@@ -701,11 +736,6 @@ export default function Settings() {
       setHistoryEnabled(draftHistoryEnabled);
       setAppProfiles(draftAppProfiles);
       setTranslationTarget(nextTranslationTarget);
-      await settingsService.setRuntimeSttConfig({
-        engine: nextSttEngine,
-        modelPath: nextSttModelPath,
-        sttLanguage: nextSttLanguage,
-      });
       await emit("neuropen://settings-saved", {
         wakeWord: nextWakeWord,
         sttEnabled: draftSttEnabled,
@@ -749,6 +779,43 @@ export default function Settings() {
       setTimeout(() => setSettingsSaveStatus(""), STATUS_RESET_MS);
     } catch (err) {
       console.error("[Settings] save settings failed:", err);
+      pendingStoreSyncRef.current = false;
+      // Roll back backend-side mutations best-effort so a late failure does not
+      // leave runtime hotkeys or device state diverging from the persisted form.
+      if (appliedSideEffects.runtimeSttConfig) {
+        await settingsService.setRuntimeSttConfig({
+          engine: sttEngine,
+          modelPath: sttModelPath,
+          sttLanguage,
+        }).catch((rollbackErr) => {
+          console.warn("[Settings] rollback runtime STT config failed:", rollbackErr);
+        });
+      }
+      if (appliedSideEffects.audioDevice) {
+        await settingsService.setAudioDevice(microphoneSource).catch((rollbackErr) => {
+          console.warn("[Settings] rollback audio device failed:", rollbackErr);
+        });
+      }
+      if (appliedSideEffects.launchOnStartup) {
+        await settingsService.setLaunchOnStartup(launchOnStartup).catch((rollbackErr) => {
+          console.warn("[Settings] rollback launch-on-startup failed:", rollbackErr);
+        });
+      }
+      if (appliedSideEffects.dialogHotkey) {
+        await settingsService.changeDialogHotkey(dialogHotkey).catch((rollbackErr) => {
+          console.warn("[Settings] rollback dialog hotkey failed:", rollbackErr);
+        });
+      }
+      if (appliedSideEffects.screenshotHotkey) {
+        await settingsService.changeScreenshotHotkey(screenshotHotkey).catch((rollbackErr) => {
+          console.warn("[Settings] rollback screenshot hotkey failed:", rollbackErr);
+        });
+      }
+      if (appliedSideEffects.hotkey) {
+        await settingsService.changeHotkey(hotkey).catch((rollbackErr) => {
+          console.warn("[Settings] rollback trigger hotkey failed:", rollbackErr);
+        });
+      }
       const message = err instanceof Error ? err.message : String(err);
       setHotkeyStatus("error");
       setHotkeyErrorMessage(message);
@@ -758,46 +825,8 @@ export default function Settings() {
   };
 
   const handleCancelSettings = () => {
-    const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
-      ?? localModels.find((model) => model.active);
-    const nextSttModelChoice =
-      sttEngine === "openAi"
-        ? OPENAI_STT_MODEL
-        : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
-    setDraftWakeWord(wakeWord);
-    setDraftSttEnabled(sttEnabled);
-    setDraftSelectionEnabled(selectionEnabled);
-    setDraftScreenshotEnabled(screenshotEnabled);
-    setDraftHotkey(hotkey);
-    setDraftScreenshotHotkey(screenshotHotkey);
-    setDraftDialogHotkey(dialogHotkey);
-    setDraftSttEngine(sttEngine);
-    setDraftSttLanguage(sttLanguage);
-    setDraftSttModelChoice(nextSttModelChoice);
-    setDraftOutputMode(outputMode);
-    setDraftSttOutputStrategy(sttOutputStrategy);
-    setDraftPunctuationMode(punctuationMode);
-    setDraftContextAwareTone(contextAwareTone);
-    setDraftVocabularyTerms(vocabularyTerms.join("\n"));
-    setDraftLlmProvider(llmProvider);
-    setDraftLlmModel(llmModel);
-    setDraftLlmModelOptions(normalizeLlmModelOptions(llmModelOptions, llmModel));
-    setDraftTtsVoice(ttsVoice);
-    setDraftTtsRate(ttsRate);
-    setDraftTtsPitch(ttsPitch);
-    setDraftModeAPrompt(modeAPrompt);
-    setDraftModeBPrompt(modeBPrompt);
-    setDraftModeCPrompt(modeCPrompt);
-    setDraftModeAStreamOutput(modeAStreamOutput);
-    setDraftModeBStreamOutput(modeBStreamOutput);
-    setDraftPreferredLanguage(preferredLanguage);
-    setDraftMicrophoneSource(microphoneSource);
-    setDraftLaunchOnStartup(launchOnStartup);
-    setDraftQuickActionCommands(quickActionCommands);
-    setDraftLanguage(language);
-    setDraftHistoryEnabled(historyEnabled);
-    setDraftAppProfiles(appProfiles);
-    setDraftTranslationTarget(translationTarget);
+    pendingStoreSyncRef.current = false;
+    syncDraftsFromStore();
     setHotkeyStatus("");
     setHotkeyErrorMessage("");
     setSettingsSaveStatus("");
@@ -1160,6 +1189,10 @@ export default function Settings() {
       appProfiles,
     ],
   );
+
+  useEffect(() => {
+    draftSyncBlockedRef.current = hasSettingsChanges;
+  }, [hasSettingsChanges]);
 
   return (
     <div className="h-screen bg-[#f5f5f7] p-6 text-sm text-zinc-800 flex flex-col overflow-hidden">

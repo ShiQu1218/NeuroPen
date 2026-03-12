@@ -9,6 +9,7 @@
 //!
 //! Emits:
 //!   `llm://token(text)` — output chunk (true stream when provider supports it)
+//!   `llm://result`      — finalized output for the completed request
 //!   `llm://done`        — generation complete
 //!   `llm://error(msg)`  — API/network failure
 
@@ -58,6 +59,13 @@ pub struct LlmToken {
 #[derive(Serialize, Clone)]
 pub struct LlmError {
     pub message: String,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmResult {
+    pub text: String,
+    pub output_mode: OutputMode,
 }
 
 async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str) {
@@ -794,8 +802,6 @@ pub async fn call_llm(
         }
     }
 
-    let _ = app.emit("llm://done", ());
-
     // Save to conversation history in PreviewStream mode for multi-turn support
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         let mut guard = CONVERSATION_HISTORY.lock().unwrap();
@@ -822,6 +828,18 @@ pub async fn call_llm(
             return Err(msg);
         }
     }
+
+    if !full_output.is_empty() {
+        let _ = app.emit(
+            "llm://result",
+            LlmResult {
+                text: full_output.clone(),
+                output_mode: output_mode.clone(),
+            },
+        );
+    }
+
+    let _ = app.emit("llm://done", ());
 
     Ok(())
 }
@@ -1180,10 +1198,6 @@ pub async fn call_llm_with_images(
             });
         }
     }
-    if output_mode == OutputMode::PreviewStream {
-        let _ = app.emit("llm://done", ());
-    }
-
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         let mut guard = CONVERSATION_HISTORY.lock().unwrap();
         guard.push(ConversationMessage {
@@ -1207,6 +1221,20 @@ pub async fn call_llm_with_images(
             let _ = app.emit("llm://error", LlmError { message: msg.clone() });
             return Err(msg);
         }
+    }
+
+    if !full_output.is_empty() {
+        let _ = app.emit(
+            "llm://result",
+            LlmResult {
+                text: full_output.clone(),
+                output_mode: output_mode.clone(),
+            },
+        );
+    }
+
+    if output_mode == OutputMode::PreviewStream {
+        let _ = app.emit("llm://done", ());
     }
 
     Ok(())
