@@ -10,13 +10,18 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "../i18n";
 
 type Point = { x: number; y: number };
-type ScreenshotStartPayload = { snapshotBase64?: string | null };
+type VirtualBounds = { x: number; y: number; w: number; h: number };
+type ScreenshotStartPayload = {
+  snapshotBase64?: string | null;
+  virtualBounds?: VirtualBounds | null;
+};
 
 export default function ScreenshotOverlay() {
   const { t } = useI18n();
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [dragCurrent, setDragCurrent] = useState<Point | null>(null);
   const [snapshotBase64, setSnapshotBase64] = useState("");
+  const [virtualBounds, setVirtualBounds] = useState<VirtualBounds | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const dragStartRef = useRef<Point | null>(null);
   const dragCurrentRef = useRef<Point | null>(null);
@@ -83,7 +88,9 @@ export default function ScreenshotOverlay() {
   const completeSelection = async () => {
     const start = dragStartRef.current;
     const current = dragCurrentRef.current;
-    if (!start || !current) return;
+    const bounds = virtualBounds;
+    const viewport = rootRef.current?.getBoundingClientRect();
+    if (!start || !current || !bounds || !viewport || viewport.width <= 0 || viewport.height <= 0) return;
 
     const nextRect = {
       x: Math.min(start.x, current.x),
@@ -98,24 +105,33 @@ export default function ScreenshotOverlay() {
       return;
     }
 
-    const winPos = await getCurrentWindow()
-      .outerPosition()
-      .catch(() => ({ x: 0, y: 0 }));
-    // clientX/Y are CSS (logical) pixels; outerPosition() is physical pixels.
-    // Multiply by devicePixelRatio to convert logical → physical.
-    const scale = window.devicePixelRatio || 1;
+    // Map the selection rectangle from the overlay viewport back into the virtual desktop's
+    // physical coordinates so a single overlay can cover multiple monitors correctly.
+    const scaleX = bounds.w / viewport.width;
+    const scaleY = bounds.h / viewport.height;
     await closeWithPayload({
-      x: Math.round(winPos.x + nextRect.x * scale),
-      y: Math.round(winPos.y + nextRect.y * scale),
-      w: Math.round(nextRect.w * scale),
-      h: Math.round(nextRect.h * scale),
+      x: Math.round(bounds.x + nextRect.x * scaleX),
+      y: Math.round(bounds.y + nextRect.y * scaleY),
+      w: Math.round(nextRect.w * scaleX),
+      h: Math.round(nextRect.h * scaleY),
       cancelled: false,
     });
   };
 
+  const toViewportPoint = (clientX: number, clientY: number) => {
+    const viewport = rootRef.current?.getBoundingClientRect();
+    if (!viewport) {
+      return { x: clientX, y: clientY };
+    }
+    return {
+      x: clientX - viewport.left,
+      y: clientY - viewport.top,
+    };
+  };
+
   const updateDragPoint = (x: number, y: number) => {
     if (!dragStartRef.current) return;
-    const point = { x, y };
+    const point = toViewportPoint(x, y);
     dragCurrentRef.current = point;
     setDragCurrent(point);
   };
@@ -128,7 +144,7 @@ export default function ScreenshotOverlay() {
     }
     if (e.button !== 0) return;
     void ensureFocus();
-    const point = { x: e.clientX, y: e.clientY };
+    const point = toViewportPoint(e.clientX, e.clientY);
     activePointerIdRef.current = e.pointerId;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragStartRef.current = point;
@@ -179,6 +195,7 @@ export default function ScreenshotOverlay() {
       unlistenStart = await listen<ScreenshotStartPayload>("neuropen://screenshot-start", (event) => {
         resetSession();
         setSnapshotBase64(event.payload?.snapshotBase64?.trim() ?? "");
+        setVirtualBounds(event.payload?.virtualBounds ?? null);
         void ensureFocus();
       });
       unlistenBlur = await listen(TauriEvent.WINDOW_BLUR, () => {

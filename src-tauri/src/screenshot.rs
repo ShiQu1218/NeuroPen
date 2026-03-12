@@ -27,7 +27,7 @@ mod windows_capture {
             DirectX::{Direct3D11::IDirect3DDevice, DirectXPixelFormat},
         },
         Win32::{
-            Foundation::{POINT, RECT},
+            Foundation::{BOOL, LPARAM, POINT, RECT},
             Graphics::{
                 Direct3D::D3D_DRIVER_TYPE_HARDWARE,
                 Direct3D11::{
@@ -38,8 +38,8 @@ mod windows_capture {
                 },
                 Dxgi::IDXGIDevice,
                 Gdi::{
-                    GetMonitorInfoW, MonitorFromPoint, MonitorFromRect, HMONITOR, MONITORINFO,
-                    MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
+                    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
+                    MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint,
                 },
             },
             System::WinRT::{
@@ -82,24 +82,40 @@ mod windows_capture {
             bottom,
         };
 
-        let hmonitor = unsafe { MonitorFromRect(&region_rect, MONITOR_DEFAULTTONEAREST) };
-        if hmonitor.0.is_null() {
+        // Stitch together every monitor that intersects the requested virtual-desktop rectangle so
+        // drag selections can span multiple displays instead of being truncated to one monitor.
+        let monitor_regions = enumerate_intersecting_monitors(&region_rect)?;
+        if monitor_regions.is_empty() {
             return Err("Unable to locate the target monitor for screenshot capture.".to_string());
         }
+        let mut composited_rgba = vec![0u8; (w as usize) * (h as usize) * 4];
 
-        let monitor_rect = get_monitor_rect(hmonitor)?;
-        let crop_x = (x - monitor_rect.left).max(0) as u32;
-        let crop_y = (y - monitor_rect.top).max(0) as u32;
-        let max_width = rect_width(&monitor_rect)?.saturating_sub(crop_x);
-        let max_height = rect_height(&monitor_rect)?.saturating_sub(crop_y);
-        let crop_w = w.min(max_width);
-        let crop_h = h.min(max_height);
+        for (hmonitor, monitor_rect, intersection_rect) in monitor_regions {
+            let crop_x = u32::try_from(intersection_rect.left - monitor_rect.left)
+                .map_err(|_| "Screenshot crop origin is outside the supported range.".to_string())?;
+            let crop_y = u32::try_from(intersection_rect.top - monitor_rect.top)
+                .map_err(|_| "Screenshot crop origin is outside the supported range.".to_string())?;
+            let crop_w = rect_width(&intersection_rect)?;
+            let crop_h = rect_height(&intersection_rect)?;
+            let (rgba_pixels, _, _) =
+                capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h)?;
+            let destination_x = u32::try_from(intersection_rect.left - x)
+                .map_err(|_| "Screenshot destination origin is outside the supported range.".to_string())?;
+            let destination_y = u32::try_from(intersection_rect.top - y)
+                .map_err(|_| "Screenshot destination origin is outside the supported range.".to_string())?;
 
-        if crop_w == 0 || crop_h == 0 {
-            return Err("Screenshot region falls outside the selected monitor.".to_string());
+            blit_rgba_region(
+                &mut composited_rgba,
+                w,
+                &rgba_pixels,
+                crop_w,
+                crop_h,
+                destination_x,
+                destination_y,
+            );
         }
 
-        capture_monitor_region(hmonitor, crop_x, crop_y, crop_w, crop_h)
+        encode_png(composited_rgba, w, h)
     }
 
     fn capture_monitor_region(
@@ -109,6 +125,18 @@ mod windows_capture {
         crop_w: u32,
         crop_h: u32,
     ) -> Result<ScreenshotResult, String> {
+        let (rgba_pixels, width, height) =
+            capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h)?;
+        encode_png(rgba_pixels, width, height)
+    }
+
+    fn capture_monitor_region_rgba(
+        hmonitor: HMONITOR,
+        crop_x: u32,
+        crop_y: u32,
+        crop_w: u32,
+        crop_h: u32,
+    ) -> Result<(Vec<u8>, u32, u32), String> {
         let d3d_device = create_d3d_device()?;
         let d3d_context = unsafe {
             d3d_device
@@ -179,8 +207,7 @@ mod windows_capture {
 
         session.Close().ok();
         frame_pool.Close().ok();
-
-        encode_png(rgba_pixels, width, height)
+        Ok((rgba_pixels, width, height))
     }
 
     fn create_d3d_device() -> Result<ID3D11Device, String> {
@@ -224,6 +251,95 @@ mod windows_capture {
                 .map_err(|e| format!("Failed to query monitor bounds: {e}"))?;
         }
         Ok(monitor_info.rcMonitor)
+    }
+
+    fn enumerate_intersecting_monitors(region_rect: &RECT) -> Result<Vec<(HMONITOR, RECT, RECT)>, String> {
+        let monitors = enumerate_monitors()?;
+        Ok(monitors
+            .into_iter()
+            .filter_map(|(hmonitor, monitor_rect)| {
+                intersect_rect(region_rect, &monitor_rect)
+                    .map(|intersection_rect| (hmonitor, monitor_rect, intersection_rect))
+            })
+            .collect())
+    }
+
+    fn enumerate_monitors() -> Result<Vec<(HMONITOR, RECT)>, String> {
+        unsafe extern "system" fn enum_monitor_proc(
+            hmonitor: HMONITOR,
+            _hdc: HDC,
+            _clip_rect: *mut RECT,
+            lparam: LPARAM,
+        ) -> BOOL {
+            let monitors = &mut *(lparam.0 as *mut Vec<(HMONITOR, RECT)>);
+            let mut monitor_info = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+
+            if unsafe {
+                GetMonitorInfoW(hmonitor, &mut monitor_info as *mut MONITORINFO as *mut _)
+            }
+            .as_bool()
+            {
+                monitors.push((hmonitor, monitor_info.rcMonitor));
+            }
+
+            true.into()
+        }
+
+        let mut monitors = Vec::<(HMONITOR, RECT)>::new();
+        let success = unsafe {
+            EnumDisplayMonitors(
+                None,
+                None,
+                Some(enum_monitor_proc),
+                LPARAM((&mut monitors as *mut Vec<(HMONITOR, RECT)>) as isize),
+            )
+        };
+
+        if success.as_bool() {
+          Ok(monitors)
+        } else {
+          Err("Failed to enumerate display monitors for screenshot capture.".to_string())
+        }
+    }
+
+    fn intersect_rect(a: &RECT, b: &RECT) -> Option<RECT> {
+        let left = a.left.max(b.left);
+        let top = a.top.max(b.top);
+        let right = a.right.min(b.right);
+        let bottom = a.bottom.min(b.bottom);
+
+        if right <= left || bottom <= top {
+            return None;
+        }
+
+        Some(RECT {
+            left,
+            top,
+            right,
+            bottom,
+        })
+    }
+
+    fn blit_rgba_region(
+        destination: &mut [u8],
+        destination_width: u32,
+        source: &[u8],
+        source_width: u32,
+        source_height: u32,
+        destination_x: u32,
+        destination_y: u32,
+    ) {
+        for row in 0..source_height {
+            let source_offset = (row * source_width * 4) as usize;
+            let destination_offset =
+                (((destination_y + row) * destination_width + destination_x) * 4) as usize;
+            let copy_len = (source_width * 4) as usize;
+            destination[destination_offset..destination_offset + copy_len]
+                .copy_from_slice(&source[source_offset..source_offset + copy_len]);
+        }
     }
 
     fn extract_cropped_frame(

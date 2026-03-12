@@ -1,7 +1,7 @@
 import { availableMonitors, currentMonitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emit, emitTo } from "@tauri-apps/api/event";
-import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
 import { emitPreviewSession, showPreviewWindow } from "../../utils/previewWindow";
@@ -32,46 +32,55 @@ export async function registerScreenshotListeners({
     }
     try {
       const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
-      const cursor = await mainWindowService.getCursorPosition().catch(() => null);
       const monitors = await availableMonitors().catch(() => []);
-      // On multi-monitor setups, open the overlay on the monitor that currently
-      // holds the pointer instead of whichever display the hidden main window uses.
-      const monitor =
-        (cursor
-          ? monitors.find(
-              (candidate) =>
-                cursor.x >= candidate.position.x &&
-                cursor.x < candidate.position.x + candidate.size.width &&
-                cursor.y >= candidate.position.y &&
-                cursor.y < candidate.position.y + candidate.size.height,
-            ) ?? null
-          : null) ?? await currentMonitor();
-      if (overlayWin && monitor) {
+      const fallbackMonitor = await currentMonitor().catch(() => null);
+      const virtualBounds = (
+        monitors.length > 0 ? monitors : fallbackMonitor ? [fallbackMonitor] : []
+      ).reduce(
+        (bounds, monitor) => ({
+          x: Math.min(bounds.x, monitor.position.x),
+          y: Math.min(bounds.y, monitor.position.y),
+          right: Math.max(bounds.right, monitor.position.x + monitor.size.width),
+          bottom: Math.max(bounds.bottom, monitor.position.y + monitor.size.height),
+        }),
+        {
+          x: Number.POSITIVE_INFINITY,
+          y: Number.POSITIVE_INFINITY,
+          right: Number.NEGATIVE_INFINITY,
+          bottom: Number.NEGATIVE_INFINITY,
+        },
+      );
+      if (
+        overlayWin &&
+        Number.isFinite(virtualBounds.x) &&
+        Number.isFinite(virtualBounds.y) &&
+        Number.isFinite(virtualBounds.right) &&
+        Number.isFinite(virtualBounds.bottom)
+      ) {
+        const captureRegion = {
+          x: virtualBounds.x,
+          y: virtualBounds.y,
+          w: virtualBounds.right - virtualBounds.x,
+          h: virtualBounds.bottom - virtualBounds.y,
+        };
         let snapshotBase64 = "";
         try {
-          const monitorShot = await mainWindowService.takeScreenshotRegion({
-            x: monitor.position.x,
-            y: monitor.position.y,
-            w: monitor.size.width,
-            h: monitor.size.height,
-          });
-          snapshotBase64 = monitorShot.base64Png ?? monitorShot.base64_png ?? "";
+          // Capture the whole virtual desktop so a single overlay can span every monitor
+          // and still show the correct stitched screenshot behind the selection box.
+          const desktopShot = await mainWindowService.takeScreenshotRegion(captureRegion);
+          snapshotBase64 = desktopShot.base64Png ?? desktopShot.base64_png ?? "";
         } catch (err) {
-          console.warn("[App] monitor snapshot for overlay failed:", err);
+          console.warn("[App] virtual desktop snapshot for overlay failed:", err);
         }
-        const scale = monitor.scaleFactor;
-        // monitor.size returns physical pixels; LogicalSize needs logical pixels.
-        await overlayWin.setSize(new LogicalSize(
-          monitor.size.width / scale,
-          monitor.size.height / scale,
-        ));
+        await overlayWin.setSize(new PhysicalSize(captureRegion.w, captureRegion.h));
         await overlayWin.setPosition(
-          new PhysicalPosition(monitor.position.x, monitor.position.y),
+          new PhysicalPosition(captureRegion.x, captureRegion.y),
         );
         await overlayWin.show();
         await overlayWin.setFocus();
         await emitTo("screenshot-overlay", "neuropen://screenshot-start", {
           snapshotBase64,
+          virtualBounds: captureRegion,
         });
         setStatusMsg(t("status.screenshotDragHint"));
       } else {
