@@ -2,12 +2,19 @@ import { Suspense, lazy, useRef, type Dispatch, type MouseEvent, type RefObject,
 import type { useI18n } from "../../i18n";
 import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
-import { formatModeAText, normalizePreviewMarkdown, normalizeStructuredText } from "../../utils/appText";
+import {
+  formatModeAText,
+  looksLikeMarkdown,
+  looksLikeMathMarkdown,
+  normalizePreviewMarkdown,
+  normalizeStructuredText,
+} from "../../utils/appText";
 import type { PreviewAttachment } from "../../utils/previewAttachments";
 
-// Markdown + KaTeX are preview-only heavy dependencies, so load them in a
-// separate chunk after the lightweight preview shell is already visible.
+// Plain text responses are common enough that the preview should not pay the markdown/math bundle
+// cost unless the output actually contains markdown syntax.
 const PreviewMarkdownRenderer = lazy(() => import("./PreviewMarkdownRenderer"));
+const PreviewMathMarkdownRenderer = lazy(() => import("./PreviewMathMarkdownRenderer"));
 
 function getAttachmentFormatLabel(attachment: PreviewAttachment) {
   const extensionIndex = attachment.name.lastIndexOf(".");
@@ -119,6 +126,8 @@ export default function PreviewWindowBody({
       : isModeCPreview
         ? normalizePreviewMarkdown(llmOutput)
         : llmOutput;
+  const usesMathMarkdown = looksLikeMathMarkdown(renderedOutput);
+  const usesMarkdown = usesMathMarkdown || looksLikeMarkdown(renderedOutput);
 
   return (
     <div
@@ -231,9 +240,17 @@ export default function PreviewWindowBody({
             ) : isLlmLoading && !hasOutput ? (
               <span className="text-gray-400">{t("preview.loading")}</span>
             ) : hasOutput ? (
-              <Suspense fallback={<div className="whitespace-pre-wrap">{renderedOutput}</div>}>
-                <PreviewMarkdownRenderer markdown={renderedOutput} />
-              </Suspense>
+              usesMarkdown ? (
+                <Suspense fallback={<div className="whitespace-pre-wrap">{renderedOutput}</div>}>
+                  {usesMathMarkdown ? (
+                    <PreviewMathMarkdownRenderer markdown={renderedOutput} />
+                  ) : (
+                    <PreviewMarkdownRenderer markdown={renderedOutput} />
+                  )}
+                </Suspense>
+              ) : (
+                <div className="whitespace-pre-wrap">{renderedOutput}</div>
+              )
             ) : (
               <span className="text-gray-400">{t("preview.empty")}</span>
             )}

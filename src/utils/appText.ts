@@ -218,8 +218,13 @@ export const stripWrappingQuotes = (text: string) => {
   return trimmed;
 };
 
-const looksLikeMarkdown = (text: string) =>
+export const looksLikeMarkdown = (text: string) =>
   /(^|\n)(#{1,6}\s|[-*+•]\s|\(?\d{1,3}[.)]\s|>\s|```|\|.+\|)/m.test(text);
+
+export const looksLikeMathMarkdown = (text: string) =>
+  /(^|[^\\])\$\$[\s\S]+?\$\$|(^|[^\\])\$[^$\n]+?\$|\\\((?:[\s\S]+?)\\\)|\\\[(?:[\s\S]+?)\\\]|\\begin\{[a-zA-Z*]+\}/m.test(
+    text,
+  );
 
 export const normalizePreviewMarkdown = (text: string) => {
   const normalized = text.replace(/\r\n?/g, "\n").trim();
