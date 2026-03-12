@@ -4,6 +4,7 @@ import { emit, emitTo } from "@tauri-apps/api/event";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
+import { cropScreenshotBase64 } from "../../utils/screenshotCrop";
 import { emitPreviewSession, showPreviewWindow } from "../../utils/previewWindow";
 import type { ErrorSetter, SafeRegister, StatusSetter, TranslateFn } from "./listenerTypes";
 
@@ -20,6 +21,16 @@ export async function registerScreenshotListeners({
   setStatusMsg,
   setSttError,
 }: RegisterScreenshotListenersParams) {
+  let cachedSnapshotBase64 = "";
+  let cachedVirtualBounds:
+    | {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+      }
+    | null = null;
+
   await safeRegister("hotkey://screenshot", async () => {
     const store = useAppStore.getState();
     if (store.isRecording) {
@@ -72,6 +83,8 @@ export async function registerScreenshotListeners({
         } catch (err) {
           console.warn("[App] virtual desktop snapshot for overlay failed:", err);
         }
+        cachedSnapshotBase64 = snapshotBase64;
+        cachedVirtualBounds = captureRegion;
         await overlayWin.setSize(new PhysicalSize(captureRegion.w, captureRegion.h));
         await overlayWin.setPosition(
           new PhysicalPosition(captureRegion.x, captureRegion.y),
@@ -99,6 +112,10 @@ export async function registerScreenshotListeners({
       if (overlayWin) {
         await overlayWin.hide().catch(() => {});
       }
+      const snapshotBase64 = cachedSnapshotBase64;
+      const snapshotBounds = cachedVirtualBounds;
+      cachedSnapshotBase64 = "";
+      cachedVirtualBounds = null;
       const store = useAppStore.getState();
       if (event.payload.cancelled) {
         setStatusMsg(t("status.screenshotCancelled"));
@@ -120,13 +137,28 @@ export async function registerScreenshotListeners({
       }
       setStatusMsg(t("status.screenshotCapturing"));
       try {
-        const shot = await mainWindowService.takeScreenshotRegion({
-          x: event.payload.x,
-          y: event.payload.y,
-          w: event.payload.w,
-          h: event.payload.h,
-        });
-        const imageBase64 = shot.base64Png ?? shot.base64_png ?? "";
+        let imageBase64 = "";
+        if (snapshotBase64 && snapshotBounds) {
+          try {
+            imageBase64 = await cropScreenshotBase64(snapshotBase64, snapshotBounds, {
+              x: event.payload.x,
+              y: event.payload.y,
+              w: event.payload.w,
+              h: event.payload.h,
+            });
+          } catch (cropErr) {
+            console.warn("[App] cached screenshot crop failed, falling back to live capture:", cropErr);
+          }
+        }
+        if (!imageBase64) {
+          const shot = await mainWindowService.takeScreenshotRegion({
+            x: event.payload.x,
+            y: event.payload.y,
+            w: event.payload.w,
+            h: event.payload.h,
+          });
+          imageBase64 = shot.base64Png ?? shot.base64_png ?? "";
+        }
         if (!imageBase64) {
           setStatusMsg(t("status.screenshotNoImage"));
           return;
