@@ -264,6 +264,7 @@ export default function Settings() {
 
     settingsService.getLaunchOnStartup()
       .then((enabled) => {
+        setLaunchOnStartup(enabled);
         setDraftLaunchOnStartup(enabled);
       })
       .catch(() => {});

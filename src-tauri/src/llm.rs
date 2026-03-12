@@ -1169,7 +1169,7 @@ pub async fn call_llm_with_images(
     })?;
     let full_output = normalize_math_output_if_needed(&raw_output, mode);
 
-    if !full_output.is_empty() {
+    if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         if stream_output {
             emit_output_stream(&app, &full_output).await;
         } else {
@@ -1178,7 +1178,9 @@ pub async fn call_llm_with_images(
             });
         }
     }
-    let _ = app.emit("llm://done", ());
+    if output_mode == OutputMode::PreviewStream {
+        let _ = app.emit("llm://done", ());
+    }
 
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         let mut guard = CONVERSATION_HISTORY.lock().unwrap();
