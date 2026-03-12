@@ -22,13 +22,17 @@ jobs:
       - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version-file: .nvmrc
+          cache: npm
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      - name: verify toolchain
+        run: npm run doctor
+
       - name: install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
         env:

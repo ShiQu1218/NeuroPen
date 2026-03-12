@@ -193,8 +193,8 @@ Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration â€
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://www.rust-lang.org/) toolchain (stable)
+- [Node.js](https://nodejs.org/) 24.14.0 (`.nvmrc`, npm 11.9.0)
+- [Rust](https://www.rust-lang.org/) 1.93.1 (`rust-toolchain.toml`)
 - Windows 10/11
 - [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)
 - (GPU build) [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) â€” only required when building with `local-stt-gpu`
@@ -206,12 +206,90 @@ Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration â€
 git clone https://github.com/your-username/NeuroPen.git
 cd NeuroPen
 
-# Install frontend dependencies
-npm install
+# Verify your local toolchain matches the repo
+npm run doctor
+
+# Install frontend dependencies from the lockfile
+npm ci
 
 # Run in development mode (with hot-reload)
 npm run tauri dev
 ```
+
+### Environment Consistency
+
+- Node is pinned via `.nvmrc`, and npm is pinned via the `packageManager` field in `package.json`
+- Rust is pinned via `rust-toolchain.toml`
+- Run `npm run doctor` before development or CI changes
+- Run `npm run doctor:gpu` before GPU-enabled builds to verify `VULKAN_SDK`
+
+### Recommended Workflows
+
+#### 1. Daily development
+
+Use this for normal feature work. No signing key is needed.
+
+```powershell
+npm run doctor
+npm ci
+npm run tauri dev
+```
+
+#### 2. Local test build (cloud / no local STT)
+
+Use this when you want a quick local executable for manual testing without signing.
+
+```powershell
+npm run doctor
+npm run build:exe
+```
+
+#### 3. Local CPU build (local STT without Vulkan)
+
+Use this when you want a local executable with Whisper support but do not need GPU acceleration.
+
+```powershell
+npm run doctor
+npm run build:exe:local-stt
+```
+
+#### 4. Local GPU build (local STT with Vulkan)
+
+Use this when you want a local executable with Whisper + Vulkan acceleration. `VULKAN_SDK` must be configured, but signing keys are still not part of the normal local workflow.
+
+```powershell
+npm run doctor:gpu
+npm run build:exe:gpu
+```
+
+These scripts use `tauri build --no-bundle` and default `CARGO_TARGET_DIR` to `C:\np-target`, so the app gets the built frontend assets and still avoids the `can't find crate` failure you hit from the full desktop path.
+
+If your machine still hits a Windows path-too-long issue, use `subst` as a fallback:
+
+```powershell
+subst T: "C:\Users\YourUsername\path\to\NeuroPen"
+cd T:\
+npm run doctor:gpu
+npm run build:exe:gpu
+```
+
+After the build finishes, launch:
+
+```powershell
+C:\np-target\release\neuropen.exe
+```
+
+You can keep using that exe across reboots. Rebuild only when you want a newer test build.
+
+#### 5. Signed release build
+
+Use this only for official installer/updater artifacts. The signing key and password should never be committed to the repository. Prefer GitHub Actions secrets for this workflow.
+
+- CI release: push a `v*` tag and let [release.yml](./.github/workflows/release.yml) read `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` from GitHub secrets
+- Local signed release from the project directory: export both variables in the current shell session, then run `npm run build:bundle`, `npm run build:bundle:local-stt`, or `npm run build:bundle:gpu`
+- Do not set those variables to empty strings; empty values are not valid signing credentials
+- These bundle scripts also set `CARGO_TARGET_DIR` to `C:\np-target`, so they avoid the `can't find crate` failure seen when running `npm run tauri build -- --features ...` directly from the full desktop path
+- `npm run tauri build` creates the NSIS installer and updater artifacts, so it requires valid signing credentials in this repository configuration
 
 ### Build
 
@@ -232,9 +310,9 @@ Three build modes are available:
 2. **Set environment variable**
 
    ```powershell
-   # PowerShell (permanent, requires admin)
+   # PowerShell (permanent for the current user)
    # Replace the version number with your installed version (e.g., 1.4.341.1)
-   setx VULKAN_SDK "C:\VulkanSDK\<YOUR_VERSION>" /M
+   setx VULKAN_SDK "C:\VulkanSDK\<YOUR_VERSION>"
    ```
 
    **Restart your terminal** after setting the variable.
@@ -265,6 +343,11 @@ Three build modes are available:
 Build output:
 - Executable: `src-tauri/target/release/neuropen.exe`
 - Installer (NSIS): `src-tauri/target/release/bundle/nsis/`
+
+### Output Types
+
+- Local executable only: use `npm run build:exe`, `npm run build:exe:local-stt`, or `npm run build:exe:gpu`, then run `C:\np-target\release\neuropen.exe`
+- Signed installer/updater bundle: use `npm run build:bundle`, `npm run build:bundle:local-stt`, or `npm run build:bundle:gpu`
 
 ### Key Technologies
 

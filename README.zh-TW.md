@@ -193,8 +193,8 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 
 ### Prerequisites / 環境需求
 
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://www.rust-lang.org/) toolchain (stable)
+- [Node.js](https://nodejs.org/) 24.14.0（`.nvmrc`，npm 11.9.0）
+- [Rust](https://www.rust-lang.org/) 1.93.1（`rust-toolchain.toml`）
 - Windows 10/11
 - [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/)
 - （GPU 加速建置）[Vulkan SDK](https://vulkan.lunarg.com/sdk/home) — 僅編譯 `local-stt-gpu` 時需要
@@ -206,12 +206,90 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 git clone https://github.com/your-username/NeuroPen.git
 cd NeuroPen
 
-# Install frontend dependencies
-npm install
+# Verify your local toolchain matches the repo
+npm run doctor
+
+# Install frontend dependencies from the lockfile
+npm ci
 
 # Run in development mode (with hot-reload)
 npm run tauri dev
 ```
+
+### Environment Consistency / 環境一致性
+
+- Node 版本由 `.nvmrc` 固定，npm 版本由 `package.json` 的 `packageManager` 固定
+- Rust 版本由 `rust-toolchain.toml` 固定
+- 開發前或調整 CI 前先執行 `npm run doctor`
+- 建置 GPU 版本前可執行 `npm run doctor:gpu` 檢查 `VULKAN_SDK`
+
+### Recommended Workflows / 建議開發流程
+
+#### 1. 日常開發
+
+平常開功能就用這個流程，不需要簽章金鑰。
+
+```powershell
+npm run doctor
+npm ci
+npm run tauri dev
+```
+
+#### 2. 本機測試 build（雲端 / 不含本地 STT）
+
+適合快速產生本機執行檔給自己測試，不走簽章流程。
+
+```powershell
+npm run doctor
+npm run build:exe
+```
+
+#### 3. 本機 CPU build（本地 STT，無 Vulkan）
+
+適合要測支援本地 Whisper 的本機執行檔，但不需要 GPU 加速時。
+
+```powershell
+npm run doctor
+npm run build:exe:local-stt
+```
+
+#### 4. 本機 GPU build（本地 STT + Vulkan）
+
+適合要測支援本地 Whisper Vulkan 加速的本機執行檔。這個流程需要先設定 `VULKAN_SDK`，但一般本機開發仍然不需要簽章金鑰。
+
+```powershell
+npm run doctor:gpu
+npm run build:exe:gpu
+```
+
+這幾個 script 會使用 `tauri build --no-bundle`，並預設把 `CARGO_TARGET_DIR` 設成 `C:\np-target`。這樣一方面會正確打包前端資產，另一方面也能縮短 Cargo 輸出路徑，避開你遇到的 `can't find crate` 類型錯誤。
+
+如果你的機器仍然遇到 Windows 路徑過長錯誤，再把 `subst` 當成備用方案：
+
+```powershell
+subst T: "C:\Users\YourUsername\path\to\NeuroPen"
+cd T:\
+npm run doctor:gpu
+npm run build:exe:gpu
+```
+
+build 完成後，直接執行：
+
+```powershell
+C:\np-target\release\neuropen.exe
+```
+
+這個 exe 可以跨重開機持續使用。只有你想要測試新的修改時，才需要重新 build。
+
+#### 5. 正式簽章 release build
+
+這個流程只給正式發版的 installer / updater 用。簽章私鑰和密碼不要提交到 repo，優先放在 GitHub Actions secrets。
+
+- CI 發版：push `v*` tag，讓 [release.yml](./.github/workflows/release.yml) 從 GitHub secrets 讀取 `TAURI_SIGNING_PRIVATE_KEY` 與 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- 本機在專案目錄簽章發版：只在目前 shell session 匯出這兩個環境變數，然後執行 `npm run build:bundle`、`npm run build:bundle:local-stt` 或 `npm run build:bundle:gpu`
+- 不要把這兩個環境變數設成空字串；空值不是有效的簽章憑證
+- 這些 bundle script 也會把 `CARGO_TARGET_DIR` 設成 `C:\np-target`，用來避開你直接在完整桌面路徑執行 `npm run tauri build -- --features ...` 時出現的 `can't find crate` 問題
+- 這個 repo 的 `npm run tauri build` 會產生 NSIS installer 與 updater artifacts，所以必須提供有效的簽章憑證
 
 ### Build / 建置
 
@@ -232,9 +310,9 @@ npm run tauri dev
 2. **設定環境變數**
 
    ```powershell
-   # PowerShell（永久設定，需管理員）
+   # PowerShell（永久設定到目前使用者）
    # 版本號請替換為你實際安裝的版本（如 1.4.341.1）
-   setx VULKAN_SDK "C:\VulkanSDK\<你的版本號>" /M
+   setx VULKAN_SDK "C:\VulkanSDK\<你的版本號>"
    ```
 
    設定後**重開終端機**讓變數生效。
@@ -265,6 +343,11 @@ npm run tauri dev
 Build output:
 - Executable: `src-tauri/target/release/neuropen.exe`
 - Installer (NSIS): `src-tauri/target/release/bundle/nsis/`
+
+### Output Types / 產物類型
+
+- 只要本機執行檔：使用 `npm run build:exe`、`npm run build:exe:local-stt` 或 `npm run build:exe:gpu`，然後執行 `C:\np-target\release\neuropen.exe`
+- 要正式簽章 installer / updater bundle：使用 `npm run build:bundle`、`npm run build:bundle:local-stt` 或 `npm run build:bundle:gpu`
 
 ### Key Technologies / 關鍵技術
 
