@@ -55,6 +55,12 @@ pub struct FocusInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct CursorInfo {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisteredHotkeys {
     pub trigger_hotkey: String,
@@ -183,6 +189,12 @@ fn restore_focus() -> bool {
 #[tauri::command]
 fn get_foreground_window_title() -> String {
     window_focus::get_foreground_window_title()
+}
+
+#[tauri::command]
+fn get_cursor_position() -> CursorInfo {
+    let (x, y) = selection::get_cursor_position();
+    CursorInfo { x, y }
 }
 
 /// Write text to clipboard (for "Copy" button in Preview Window).
@@ -445,6 +457,7 @@ pub fn run() {
             verify_focus,
             restore_focus,
             get_foreground_window_title,
+            get_cursor_position,
             copy_to_clipboard,
             restore_clipboard,
             load_attachment,

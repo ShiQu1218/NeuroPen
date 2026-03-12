@@ -26,6 +26,11 @@ export interface ScreenshotResponse {
   base64_png?: string;
 }
 
+export interface CursorPosition {
+  x: number;
+  y: number;
+}
+
 export interface RouteTranscriptResult {
   mode: string;
   transcript: string;
@@ -139,6 +144,7 @@ export const mainWindowService = {
       incognito,
     }),
   getForegroundWindowTitle: () => invoke<string>("get_foreground_window_title"),
+  getCursorPosition: () => invoke<CursorPosition>("get_cursor_position"),
   loadAttachment: (fileName: string, bytes: number[]) =>
     invoke<LoadedAttachment>("load_attachment", { fileName, bytes }),
   loadAttachmentsFromPaths: (paths: string[]) =>

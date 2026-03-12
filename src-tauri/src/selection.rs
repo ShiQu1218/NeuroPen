@@ -226,6 +226,16 @@ fn get_cursor_pos() -> (i32, i32) {
     }
 }
 
+#[cfg(target_os = "windows")]
+pub fn get_cursor_position() -> (i32, i32) {
+    get_cursor_pos()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_cursor_position() -> (i32, i32) {
+    (0, 0)
+}
+
 /// Returns true while left mouse button is pressed.
 #[cfg(target_os = "windows")]
 fn is_left_button_down() -> bool {

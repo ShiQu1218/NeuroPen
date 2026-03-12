@@ -1,4 +1,4 @@
-import { currentMonitor } from "@tauri-apps/api/window";
+import { availableMonitors, currentMonitor } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { emit, emitTo } from "@tauri-apps/api/event";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
@@ -32,7 +32,18 @@ export async function registerScreenshotListeners({
     }
     try {
       const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
-      const monitor = await currentMonitor();
+      const cursor = await mainWindowService.getCursorPosition().catch(() => null);
+      const monitors = await availableMonitors().catch(() => []);
+      const monitor =
+        (cursor
+          ? monitors.find(
+              (candidate) =>
+                cursor.x >= candidate.position.x &&
+                cursor.x < candidate.position.x + candidate.size.width &&
+                cursor.y >= candidate.position.y &&
+                cursor.y < candidate.position.y + candidate.size.height,
+            ) ?? null
+          : null) ?? await currentMonitor();
       if (overlayWin && monitor) {
         let snapshotBase64 = "";
         try {
