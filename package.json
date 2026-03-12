@@ -4,8 +4,9 @@
   "version": "0.2.2",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "generate:i18n": "node scripts/generate-i18n-locales.js",
+    "dev": "npm run generate:i18n && vite",
+    "build": "npm run generate:i18n && tsc && vite build",
     "test": "cargo test --quiet --manifest-path src-tauri\\Cargo.toml",
     "check": "npm run build && npm run test",
     "preview": "vite preview",
