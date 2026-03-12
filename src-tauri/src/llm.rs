@@ -225,14 +225,16 @@ fn build_prompt(
              The user has highlighted text and given an instruction. \
              If the instruction is a transformation request, output only the transformed text. \
              If the instruction is question-like, answer the question about the highlighted text directly. \
-             When answering, use clean Markdown with short paragraphs and bullets only when helpful. \
+             When answering, reply directly and clearly in natural text. \
+             Use short paragraphs or lists only when they genuinely help. \
              If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
              Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
         PromptMode::C => format!(
             "You are handling spoken assistant queries for Mode C. \
-             Reply in clean Markdown with Typeless-style readability: short paragraphs, meaningful bullet lists when useful, and no filler opening lines. \
-             Avoid unnecessary headings for simple answers, but structure longer answers clearly. \
+             Reply directly and clearly in natural text. \
+             Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, and avoid filler opening lines. \
+             Avoid unnecessary headings for simple answers, but structure longer answers clearly when needed. \
              If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
              Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
@@ -1157,7 +1159,8 @@ pub async fn call_llm_with_images(
         merge_prompt_override(
             format!(
                 "You are handling a Mode C image-attachment query. \
-                 Answer based on the image content in clean Markdown with short paragraphs and bullets only when useful. \
+                 Answer based on the image content directly and clearly in natural text. \
+                 Use short paragraphs or lists only when they genuinely help. \
                  If there are multiple images, use all of them and call out disagreements or comparisons explicitly. \
                  OCR may produce imperfect symbols, so normalize detected formulas into valid LaTeX. \
                  If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \

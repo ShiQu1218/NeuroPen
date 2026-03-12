@@ -42,6 +42,15 @@ export type { AppProfileMode } from "./appStoreTypes";
 export { DEFAULT_MODE_A_PROMPT, DEFAULT_MODE_B_PROMPT, DEFAULT_MODE_C_PROMPT } from "./appStoreTypes";
 export { normalizeLlmModelOptions } from "./appStoreDefaults";
 
+const LEGACY_MODE_B_PROMPT =
+  "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly in clean Markdown with short paragraphs and bullets only when they help. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.";
+
+const LEGACY_MODE_C_PROMPT =
+  "You are handling spoken assistant queries for Mode C. Reply in clean Markdown like a polished Typeless-style response: short paragraphs, meaningful bullet lists when useful, no filler opening lines, and no unnecessary headings for simple answers. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.";
+
+const normalizePersistedPrompt = (value: unknown, legacyValue: string, nextDefault: string) =>
+  typeof value === "string" && value.trim() === legacyValue ? nextDefault : value;
+
 interface AppState {
   // --- User preferences (persisted) ---
   wakeWord: string;
@@ -323,6 +332,16 @@ export const useAppStore = create<AppState>()(
       name: "neuropen-settings",
       merge: (persistedState, currentState) => {
         const persisted = (persistedState as Partial<AppState> | undefined) ?? {};
+        const normalizedModeBPrompt = normalizePersistedPrompt(
+          persisted.modeBPrompt,
+          LEGACY_MODE_B_PROMPT,
+          DEFAULT_MODE_B_PROMPT,
+        );
+        const normalizedModeCPrompt = normalizePersistedPrompt(
+          persisted.modeCPrompt,
+          LEGACY_MODE_C_PROMPT,
+          DEFAULT_MODE_C_PROMPT,
+        );
         const nextModel =
           typeof persisted.llmModel === "string" && persisted.llmModel.trim()
             ? persisted.llmModel.trim()
@@ -330,6 +349,8 @@ export const useAppStore = create<AppState>()(
         return {
           ...currentState,
           ...persisted,
+          modeBPrompt: typeof normalizedModeBPrompt === "string" ? normalizedModeBPrompt : currentState.modeBPrompt,
+          modeCPrompt: typeof normalizedModeCPrompt === "string" ? normalizedModeCPrompt : currentState.modeCPrompt,
           llmModel: nextModel,
           llmModelOptions: normalizeLlmModelOptions(
             Array.isArray(persisted.llmModelOptions) ? persisted.llmModelOptions : currentState.llmModelOptions,
