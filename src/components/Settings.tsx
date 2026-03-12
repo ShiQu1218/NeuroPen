@@ -264,6 +264,8 @@ export default function Settings() {
 
     settingsService.getLaunchOnStartup()
       .then((enabled) => {
+        // Sync the persisted store with the OS-level truth so the settings form
+        // does not appear dirty when the Windows Run key was changed elsewhere.
         setLaunchOnStartup(enabled);
         setDraftLaunchOnStartup(enabled);
       })

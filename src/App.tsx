@@ -1,44 +1,45 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
-import PreviewWindow from "./components/PreviewWindow";
-import QuickActionIcon from "./components/QuickActionIcon";
-import Settings from "./components/Settings";
-import RecordingIndicator from "./components/RecordingIndicator";
-import ScreenshotOverlay from "./components/ScreenshotOverlay";
-import { useMainWindowController } from "./hooks/useMainWindowController";
+// Each Tauri window renders through the same entry file, so lazy-load the
+// window-specific UI to keep unrelated windows out of the initial bundle.
+const MainWindowHost = lazy(() => import("./components/MainWindowHost"));
+const PreviewWindow = lazy(() => import("./components/PreviewWindow"));
+const QuickActionIcon = lazy(() => import("./components/QuickActionIcon"));
+const Settings = lazy(() => import("./components/Settings"));
+const RecordingIndicator = lazy(() => import("./components/RecordingIndicator"));
+const ScreenshotOverlay = lazy(() => import("./components/ScreenshotOverlay"));
 
 function App() {
-  const [windowLabel, setWindowLabel] = useState<string>("");
+  const [windowLabel] = useState(() => getCurrentWindow().label);
 
-  useEffect(() => {
-    setWindowLabel(getCurrentWindow().label);
-  }, []);
-
-  if (windowLabel === "main") {
-    return <MainWindow />;
-  }
-
+  let content: ReactNode = null;
   switch (windowLabel) {
+    case "main":
+      content = <MainWindowHost />;
+      break;
     case "preview":
-      return <PreviewWindow />;
+      content = <PreviewWindow />;
+      break;
     case "quick-action":
-      return <QuickActionIcon />;
+      content = <QuickActionIcon />;
+      break;
     case "settings":
-      return <Settings />;
+      content = <Settings />;
+      break;
     case "recording-indicator":
-      return <RecordingIndicator />;
+      content = <RecordingIndicator />;
+      break;
     case "screenshot-overlay":
-      return <ScreenshotOverlay />;
+      content = <ScreenshotOverlay />;
+      break;
     default:
-      return null;
+      content = null;
+      break;
   }
-}
 
-function MainWindow() {
-  useMainWindowController();
-  return null;
+  return <Suspense fallback={null}>{content}</Suspense>;
 }
 
 export default App;

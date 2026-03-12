@@ -34,6 +34,8 @@ export async function registerScreenshotListeners({
       const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
       const cursor = await mainWindowService.getCursorPosition().catch(() => null);
       const monitors = await availableMonitors().catch(() => []);
+      // On multi-monitor setups, open the overlay on the monitor that currently
+      // holds the pointer instead of whichever display the hidden main window uses.
       const monitor =
         (cursor
           ? monitors.find(

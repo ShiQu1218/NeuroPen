@@ -1169,6 +1169,8 @@ pub async fn call_llm_with_images(
     })?;
     let full_output = normalize_math_output_if_needed(&raw_output, mode);
 
+    // Image requests can also target DirectInject. Emit preview events only for
+    // preview sessions so direct-insert flows do not wake preview listeners.
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         if stream_output {
             emit_output_stream(&app, &full_output).await;

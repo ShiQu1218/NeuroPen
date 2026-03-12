@@ -193,6 +193,8 @@ fn get_foreground_window_title() -> String {
 
 #[tauri::command]
 fn get_cursor_position() -> CursorInfo {
+    // The frontend uses raw cursor coordinates to decide which monitor should
+    // host the screenshot overlay on multi-display setups.
     let (x, y) = selection::get_cursor_position();
     CursorInfo { x, y }
 }
