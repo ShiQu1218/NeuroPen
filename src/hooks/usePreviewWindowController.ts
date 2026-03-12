@@ -441,6 +441,51 @@ export function usePreviewWindowController() {
   }, [appendLoadedAttachments, setLlmError, showToast, t]);
 
   useEffect(() => {
+    let cancelled = false;
+    const unlistenFns: Array<() => void> = [];
+
+    void (async () => {
+      const win = getCurrentWindow();
+      const register = async (promise: Promise<() => void>) => {
+        const unlisten = await promise;
+        if (cancelled) {
+          unlisten();
+          return;
+        }
+        unlistenFns.push(unlisten);
+      };
+
+      await register(
+        win.onResized(() => {
+          suppressKeyboardCopy(1200);
+        })
+      );
+      await register(
+        win.onMoved(() => {
+          suppressKeyboardCopy(1200);
+        })
+      );
+      await register(
+        win.onScaleChanged(() => {
+          suppressKeyboardCopy(1200);
+        })
+      );
+      await register(
+        win.onFocusChanged(({ payload: focused }) => {
+          if (!focused) {
+            suppressKeyboardCopy(1200);
+          }
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+      unlistenFns.forEach((unlisten) => unlisten());
+    };
+  }, [suppressKeyboardCopy]);
+
+  useEffect(() => {
     if (!outputRef.current) {
       return;
     }
