@@ -50,6 +50,7 @@ export function usePreviewEventSync({
 
       await register<{ text: string }>("llm://token", (event) => {
         const currentState = useAppStore.getState();
+        // Record time-to-first-token once, then keep appending incremental output.
         if (currentState.llmOutput === "" && llmStartTime > 0) {
           currentState.setLlmDurationMs(Date.now() - llmStartTime);
         }
@@ -80,6 +81,8 @@ export function usePreviewEventSync({
         const startLoading = event.payload.startLoading ?? true;
         llmStartTime = startLoading ? Date.now() : 0;
         void invoke("clear_conversation");
+        // Every preview session starts from a known window size so old long answers
+        // do not leave the next session oversized before new content arrives.
         void (async () => {
           try {
             await getCurrentWindow().setSize(
@@ -203,6 +206,8 @@ export function usePreviewEventSync({
       });
 
       await register<{ imageBase64: string }>("neuropen://screenshot-attached", (event) => {
+        // Screenshot mode is attachment-first: the preview opens immediately and the
+        // user can ask a follow-up question without triggering an LLM call yet.
         setPreviewSession({
           type: "screenshot",
           selectedText: "",

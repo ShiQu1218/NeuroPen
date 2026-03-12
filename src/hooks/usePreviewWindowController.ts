@@ -43,6 +43,8 @@ function buildAttachmentInstruction(
   selectedText: string,
   attachments: PreviewAttachment[]
 ) {
+  // Flatten ephemeral preview attachments into one LLM instruction so the backend
+  // can stay stateless and providers only see a single prompt payload.
   if (attachments.length === 0) {
     return input;
   }
@@ -88,6 +90,8 @@ function buildAttachmentInstruction(
 function dedupeAttachments(attachments: PreviewAttachment[]) {
   const seen = new Set<string>();
   return attachments.filter((attachment) => {
+    // Use a short content fingerprint so repeated drag/drop or picker selections
+    // do not duplicate context while avoiding a full hash pass on large files.
     const identity =
       attachment.kind === "image"
         ? `${attachment.kind}:${attachment.name}:${attachment.base64Data.slice(0, 48)}`
@@ -212,10 +216,7 @@ export function usePreviewWindowController() {
     }, durationMs);
   }, []);
 
-  const showCopyToast = useCallback((_source = "unknown") => {
-    showToast(t("preview.copySuccess"));
-  }, [showToast, t]);
-
+  // Native window dragging can race with Ctrl+C on release, so keep keyboard copy blocked until pointer activity settles.
   const suppressKeyboardCopy = useCallback((durationMs = 800) => {
     keyboardCopyBlockedUntilRef.current = Math.max(
       keyboardCopyBlockedUntilRef.current,
@@ -251,6 +252,8 @@ export function usePreviewWindowController() {
       const instructionToSend = buildAttachmentInstruction(input, selectedText, attachments);
       const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
+      // Attachments are one-shot context for the current question. Clear them once
+      // the request is launched so follow-up refinements do not resend stale files.
       setPreviewSession((current) => clearPreviewAttachments(current));
       await emit("neuropen://llm-session-context", {
         mode: sourceMode,
@@ -303,6 +306,7 @@ export function usePreviewWindowController() {
 
   const handleAttachFile = useCallback(async () => {
     const win = getCurrentWindow();
+    // Drop always-on-top temporarily so the native picker can appear above the preview window.
     await win.setAlwaysOnTop(false).catch(() => { });
     await setPreviewFocusable(true, true);
     try {
@@ -441,6 +445,8 @@ export function usePreviewWindowController() {
     }
 
     outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    // Resize the preview to fit the rendered answer, but clamp it so long outputs
+    // switch to scrolling instead of growing past the monitor.
     const outputHeight = Math.max(
       60,
       outputContentRef.current?.scrollHeight ?? outputRef.current.scrollHeight,
@@ -461,7 +467,8 @@ export function usePreviewWindowController() {
 
   const handleCopy = useCallback(async () => {
     await invoke("copy_to_clipboard", { text: llmOutput });
-  }, [llmOutput]);
+    showToast(t("preview.copySuccess"));
+  }, [llmOutput, showToast, t]);
 
   const handleReplace = useCallback(async () => {
     const restored = await invoke<boolean>("restore_focus");
@@ -521,17 +528,14 @@ export function usePreviewWindowController() {
         return;
       }
       if (event.ctrlKey && event.key === "c" && !isEditableTarget && !window.getSelection()?.toString()) {
-        if (Date.now() < keyboardCopyBlockedUntilRef.current) {
+        if (
+          isDragInteractionLocked() ||
+          Date.now() < keyboardCopyBlockedUntilRef.current
+        ) {
           return;
         }
         event.preventDefault();
-        const sourceTarget =
-          target?.closest("[data-preview-role]")?.getAttribute("data-preview-role") ??
-          target?.tagName.toLowerCase() ??
-          "window";
-        void handleCopy().then(() => {
-          showCopyToast(`keyboard:${sourceTarget}`);
-        });
+        void handleCopy();
         return;
       }
       if (event.ctrlKey && event.key === "Enter") {
@@ -549,7 +553,7 @@ export function usePreviewWindowController() {
         void handleTtsToggle();
       }
     },
-    [handleClose, handleCopy, handleReplace, handleTtsToggle, showCopyToast]
+    [handleClose, handleCopy, handleReplace, handleTtsToggle, isDragInteractionLocked]
   );
 
   useEffect(() => {
@@ -585,9 +589,8 @@ export function usePreviewWindowController() {
     runPreviewInstruction,
     setPreviewFocusable,
     setRefinementInput,
-    showCopyToast,
-    sttDurationMs,
     suppressKeyboardCopy,
+    sttDurationMs,
     swallowDragRelease,
     t,
     toastMessage,

@@ -85,6 +85,7 @@ pub fn load_attachments_from_paths(paths: Vec<String>) -> Result<PickAttachments
 fn parse_attachment_batch(files: Vec<(String, Vec<u8>)>) -> PickAttachmentsResult {
     let mut attachments = Vec::with_capacity(files.len());
     let mut skipped_count = 0;
+    // Batch loading is best-effort so one unreadable file does not block the rest.
     for (file_name, bytes) in files {
         match parse_attachment(file_name, bytes) {
             Ok(attachment) => attachments.push(attachment),
@@ -106,6 +107,8 @@ fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachmen
         return Err("The selected file is empty.".to_string());
     }
 
+    // Normalize the visible name first so the frontend never receives path segments
+    // from drag/drop sources or native file pickers.
     let safe_file_name = Path::new(file_name.trim())
         .file_name()
         .and_then(|name| name.to_str())
@@ -126,6 +129,8 @@ fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachmen
     }
 
     if extension == "pdf" {
+        // PDFs are converted to plain text up front so the frontend can treat them
+        // the same as other text attachments when building LLM context.
         let extracted = pdf_extract::extract_text_from_mem(&bytes)
             .map_err(|err| format!("Failed to read PDF text: {err}"))?;
         let normalized = normalize_attachment_text(&extracted);
@@ -233,6 +238,8 @@ fn truncate_text(text: String, max_chars: usize) -> (String, bool) {
     if char_count <= max_chars {
         return (text, false);
     }
+    // Count Unicode scalar values instead of bytes so multibyte languages are not
+    // cut mid-character before being sent to the LLM.
     let truncated = text.chars().take(max_chars).collect::<String>();
     (truncated, true)
 }

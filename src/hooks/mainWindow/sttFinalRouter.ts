@@ -34,6 +34,8 @@ export async function registerSttFinalRouter({
   setSttError,
 }: RegisterSttFinalRouterParams) {
   await safeRegister<{ text: string }>("stt://final", async (event) => {
+    // This is the main mode handoff: raw final STT arrives here and then branches
+    // into direct injection, selected-text editing, or assistant-preview flows.
     const transcript = event.payload.text;
     if (import.meta.env.DEV) console.log("[App] stt://final:", transcript);
     if (!transcript.trim()) {
@@ -104,6 +106,8 @@ export async function registerSttFinalRouter({
         const modeAPromptOverride = buildPromptOverride(store.modeAPrompt, effectiveA.promptAppendix);
 
         if (canStreamModeAPreview && llmReady) {
+          // Stream directly into preview only when Mode A is doing exactly one LLM
+          // pass. Chaining refine + translate would make the visible partial output misleading.
           const instruction = shouldTranslate ? translateInstruction : refineInstruction;
           const preferredLanguage = shouldTranslate
             ? store.translationTarget
@@ -197,7 +201,8 @@ export async function registerSttFinalRouter({
           ? normalizeStructuredText(finalText)
           : formatModeAText(finalText);
 
-        // directPaste from profile: if true, force DirectInject even if global is PreviewStream
+        // A profile can opt a specific app back into direct paste even when the
+        // global Mode A behavior is preview-first.
         const shouldDirectPasteModeA = effectiveA.directPaste === true;
         if (effectiveOutputModeA === "PreviewStream" && !shouldDirectPasteModeA) {
           store.setLastSelectedText(finalText);
@@ -257,6 +262,8 @@ export async function registerSttFinalRouter({
           setStatusMsg(t("status.incognitoNoLlm"));
           return;
         }
+        // Mode B2 always preserves the original selected text separately and sends
+        // the spoken instruction as the transformation request.
         const effectiveB2 = resolveEffectiveProfile(store, windowTitle, "B2");
         const modeBPromptOverride = buildPromptOverride(store.modeBPrompt, effectiveB2.promptAppendix);
 
@@ -289,6 +296,8 @@ export async function registerSttFinalRouter({
           setStatusMsg(t("status.incognitoNoLlm"));
           return;
         }
+        // Mode C treats the transcript as a standalone assistant query with no
+        // source text, so output mode comes entirely from the effective profile.
         const effectiveC = resolveEffectiveProfile(store, windowTitle, "C");
         const modeCPromptOverride = buildPromptOverride(store.modeCPrompt, effectiveC.promptAppendix);
         const effectiveOutputModeC = effectiveC.outputMode;

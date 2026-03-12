@@ -65,6 +65,8 @@ export function useMainWindowController() {
     };
 
     const stopRecordingNow = async () => {
+      // Keep every stop path here so hotkey release, early aborts, and failures
+      // all reset recording state and status text the same way.
       const store = useAppStore.getState();
       if (!store.isRecording) return;
       try {
@@ -105,11 +107,15 @@ export function useMainWindowController() {
       const store = useAppStore.getState();
       try {
         await mainWindowService.startRecording();
+        // Partial STT is best-effort UI feedback; final routing still comes from the
+        // stop-recording transcription path even if streaming startup fails.
         void mainWindowService.startStreamingStt(
           sttEngine,
           sttEngine !== "openAi" ? store.sttModelPath : "",
         ).catch((err) => console.warn("[App] streaming STT start failed:", err));
         store.setIsRecording(true);
+        // If the key was released while startup was still in flight, stop immediately
+        // after capture begins so the press-and-hold interaction still feels correct.
         if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
           await stopRecordingNow();
         } else {
@@ -130,6 +136,8 @@ export function useMainWindowController() {
       store.setCurrentMode("B2");
       setStatusMsg(tLive("status.selectionRecording"));
 
+      // Hide the quick-action window once we commit to spoken follow-up so the
+      // selection workflow has a single active surface.
       const qaWin = await WebviewWindow.getByLabel("quick-action");
       if (qaWin) {
         selectionState.qaInteracting = false;
@@ -232,6 +240,8 @@ export function useMainWindowController() {
       await safeRegister("llm://done", () => {
         const s = useAppStore.getState();
         if (s.llmOutput.trim() && !s.incognito && s.historyEnabled) {
+          // Preview sessions can finish without direct injection, so persist the
+          // generated result here when the backend signals completion.
           const mode = s.currentMode || "C";
           void mainWindowService.historySave({
             mode,

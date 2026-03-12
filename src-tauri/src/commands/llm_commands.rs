@@ -8,6 +8,8 @@ pub struct ImageAttachmentInput {
 }
 
 /// Call the LLM with streaming and emit token events.
+/// All command entry points here normalize frontend-friendly inputs and then
+/// delegate to `llm.rs`, which owns provider routing and output behavior.
 #[tauri::command]
 pub async fn call_llm(
     app: tauri::AppHandle,
@@ -125,6 +127,8 @@ pub async fn call_llm_with_images(
     } else {
         stt::get_api_key()?
     };
+    // Borrow the decoded payload fields so the shared LLM layer can accept the
+    // same `&[(&str, &str)]` shape from single-image and multi-image callers.
     llm::call_llm_with_images(
         &api_key,
         &images

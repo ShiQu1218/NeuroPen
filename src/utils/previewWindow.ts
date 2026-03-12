@@ -47,6 +47,8 @@ export const openAssistantDialog = async () => {
 
   const isVisible = await previewWin.isVisible().catch(() => false);
   if (!isVisible) {
+    // Seed an empty Mode C session before focusing the window so the input box and
+    // preview state are ready even when the dialog is opened without prior output.
     await emitPreviewSession({
       sessionType: "text",
       sourceMode: "C",
@@ -74,6 +76,8 @@ export const showPreviewWindow = async (options: ShowPreviewWindowOptions = {}) 
   }
 
   if (options.position) {
+    // Preview position requests come from cursor-relative flows, so clamp them
+    // against monitor bounds before showing the window.
     const previewSize = await previewWin.outerSize();
     const width = previewSize.width || options.size?.width || 0;
     const height = previewSize.height || options.size?.height || 0;

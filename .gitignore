@@ -39,6 +39,8 @@ env/
 
 # Application specific
 .claude/
+.tmp-gitcfg
+.tmp-home/
 
 # Tauri signing keys
 ~/.tauri/

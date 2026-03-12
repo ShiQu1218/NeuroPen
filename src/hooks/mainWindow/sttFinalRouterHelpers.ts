@@ -33,6 +33,8 @@ export const isLikelyAuthError = (err: unknown) =>
   /(401|unauthorized|api\s*key|authentication|invalid key)/i.test(String(err));
 
 export const createLlmRequestStateReset = (store: AppStoreSnapshot) => (selectedText: string, instruction: string) => {
+  // Normalize the preview/LLM store before every new request so stale output and
+  // metadata from the previous mode cannot leak into the next one.
   store.setLlmOutput("");
   store.setIsLlmLoading(true);
   store.setLlmError("");
@@ -51,6 +53,8 @@ export const resolveEffectiveProfile = (
   windowTitle: string,
   mode: AppProfileMode,
 ): EffectiveProfile => {
+  // Profiles can override the global language, prompt appendix, and output mode
+  // based on the foreground app, but the global settings remain the fallback.
   const profile = store.contextAwareTone
     ? resolveAppProfile(windowTitle, store.appProfiles, mode)
     : null;
@@ -72,6 +76,8 @@ export const openPreviewTextSession = async (
   instruction: string,
   staticOutput?: string,
 ) => {
+  // Emit the session payload before showing the window so the preview UI opens
+  // with the correct mode metadata even if focus arrives immediately.
   await emitPreviewSession({
     sessionType: "text",
     sourceMode,

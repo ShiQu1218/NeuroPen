@@ -631,6 +631,8 @@ async fn call_ollama_streaming(
 }
 
 fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
+    // Several providers expose an OpenAI-compatible chat surface, so keep the
+    // transport code shared and only branch where the wire format differs.
     match provider {
         LlmProvider::OpenAi => Some("https://api.openai.com/v1/chat/completions"),
         LlmProvider::Grok => Some("https://api.x.ai/v1/chat/completions"),
@@ -691,6 +693,8 @@ async fn call_provider_preview_stream(
             call_ollama_streaming(chosen_model, system_prompt, user_message, app).await
         }
         _ => {
+            // Providers without a streaming API still flow through preview mode by
+            // emitting synthetic chunks from the completed response.
             let full_output =
                 call_provider(api_key, provider, chosen_model, system_prompt, user_message).await?;
             if !full_output.is_empty() {
@@ -725,7 +729,8 @@ pub async fn call_llm(
     );
     let chosen_model = resolve_model(model, &provider);
 
-    // In PreviewStream mode, include conversation history as context
+    // Preview conversations are multi-turn. Prefix prior turns only for preview
+    // requests so direct-inject flows stay single-shot and deterministic.
     let effective_user_message = if output_mode == OutputMode::PreviewStream {
         let history = {
             let guard = CONVERSATION_HISTORY.lock().unwrap();
@@ -748,6 +753,8 @@ pub async fn call_llm(
     let used_native_streaming =
         output_mode == OutputMode::PreviewStream && stream_output && !should_force_math_normalization;
 
+    // If the response must be post-processed for math formatting, wait for the full
+    // text first; otherwise streamed partials could expose unnormalized equations.
     let raw_output = if used_native_streaming {
         call_provider_preview_stream(
             api_key,
@@ -1145,6 +1152,8 @@ pub async fn call_llm_with_images(
     };
     let chosen_model = resolve_model(model, &provider);
 
+    // Multimodal requests currently normalize after the provider returns, so all
+    // image answers stream from the finalized text rather than provider-native chunks.
     let raw_output = call_provider_with_images(
         api_key,
         &provider,
