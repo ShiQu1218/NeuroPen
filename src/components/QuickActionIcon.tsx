@@ -34,7 +34,6 @@ export default function QuickActionIcon() {
   const [customInput, setCustomInput] = useState("");
   const [isInputFocused, setIsInputFocused] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hoverSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeRaf = useRef<number | null>(null);
   const dragLockUntil = useRef(0);
   const stableSelectionRef = useRef("");
@@ -131,9 +130,6 @@ export default function QuickActionIcon() {
       if (collapseTimer.current) {
         clearTimeout(collapseTimer.current);
       }
-      if (hoverSettleTimer.current) {
-        clearTimeout(hoverSettleTimer.current);
-      }
       if (fadeRaf.current !== null) {
         cancelAnimationFrame(fadeRaf.current);
       }
@@ -149,17 +145,18 @@ export default function QuickActionIcon() {
     void setWindowFocusable(false);
   }, [setWindowFocusable]);
 
-  const expand = useCallback(() => {
+  const clearCollapseTimer = useCallback(() => {
     if (collapseTimer.current) {
       clearTimeout(collapseTimer.current);
       collapseTimer.current = null;
     }
-    if (hoverSettleTimer.current) {
-      clearTimeout(hoverSettleTimer.current);
-      hoverSettleTimer.current = null;
-    }
+  }, []);
+
+  const expand = useCallback(() => {
+    clearCollapseTimer();
     if (!expanded) {
       setExpanded(true);
+      void setQaInteracting(true);
       void (async () => {
         try {
           const win = getCurrentWindow();
@@ -174,18 +171,21 @@ export default function QuickActionIcon() {
     }
   }, [expanded]);
 
-  const collapse = useCallback((force = false) => {
+  const scheduleCollapse = useCallback((force = false) => {
     if (Date.now() < dragLockUntil.current) return;
-    if (isInputFocused && !force) return;
-    if (collapseTimer.current) {
-      clearTimeout(collapseTimer.current);
-      collapseTimer.current = null;
-    }
-    if (hoverSettleTimer.current) {
-      clearTimeout(hoverSettleTimer.current);
-      hoverSettleTimer.current = null;
-    }
+    clearCollapseTimer();
     collapseTimer.current = setTimeout(() => {
+      collapseTimer.current = null;
+      if (Date.now() < dragLockUntil.current) {
+        return;
+      }
+      if (panelRef.current?.matches(":hover")) {
+        void setQaInteracting(true);
+        return;
+      }
+      if (isInputFocused && !force) {
+        return;
+      }
       setExpanded(false);
       setCustomInput("");
       void setWindowFocusable(false);
@@ -193,32 +193,8 @@ export default function QuickActionIcon() {
       getCurrentWindow()
         .setSize(new LogicalSize(ICON_SIZE.width, ICON_SIZE.height))
         .catch(() => { });
-    }, 80);
-  }, [isInputFocused, setQaInteracting, setWindowFocusable]);
-
-  useEffect(() => {
-    if (!expanded) {
-      return;
-    }
-
-    hoverSettleTimer.current = setTimeout(() => {
-      hoverSettleTimer.current = null;
-      const panelHovered = panelRef.current?.matches(":hover") ?? false;
-      if (panelHovered || isInputFocused) {
-        void setQaInteracting(true);
-        return;
-      }
-      void setQaInteracting(false);
-      collapse(true);
-    }, 140);
-
-    return () => {
-      if (hoverSettleTimer.current) {
-        clearTimeout(hoverSettleTimer.current);
-        hoverSettleTimer.current = null;
-      }
-    };
-  }, [collapse, expanded, isInputFocused, setQaInteracting]);
+    }, 180);
+  }, [clearCollapseTimer, isInputFocused, setQaInteracting, setWindowFocusable]);
 
   const showPreviewAndCallLlm = async (
     instruction: string,
@@ -339,13 +315,6 @@ export default function QuickActionIcon() {
       await getCurrentWindow().startDragging();
     } finally {
       dragLockUntil.current = Date.now() + 180;
-      if (!panelRef.current?.matches(":hover")) {
-        setTimeout(() => {
-          if (!panelRef.current?.matches(":hover")) {
-            collapse();
-          }
-        }, 120);
-      }
     }
   };
 
@@ -368,15 +337,12 @@ export default function QuickActionIcon() {
       ref={panelRef}
       className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm animate-scaleUp overflow-hidden h-screen"
       onMouseEnter={() => {
-        if (hoverSettleTimer.current) {
-          clearTimeout(hoverSettleTimer.current);
-          hoverSettleTimer.current = null;
-        }
+        clearCollapseTimer();
         void setQaInteracting(true);
       }}
       onMouseLeave={() => {
-        void setQaInteracting(false);
-        collapse(true);
+        void setQaInteracting(true);
+        scheduleCollapse();
       }}
     >
       <div
@@ -422,7 +388,7 @@ export default function QuickActionIcon() {
             setIsInputFocused(false);
             void setWindowFocusable(false);
             if (!panelRef.current?.matches(":hover")) {
-              collapse(true);
+              scheduleCollapse(true);
             }
           }}
           onKeyDown={(e) => {
