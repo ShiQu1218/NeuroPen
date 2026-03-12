@@ -1,0 +1,22 @@
+schema: spec-driven
+
+context: |
+  Product: NeuroPen, a Windows desktop AI voice assistant for any app.
+  Platform: Tauri v2 desktop application targeting Windows 10/11.
+  Frontend: React 19 + TypeScript + Zustand. A shared React entry renders different windows by Tauri window label.
+  Backend: Rust modules exposed through Tauri commands and event emitters.
+  Core capabilities: global hotkeys, selection-aware mode routing, STT, LLM prompting, screenshot-to-LLM, TTS, history, settings, and app profiles.
+  Architecture rule: use openspec/specs as the source of truth for current product behavior. Future work should modify existing capability specs or add new capability specs before implementation.
+  Documentation rule: write specs in clear English so contributors and AI agents can reuse them across locales.
+  Design rule: when a change spans both React and Rust, design docs must call out affected Tauri commands, emitted events, persistence boundaries, and window interactions.
+
+rules:
+  proposal:
+    - Include a short Non-goals section when the change could be confused with a broader refactor.
+    - Name affected capabilities using existing openspec/specs folder names whenever possible.
+  design:
+    - Describe cross-window event flow when the change affects hotkeys, preview, quick actions, or screenshot workflows.
+    - Call out privacy implications whenever user text, screenshots, audio, or history persistence changes.
+  tasks:
+    - Keep tasks vertically sliced so each checkbox leaves the app in a testable state.
+    - Include validation tasks when behavior affects both the frontend controller and Rust backend commands.
