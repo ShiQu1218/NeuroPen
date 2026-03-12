@@ -4,6 +4,7 @@ import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
 import {
   formatModeAText,
+  looksLikeGfmMarkdown,
   looksLikeMarkdown,
   looksLikeMathMarkdown,
   normalizePreviewMarkdown,
@@ -11,10 +12,12 @@ import {
 } from "../../utils/appText";
 import type { PreviewAttachment } from "../../utils/previewAttachments";
 
-// Plain text responses are common enough that the preview should not pay the markdown/math bundle
-// cost unless the output actually contains markdown syntax.
+// Plain text responses are common enough that the preview should not pay the markdown, GFM, and
+// math bundle cost unless the output actually uses those syntaxes.
 const PreviewMarkdownRenderer = lazy(() => import("./PreviewMarkdownRenderer"));
+const PreviewGfmMarkdownRenderer = lazy(() => import("./PreviewGfmMarkdownRenderer"));
 const PreviewMathMarkdownRenderer = lazy(() => import("./PreviewMathMarkdownRenderer"));
+const PreviewMathGfmMarkdownRenderer = lazy(() => import("./PreviewMathGfmMarkdownRenderer"));
 
 function getAttachmentFormatLabel(attachment: PreviewAttachment) {
   const extensionIndex = attachment.name.lastIndexOf(".");
@@ -127,6 +130,7 @@ export default function PreviewWindowBody({
         ? normalizePreviewMarkdown(llmOutput)
         : llmOutput;
   const usesMathMarkdown = looksLikeMathMarkdown(renderedOutput);
+  const usesGfmMarkdown = looksLikeGfmMarkdown(renderedOutput);
   const usesMarkdown = usesMathMarkdown || looksLikeMarkdown(renderedOutput);
 
   return (
@@ -242,8 +246,12 @@ export default function PreviewWindowBody({
             ) : hasOutput ? (
               usesMarkdown ? (
                 <Suspense fallback={<div className="whitespace-pre-wrap">{renderedOutput}</div>}>
-                  {usesMathMarkdown ? (
+                  {usesMathMarkdown && usesGfmMarkdown ? (
+                    <PreviewMathGfmMarkdownRenderer markdown={renderedOutput} />
+                  ) : usesMathMarkdown ? (
                     <PreviewMathMarkdownRenderer markdown={renderedOutput} />
+                  ) : usesGfmMarkdown ? (
+                    <PreviewGfmMarkdownRenderer markdown={renderedOutput} />
                   ) : (
                     <PreviewMarkdownRenderer markdown={renderedOutput} />
                   )}

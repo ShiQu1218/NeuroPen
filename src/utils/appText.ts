@@ -221,6 +221,11 @@ export const stripWrappingQuotes = (text: string) => {
 export const looksLikeMarkdown = (text: string) =>
   /(^|\n)(#{1,6}\s|[-*+•]\s|\(?\d{1,3}[.)]\s|>\s|```|\|.+\|)/m.test(text);
 
+export const looksLikeGfmMarkdown = (text: string) =>
+  /(^|\n)\|.+\|(?:\n|\r\n?)\|?(?:\s*:?-+:?\s*\|)+\s*$|(^|\n)\s*[-*+]\s+\[(?: |x|X)\]\s+|~~[^~\n][\s\S]*?~~|(^|[\s(])(https?:\/\/|www\.)\S+|(^|\n)\[\^[^\]]+\]|\n\[\^[^\]]+\]:/m.test(
+    text,
+  );
+
 export const looksLikeMathMarkdown = (text: string) =>
   /(^|[^\\])\$\$[\s\S]+?\$\$|(^|[^\\])\$[^$\n]+?\$|\\\((?:[\s\S]+?)\\\)|\\\[(?:[\s\S]+?)\\\]|\\begin\{[a-zA-Z*]+\}/m.test(
     text,
