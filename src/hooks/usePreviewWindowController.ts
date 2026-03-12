@@ -120,6 +120,7 @@ export function usePreviewWindowController() {
   const outputContentRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const toastTimerRef = useRef<number | null>(null);
+  const keyboardCopyBlockedUntilRef = useRef(0);
   const { t } = useI18n();
 
   const llmOutput = useAppStore((state) => state.llmOutput);
@@ -209,6 +210,17 @@ export function usePreviewWindowController() {
       setToastMessage("");
       toastTimerRef.current = null;
     }, durationMs);
+  }, []);
+
+  const showCopyToast = useCallback((_source = "unknown") => {
+    showToast(t("preview.copySuccess"));
+  }, [showToast, t]);
+
+  const suppressKeyboardCopy = useCallback((durationMs = 800) => {
+    keyboardCopyBlockedUntilRef.current = Math.max(
+      keyboardCopyBlockedUntilRef.current,
+      Date.now() + durationMs
+    );
   }, []);
 
   const appendLoadedAttachments = useCallback((loadedAttachments: LoadedAttachment[]) => {
@@ -449,8 +461,7 @@ export function usePreviewWindowController() {
 
   const handleCopy = useCallback(async () => {
     await invoke("copy_to_clipboard", { text: llmOutput });
-    showToast(t("preview.copySuccess"));
-  }, [llmOutput, showToast, t]);
+  }, [llmOutput]);
 
   const handleReplace = useCallback(async () => {
     const restored = await invoke<boolean>("restore_focus");
@@ -510,8 +521,17 @@ export function usePreviewWindowController() {
         return;
       }
       if (event.ctrlKey && event.key === "c" && !isEditableTarget && !window.getSelection()?.toString()) {
+        if (Date.now() < keyboardCopyBlockedUntilRef.current) {
+          return;
+        }
         event.preventDefault();
-        void handleCopy();
+        const sourceTarget =
+          target?.closest("[data-preview-role]")?.getAttribute("data-preview-role") ??
+          target?.tagName.toLowerCase() ??
+          "window";
+        void handleCopy().then(() => {
+          showCopyToast(`keyboard:${sourceTarget}`);
+        });
         return;
       }
       if (event.ctrlKey && event.key === "Enter") {
@@ -529,7 +549,7 @@ export function usePreviewWindowController() {
         void handleTtsToggle();
       }
     },
-    [handleClose, handleCopy, handleReplace, handleTtsToggle]
+    [handleClose, handleCopy, handleReplace, handleTtsToggle, showCopyToast]
   );
 
   useEffect(() => {
@@ -565,7 +585,9 @@ export function usePreviewWindowController() {
     runPreviewInstruction,
     setPreviewFocusable,
     setRefinementInput,
+    showCopyToast,
     sttDurationMs,
+    suppressKeyboardCopy,
     swallowDragRelease,
     t,
     toastMessage,

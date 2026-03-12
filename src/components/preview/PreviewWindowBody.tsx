@@ -51,7 +51,9 @@ interface PreviewWindowBodyProps {
   runPreviewInstruction: (instruction: string) => Promise<void>;
   setPreviewFocusable: (focusable: boolean, focus?: boolean) => Promise<void>;
   setRefinementInput: Dispatch<SetStateAction<string>>;
+  showCopyToast: (source: string) => void;
   sttDurationMs: number;
+  suppressKeyboardCopy: (durationMs?: number) => void;
   swallowDragRelease: (event: MouseEvent<HTMLElement>) => void;
   t: ReturnType<typeof useI18n>["t"];
   toastMessage: string;
@@ -85,12 +87,20 @@ export default function PreviewWindowBody({
   runPreviewInstruction,
   setPreviewFocusable,
   setRefinementInput,
+  showCopyToast,
   sttDurationMs,
+  suppressKeyboardCopy,
   swallowDragRelease,
   t,
   toastMessage,
 }: PreviewWindowBodyProps) {
-  const copyPointerArmedRef = useRef(false);
+  const copyGestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const lastPointerRoleRef = useRef("unknown");
   const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
   const isModeALlmPreview = isModeAPreview && !!previewSession?.instruction.trim();
   const isModeCPreview =
@@ -121,17 +131,37 @@ export default function PreviewWindowBody({
       onMouseUpCapture={swallowDragRelease}
       onClickCapture={swallowDragRelease}
       onPointerDownCapture={(event) => {
-        if (!(event.target as HTMLElement).closest('[data-preview-action="copy"]')) {
-          copyPointerArmedRef.current = false;
+        const target = event.target as HTMLElement;
+        const role =
+          target.closest("[data-preview-role]")?.getAttribute("data-preview-role") ??
+          target.tagName.toLowerCase();
+        lastPointerRoleRef.current = role;
+        suppressKeyboardCopy(role === "copy" ? 250 : 900);
+      }}
+      onPointerMoveCapture={(event) => {
+        if (event.buttons !== 0) {
+          suppressKeyboardCopy(900);
         }
       }}
+      onPointerUpCapture={() => {
+        suppressKeyboardCopy(500);
+      }}
+      onPointerCancelCapture={() => {
+        suppressKeyboardCopy(900);
+      }}
+      onWheelCapture={() => {
+        suppressKeyboardCopy(900);
+      }}
       onMouseDownCapture={(event) => {
-        if ((event.target as HTMLElement).closest("button,input,textarea")) {
+        const target = event.target as HTMLElement;
+        if (target.closest("button,input,textarea,a,[role='button']")) {
           void setPreviewFocusable(true, true);
+          return;
         }
       }}
     >
       <div
+        data-preview-role="header"
         className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"
         onMouseDown={(event) => {
           if ((event.target as HTMLElement).closest("button")) return;
@@ -201,6 +231,7 @@ export default function PreviewWindowBody({
       <div className="flex-1 min-h-0 flex flex-col">
         <div
           ref={outputRef}
+          data-preview-role="output"
           className="flex-1 min-h-0 overflow-auto p-4 text-sm border-b border-zinc-200 bg-zinc-50/80 preview-markdown"
         >
           <div ref={outputContentRef}>
@@ -219,7 +250,10 @@ export default function PreviewWindowBody({
         </div>
 
         {attachments.length > 0 && (
-          <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80 max-h-32 overflow-y-auto">
+          <div
+            data-preview-role="attachments"
+            className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80 max-h-32 overflow-y-auto"
+          >
             <div className="flex flex-col gap-2">
               {attachments.map((attachment, index) => (
                 <div
@@ -257,7 +291,10 @@ export default function PreviewWindowBody({
         )}
 
         {quickActionCommands.length > 0 && (
-          <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70 max-h-28 overflow-y-auto">
+          <div
+            data-preview-role="quick-actions"
+            className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70 max-h-28 overflow-y-auto"
+          >
             <div className="text-[11px] font-medium text-zinc-500 mb-1.5">{t("preview.quickActions")}</div>
             <div className="flex flex-wrap gap-1.5">
               {quickActionCommands.map((command) => (
@@ -278,7 +315,10 @@ export default function PreviewWindowBody({
         )}
       </div>
 
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
+      <div
+        data-preview-role="composer"
+        className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70"
+      >
         <button
           className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           disabled={isLlmLoading}
@@ -294,6 +334,7 @@ export default function PreviewWindowBody({
         </button>
         <input
           ref={inputRef}
+          data-preview-role="input"
           className="flex-1 input-field px-2.5 py-1.5 text-sm"
           placeholder={refinementPlaceholder}
           value={refinementInput}
@@ -315,33 +356,53 @@ export default function PreviewWindowBody({
         </button>
       </div>
 
-      <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80">
-        <button
+      <div
+        data-preview-role="actions"
+        className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80"
+      >
+        <div
+          role="button"
+          data-preview-role="copy"
+          aria-disabled={!hasOutput}
           className="btn-secondary px-3 py-1.5 text-xs"
-          disabled={!hasOutput}
-          data-preview-action="copy"
-          onPointerDown={() => {
-            copyPointerArmedRef.current = true;
+          tabIndex={-1}
+          onPointerDown={(event) => {
+            if (!hasOutput || isDragInteractionLocked()) return;
+            copyGestureRef.current = {
+              pointerId: event.pointerId,
+              startX: event.clientX,
+              startY: event.clientY,
+              moved: false,
+            };
+            event.preventDefault();
+          }}
+          onPointerMove={(event) => {
+            const gesture = copyGestureRef.current;
+            if (!gesture || gesture.pointerId !== event.pointerId) return;
+            if (Math.abs(event.clientX - gesture.startX) > 6 || Math.abs(event.clientY - gesture.startY) > 6) {
+              gesture.moved = true;
+            }
           }}
           onPointerCancel={() => {
-            copyPointerArmedRef.current = false;
+            copyGestureRef.current = null;
           }}
           onPointerLeave={() => {
-            copyPointerArmedRef.current = false;
+            const gesture = copyGestureRef.current;
+            if (gesture) {
+              gesture.moved = true;
+            }
           }}
-          onBlur={() => {
-            copyPointerArmedRef.current = false;
-          }}
-          onClick={() => {
-            if (!copyPointerArmedRef.current) return;
-            copyPointerArmedRef.current = false;
-            if (isDragInteractionLocked()) return;
-            void handleCopy();
+          onPointerUp={async (event) => {
+            const gesture = copyGestureRef.current;
+            copyGestureRef.current = null;
+            if (!gesture || gesture.pointerId !== event.pointerId || gesture.moved) return;
+            await handleCopy();
+            showCopyToast(`button:pointer=${lastPointerRoleRef.current}`);
           }}
           title="Ctrl+C"
         >
           {t("preview.copy")}
-        </button>
+        </div>
         <button
           className="btn-primary px-3 py-1.5 text-xs"
           disabled={!hasOutput || isLlmLoading}
