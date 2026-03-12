@@ -16,6 +16,12 @@ export interface PreviewSession {
   sourceMode: PreviewSourceMode;
   instruction: string;
   attachments: PreviewAttachment[];
+  promptAppendix: string;
+  requestId: string;
+  preferenceCategoryKey: string;
+  preferenceCategoryLabel: string;
+  quickActionCommandId?: string;
+  feedbackRating: "up" | "down" | null;
 }
 
 interface UsePreviewEventSyncOptions {
@@ -48,8 +54,15 @@ export function usePreviewEventSync({
         }
       };
 
-      await register<{ text: string }>("llm://token", (event) => {
+      await register<{ text: string; requestId?: string }>("llm://token", (event) => {
         const currentState = useAppStore.getState();
+        if (
+          event.payload.requestId &&
+          currentState.currentRequestId &&
+          event.payload.requestId !== currentState.currentRequestId
+        ) {
+          return;
+        }
         // Record time-to-first-token once, then keep appending incremental output.
         if (currentState.llmOutput === "" && llmStartTime > 0) {
           currentState.setLlmDurationMs(Date.now() - llmStartTime);
@@ -57,16 +70,30 @@ export function usePreviewEventSync({
         currentState.setLlmOutput(currentState.llmOutput + event.payload.text);
       });
 
-      await register("llm://done", () => {
+      await register<{ requestId?: string }>("llm://done", (event) => {
         const currentState = useAppStore.getState();
+        if (
+          event.payload?.requestId &&
+          currentState.currentRequestId &&
+          event.payload.requestId !== currentState.currentRequestId
+        ) {
+          return;
+        }
         if (llmStartTime > 0) {
           currentState.setLlmDurationMs(Date.now() - llmStartTime);
         }
         currentState.setIsLlmLoading(false);
       });
 
-      await register<{ message: string }>("llm://error", (event) => {
+      await register<{ message: string; requestId?: string }>("llm://error", (event) => {
         const currentState = useAppStore.getState();
+        if (
+          event.payload.requestId &&
+          currentState.currentRequestId &&
+          event.payload.requestId !== currentState.currentRequestId
+        ) {
+          return;
+        }
         currentState.setLlmError(event.payload.message);
         currentState.setIsLlmLoading(false);
       });
@@ -77,6 +104,11 @@ export function usePreviewEventSync({
         sessionType?: "text" | "screenshot";
         sourceMode?: PreviewSourceMode;
         startLoading?: boolean;
+        promptAppendix?: string;
+        requestId?: string;
+        preferenceCategoryKey?: string;
+        preferenceCategoryLabel?: string;
+        quickActionCommandId?: string;
       }>("neuropen://preview-session", (event) => {
         const startLoading = event.payload.startLoading ?? true;
         llmStartTime = startLoading ? Date.now() : 0;
@@ -101,6 +133,13 @@ export function usePreviewEventSync({
         currentState.setLastSelectedText(event.payload.selectedText ?? "");
         currentState.setLastInstruction(event.payload.instruction ?? "");
         currentState.setLlmDurationMs(0);
+        currentState.setCurrentRequestContext({
+          requestId: event.payload.requestId,
+          preferenceCategoryKey: event.payload.preferenceCategoryKey,
+          preferenceCategoryLabel: event.payload.preferenceCategoryLabel,
+          quickActionCommandId: event.payload.quickActionCommandId,
+        });
+        currentState.setCurrentFeedbackRating(null);
         if (event.payload.sessionType === "screenshot") {
           // Screenshot session starts with an attachment preview, not an LLM call yet.
           // Keep loading false even if the follow-up attachment event is delayed/missed.
@@ -111,6 +150,12 @@ export function usePreviewEventSync({
             sourceMode: "C",
             instruction: "",
             attachments: [],
+            promptAppendix: event.payload.promptAppendix ?? "",
+            requestId: event.payload.requestId ?? "",
+            preferenceCategoryKey: event.payload.preferenceCategoryKey ?? "",
+            preferenceCategoryLabel: event.payload.preferenceCategoryLabel ?? "",
+            quickActionCommandId: event.payload.quickActionCommandId,
+            feedbackRating: null,
           });
           return;
         }
@@ -120,6 +165,12 @@ export function usePreviewEventSync({
           sourceMode: event.payload.sourceMode ?? "C",
           instruction: event.payload.instruction ?? "",
           attachments: [],
+          promptAppendix: event.payload.promptAppendix ?? "",
+          requestId: event.payload.requestId ?? "",
+          preferenceCategoryKey: event.payload.preferenceCategoryKey ?? "",
+          preferenceCategoryLabel: event.payload.preferenceCategoryLabel ?? "",
+          quickActionCommandId: event.payload.quickActionCommandId,
+          feedbackRating: null,
         });
       });
 
@@ -145,6 +196,7 @@ export function usePreviewEventSync({
         ttsRate?: string;
         ttsPitch?: string;
         quickActionCommands?: QuickActionCommand[];
+        preferenceLearningEnabled?: boolean;
       }>("neuropen://settings-saved", (event) => {
         if (event.payload.llmProvider) {
           state.setLlmProvider(event.payload.llmProvider);
@@ -188,6 +240,9 @@ export function usePreviewEventSync({
         if (event.payload.quickActionCommands) {
           state.setQuickActionCommands(event.payload.quickActionCommands);
         }
+        if (typeof event.payload.preferenceLearningEnabled === "boolean") {
+          state.setPreferenceLearningEnabled(event.payload.preferenceLearningEnabled);
+        }
       });
 
       await register("tts://start", () => {
@@ -220,6 +275,12 @@ export function usePreviewEventSync({
             base64Data: event.payload.imageBase64 || "",
             source: "screenshot",
           }],
+          promptAppendix: "",
+          requestId: "",
+          preferenceCategoryKey: "",
+          preferenceCategoryLabel: "",
+          quickActionCommandId: undefined,
+          feedbackRating: null,
         });
         setAnimKey((key) => key + 1);
         const currentState = useAppStore.getState();

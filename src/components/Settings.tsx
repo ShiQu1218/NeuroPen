@@ -87,6 +87,7 @@ export default function Settings() {
     modeBStreamOutput, setModeBStreamOutput,
     translationTarget, setTranslationTarget,
     historyEnabled, setHistoryEnabled,
+    preferenceLearningEnabled, setPreferenceLearningEnabled,
     appProfiles, setAppProfiles,
   } = useAppStore();
   const { t } = useI18n();
@@ -188,6 +189,7 @@ export default function Settings() {
   const [draftQuickActionCommands, setDraftQuickActionCommands] = useState<QuickActionCommand[]>(quickActionCommands);
   const [draftLanguage, setDraftLanguage] = useState<AppLanguage>(language);
   const [draftHistoryEnabled, setDraftHistoryEnabled] = useState(historyEnabled);
+  const [draftPreferenceLearningEnabled, setDraftPreferenceLearningEnabled] = useState(preferenceLearningEnabled);
   const [draftAppProfiles, setDraftAppProfiles] = useState<AppProfile[]>(appProfiles);
   const [draftTranslationTarget, setDraftTranslationTarget] = useState<TranslationTarget>(translationTarget);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
@@ -345,6 +347,7 @@ export default function Settings() {
     setDraftQuickActionCommands(quickActionCommands);
     setDraftLanguage(language);
     setDraftHistoryEnabled(historyEnabled);
+    setDraftPreferenceLearningEnabled(preferenceLearningEnabled);
     setDraftAppProfiles(appProfiles);
     setDraftTranslationTarget(translationTarget);
   }, [
@@ -365,6 +368,7 @@ export default function Settings() {
     modeBStreamOutput,
     modeCPrompt,
     outputMode,
+    preferenceLearningEnabled,
     preferredLanguage,
     punctuationMode,
     quickActionCommands,
@@ -734,6 +738,7 @@ export default function Settings() {
       setQuickActionCommands(nextQuickActionCommands);
       setLanguage(draftLanguage);
       setHistoryEnabled(draftHistoryEnabled);
+      setPreferenceLearningEnabled(draftPreferenceLearningEnabled);
       setAppProfiles(draftAppProfiles);
       setTranslationTarget(nextTranslationTarget);
       await emit("neuropen://settings-saved", {
@@ -769,6 +774,7 @@ export default function Settings() {
         ttsPitch: draftTtsPitch,
         quickActionCommands: nextQuickActionCommands,
         historyEnabled: draftHistoryEnabled,
+        preferenceLearningEnabled: draftPreferenceLearningEnabled,
         appProfiles: draftAppProfiles,
         translationTarget: nextTranslationTarget,
       });
@@ -1064,6 +1070,7 @@ export default function Settings() {
             ttsRate: draftTtsRate,
             ttsPitch: draftTtsPitch,
             historyEnabled: draftHistoryEnabled,
+            preferenceLearningEnabled: draftPreferenceLearningEnabled,
             appProfiles: draftAppProfiles,
             translationTarget: draftSttOutputStrategy === "llmRefine" ? draftTranslationTarget : "off",
           });
@@ -1115,6 +1122,7 @@ export default function Settings() {
       draftLaunchOnStartup !== launchOnStartup ||
       draftLanguage !== language ||
       draftHistoryEnabled !== historyEnabled ||
+      draftPreferenceLearningEnabled !== preferenceLearningEnabled ||
       draftTranslationTarget !== translationTarget ||
       JSON.stringify(draftQuickActionCommands) !== JSON.stringify(quickActionCommands) ||
       JSON.stringify(draftAppProfiles) !== JSON.stringify(appProfiles),
@@ -1181,6 +1189,8 @@ export default function Settings() {
       language,
       draftHistoryEnabled,
       historyEnabled,
+      draftPreferenceLearningEnabled,
+      preferenceLearningEnabled,
       draftTranslationTarget,
       translationTarget,
       draftQuickActionCommands,
@@ -1375,7 +1385,11 @@ export default function Settings() {
             {activeSection === "history" && (
               <SettingsHistorySection
                 draftHistoryEnabled={draftHistoryEnabled}
-                onToggle={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
+                draftPreferenceLearningEnabled={draftPreferenceLearningEnabled}
+                onToggleHistory={() => setDraftHistoryEnabled(!draftHistoryEnabled)}
+                onTogglePreferenceLearning={() =>
+                  setDraftPreferenceLearningEnabled(!draftPreferenceLearningEnabled)
+                }
                 t={t}
               />
             )}

@@ -1,4 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  PreferenceFeedbackRating,
+  PreferenceSummaryView,
+} from "../utils/preferenceLearning";
 
 export interface RegisteredHotkeys {
   triggerHotkey: string;
@@ -49,6 +53,7 @@ export interface LlmCallPayload {
   promptMode: "A" | "B" | "C";
   promptOverride: string;
   streamOutput: boolean;
+  requestId?: string;
 }
 
 export interface LlmTextCallPayload {
@@ -70,6 +75,10 @@ export interface HistorySavePayload {
   output: string;
   provider: string;
   model: string;
+  requestId?: string;
+  preferenceCategoryKey?: string;
+  preferenceCategoryLabel?: string;
+  quickActionCommandId?: string;
 }
 
 export interface LoadedAttachmentImage {
@@ -114,6 +123,26 @@ export interface LlmImagesCallPayload {
   promptMode: string;
   promptOverride: string;
   streamOutput: boolean;
+  requestId?: string;
+}
+
+export interface PreferenceRatePayload {
+  [key: string]: unknown;
+  historyId?: string;
+  requestId: string;
+  rating: PreferenceFeedbackRating;
+  mode: string;
+  inputText: string;
+  instruction: string;
+  output: string;
+  outputProvider?: string;
+  outputModel?: string;
+  categoryKey: string;
+  categoryLabel: string;
+  quickActionCommandId?: string;
+  analysisProvider: string;
+  analysisModel: string;
+  appLanguage?: string;
 }
 
 export const mainWindowService = {
@@ -163,4 +192,13 @@ export const mainWindowService = {
       recordForUndo,
     }),
   historySave: (payload: HistorySavePayload) => invoke<void>("history_save", payload),
+  preferenceRateResult: (payload: PreferenceRatePayload) =>
+    invoke<void>("preference_rate_result", { payload }),
+  preferenceListSummaries: () =>
+    invoke<PreferenceSummaryView[]>("preference_list_summaries"),
+  preferenceGetSummary: (categoryKey: string) =>
+    invoke<string | null>("preference_get_summary", { categoryKey }),
+  preferenceClearSummary: (categoryKey: string) =>
+    invoke<boolean>("preference_clear_summary", { categoryKey }),
+  preferenceClearAll: () => invoke<void>("preference_clear_all"),
 };

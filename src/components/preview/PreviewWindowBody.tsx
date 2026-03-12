@@ -35,9 +35,13 @@ function getAttachmentFormatLabel(attachment: PreviewAttachment) {
 interface PreviewWindowBodyProps {
   attachments: PreviewAttachment[];
   animKey: number;
+  canRateOutput: boolean;
+  feedbackDisabledReason: string;
+  feedbackRating: "up" | "down" | null;
   handleAttachFile: () => Promise<void>;
   handleClose: () => Promise<void>;
   handleCopy: () => Promise<void>;
+  handleRateOutput: (rating: "up" | "down") => Promise<void>;
   handleRefinement: () => Promise<void>;
   handleRemoveAttachment: (index: number) => void;
   handleReplace: () => Promise<void>;
@@ -57,7 +61,10 @@ interface PreviewWindowBodyProps {
   previewSession: PreviewSession | null;
   quickActionCommands: QuickActionCommand[];
   refinementInput: string;
-  runPreviewInstruction: (instruction: string) => Promise<void>;
+  runPreviewInstruction: (
+    instruction: string,
+    options?: { command?: QuickActionCommand },
+  ) => Promise<void>;
   setPreviewFocusable: (focusable: boolean, focus?: boolean) => Promise<void>;
   setRefinementInput: Dispatch<SetStateAction<string>>;
   suppressKeyboardCopy: (durationMs?: number) => void;
@@ -70,9 +77,13 @@ interface PreviewWindowBodyProps {
 export default function PreviewWindowBody({
   attachments,
   animKey,
+  canRateOutput,
+  feedbackDisabledReason,
+  feedbackRating,
   handleAttachFile,
   handleClose,
   handleCopy,
+  handleRateOutput,
   handleRefinement,
   handleRemoveAttachment,
   handleReplace,
@@ -314,7 +325,7 @@ export default function PreviewWindowBody({
                   disabled={isLlmLoading}
                   onClick={() => {
                     if (isDragInteractionLocked()) return;
-                    void runPreviewInstruction(command.instruction);
+                    void runPreviewInstruction(command.instruction, { command });
                   }}
                 >
                   {command.label}
@@ -363,6 +374,50 @@ export default function PreviewWindowBody({
       </div>
 
       <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80">
+        <button
+          type="button"
+          disabled={!canRateOutput}
+          className={`px-2.5 py-1.5 text-xs rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            feedbackRating === "up"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+              : "border-zinc-200 bg-white text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50"
+          }`}
+          onClick={() => {
+            if (!canRateOutput || isDragInteractionLocked()) return;
+            void handleRateOutput("up");
+          }}
+          title={canRateOutput ? t("preview.feedbackUp") : feedbackDisabledReason}
+        >
+          <span className="inline-flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 10v12" />
+              <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.96 2.38l-1.34 7A2 2 0 0 1 18.49 21H5a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h2l5-6a2 2 0 0 1 3 1.88Z" />
+            </svg>
+            {t("preview.feedbackUp")}
+          </span>
+        </button>
+        <button
+          type="button"
+          disabled={!canRateOutput}
+          className={`px-2.5 py-1.5 text-xs rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+            feedbackRating === "down"
+              ? "border-rose-300 bg-rose-50 text-rose-700"
+              : "border-zinc-200 bg-white text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50"
+          }`}
+          onClick={() => {
+            if (!canRateOutput || isDragInteractionLocked()) return;
+            void handleRateOutput("down");
+          }}
+          title={canRateOutput ? t("preview.feedbackDown") : feedbackDisabledReason}
+        >
+          <span className="inline-flex items-center gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 14V2" />
+              <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.96-2.38l1.34-7A2 2 0 0 1 5.51 3H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2l-5 6a2 2 0 0 1-3-1.88Z" />
+            </svg>
+            {t("preview.feedbackDown")}
+          </span>
+        </button>
         <button
           type="button"
           disabled={!hasOutput}

@@ -6,6 +6,7 @@ mod hotkey;
 mod injection;
 mod llm;
 mod mode_router;
+mod preference_learning;
 mod screenshot;
 mod selection;
 mod stt;
@@ -22,6 +23,10 @@ use commands::attachment_commands::{load_attachment, load_attachments_from_paths
 use commands::llm_commands::{call_llm, call_llm_text, call_llm_with_image, call_llm_with_images, clear_conversation};
 use commands::media_commands::{
     take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop,
+};
+use commands::preference_commands::{
+    preference_clear_all, preference_clear_summary, preference_get_summary,
+    preference_list_summaries, preference_rate_result,
 };
 use commands::stt_commands::{
     cancel_local_stt_download, delete_local_stt_model, get_stt_capabilities, has_api_key,
@@ -494,6 +499,11 @@ pub fn run() {
             call_llm_with_image,
             call_llm_with_images,
             clear_conversation,
+            preference_rate_result,
+            preference_list_summaries,
+            preference_get_summary,
+            preference_clear_summary,
+            preference_clear_all,
             route_transcript,
             route_on_trigger,
             change_hotkey,

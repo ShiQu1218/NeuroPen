@@ -50,6 +50,7 @@ export interface SettingsSavedPayload {
   launchOnStartup?: boolean;
   quickActionCommands?: QuickActionCommand[];
   historyEnabled?: boolean;
+  preferenceLearningEnabled?: boolean;
   appProfiles?: AppProfile[];
   translationTarget?: TranslationTarget;
   screenshotHotkey?: string;
@@ -255,6 +256,9 @@ export function applySettingsSavedPayload(
   }
   if (typeof payload.historyEnabled === "boolean") {
     store.setHistoryEnabled(payload.historyEnabled);
+  }
+  if (typeof payload.preferenceLearningEnabled === "boolean") {
+    store.setPreferenceLearningEnabled(payload.preferenceLearningEnabled);
   }
   if (payload.appProfiles) {
     store.setAppProfiles(payload.appProfiles);

@@ -10,6 +10,13 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FeedbackRating {
+    Up,
+    Down,
+}
+
 /// One recorded interaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +39,16 @@ pub struct HistoryEntry {
     /// Whether the entry is favorited (exempt from auto-pruning)
     #[serde(default)]
     pub favorited: bool,
+    #[serde(default)]
+    pub request_id: Option<String>,
+    #[serde(default)]
+    pub feedback_rating: Option<FeedbackRating>,
+    #[serde(default)]
+    pub preference_category_key: Option<String>,
+    #[serde(default)]
+    pub preference_category_label: Option<String>,
+    #[serde(default)]
+    pub quick_action_command_id: Option<String>,
 }
 
 const MAX_ENTRIES: usize = 200;
@@ -119,6 +136,10 @@ pub fn save(
     output: &str,
     provider: &str,
     model: &str,
+    request_id: Option<&str>,
+    preference_category_key: Option<&str>,
+    preference_category_label: Option<&str>,
+    quick_action_command_id: Option<&str>,
 ) {
     let entry = HistoryEntry {
         id: unique_id(),
@@ -130,6 +151,23 @@ pub fn save(
         provider: provider.to_string(),
         model: model.to_string(),
         favorited: false,
+        request_id: request_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string()),
+        feedback_rating: None,
+        preference_category_key: preference_category_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string()),
+        preference_category_label: preference_category_label
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string()),
+        quick_action_command_id: quick_action_command_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string()),
     };
 
     let mut guard = lock_history();
@@ -159,6 +197,65 @@ pub fn delete(id: &str) -> bool {
         save_to_disk(entries);
     }
     removed
+}
+
+/// Update feedback metadata for an entry. Returns true if a matching entry was found.
+pub fn set_feedback(
+    id: Option<&str>,
+    request_id: Option<&str>,
+    feedback_rating: FeedbackRating,
+    preference_category_key: Option<&str>,
+    preference_category_label: Option<&str>,
+    quick_action_command_id: Option<&str>,
+) -> bool {
+    let trimmed_id = id.map(str::trim).filter(|value| !value.is_empty());
+    let trimmed_request_id = request_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if trimmed_id.is_none() && trimmed_request_id.is_none() {
+        return false;
+    }
+
+    let mut guard = lock_history();
+    let entries = ensure_loaded(&mut guard);
+    let mut updated = false;
+    for entry in entries.iter_mut() {
+        let matches_id = trimmed_id.is_some_and(|value| entry.id == value);
+        let matches_request_id = trimmed_request_id
+            .and_then(|value| entry.request_id.as_deref().map(|entry_request_id| entry_request_id == value))
+            .unwrap_or(false);
+        if !matches_id && !matches_request_id {
+            continue;
+        }
+
+        entry.feedback_rating = Some(feedback_rating);
+        if let Some(value) = trimmed_request_id {
+            entry.request_id = Some(value.to_string());
+        }
+        entry.preference_category_key = preference_category_key
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+            .or_else(|| entry.preference_category_key.clone());
+        entry.preference_category_label = preference_category_label
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+            .or_else(|| entry.preference_category_label.clone());
+        entry.quick_action_command_id = quick_action_command_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+            .or_else(|| entry.quick_action_command_id.clone());
+        updated = true;
+        break;
+    }
+
+    if updated {
+        save_to_disk(entries);
+    }
+
+    updated
 }
 
 /// Clear all history.
@@ -195,4 +292,39 @@ pub fn search(query: &str) -> Vec<HistoryEntry> {
         })
         .cloned()
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FeedbackRating, HistoryEntry};
+
+    #[test]
+    fn history_entry_deserializes_without_preference_fields() {
+        let legacy = r#"{
+          "id": "legacy-1",
+          "timestamp": 1710000000,
+          "mode": "C",
+          "inputText": "",
+          "instruction": "Explain this",
+          "output": "Answer",
+          "provider": "openAi",
+          "model": "gpt-4o-mini",
+          "favorited": false
+        }"#;
+
+        let entry: HistoryEntry = serde_json::from_str(legacy).expect("legacy history should deserialize");
+        assert_eq!(entry.request_id, None);
+        assert_eq!(entry.feedback_rating, None);
+        assert_eq!(entry.preference_category_key, None);
+        assert_eq!(entry.preference_category_label, None);
+        assert_eq!(entry.quick_action_command_id, None);
+    }
+
+    #[test]
+    fn feedback_rating_round_trips() {
+        let encoded = serde_json::to_string(&FeedbackRating::Up).expect("rating should serialize");
+        assert_eq!(encoded, "\"up\"");
+        let decoded: FeedbackRating = serde_json::from_str(&encoded).expect("rating should deserialize");
+        assert_eq!(decoded, FeedbackRating::Up);
+    }
 }

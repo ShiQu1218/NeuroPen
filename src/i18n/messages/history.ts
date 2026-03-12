@@ -15,7 +15,12 @@ export const historyMessages = {
     "history.unfavorite": "取消收藏",
     "history.noInstruction": "此紀錄沒有可用的指令",
     "history.filterAll": "全部",
-    "history.filterFavorites": "收藏"
+    "history.filterFavorites": "收藏",
+    "history.feedbackUp": "有幫助",
+    "history.feedbackDown": "沒幫助",
+    "history.preferenceDisabledIncognito": "Incognito 模式下不可記錄偏好",
+    "history.preferenceDisabledSetting": "請先啟用偏好學習",
+    "history.preferenceOther": "其他"
   },
   "en-US": {
     "history.searchPlaceholder": "Search history…",
@@ -33,7 +38,12 @@ export const historyMessages = {
     "history.unfavorite": "Unfavorite",
     "history.noInstruction": "No instruction available for this entry",
     "history.filterAll": "All",
-    "history.filterFavorites": "Favorites"
+    "history.filterFavorites": "Favorites",
+    "history.feedbackUp": "Helpful",
+    "history.feedbackDown": "Not helpful",
+    "history.preferenceDisabledIncognito": "Preference learning is disabled in incognito mode",
+    "history.preferenceDisabledSetting": "Enable preference learning first",
+    "history.preferenceOther": "Other"
   },
   "ja-JP": {
     "history.searchPlaceholder": "履歴を検索…",

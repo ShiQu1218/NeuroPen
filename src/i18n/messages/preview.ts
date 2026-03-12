@@ -27,7 +27,11 @@ export const previewMessages = {
     "preview.askAboutAttachment": "輸入你想問的檔案問題…",
     "preview.attachmentTruncated": "內容已截斷",
     "preview.attachmentReady": "附件已準備完成",
-    "preview.attachmentReadFailed": "讀取附件失敗"
+    "preview.attachmentReadFailed": "讀取附件失敗",
+    "preview.feedbackUp": "有幫助",
+    "preview.feedbackDown": "沒幫助",
+    "preview.preferenceDisabledIncognito": "Incognito 模式下不可記錄偏好",
+    "preview.preferenceDisabledSetting": "請先啟用偏好學習"
   },
   "en-US": {
     "preview.title": "NeuroPen Preview",
@@ -57,7 +61,11 @@ export const previewMessages = {
     "preview.askAboutAttachment": "Type your question about the file…",
     "preview.attachmentTruncated": "Content truncated",
     "preview.attachmentReady": "Attachment ready",
-    "preview.attachmentReadFailed": "Failed to read attachment"
+    "preview.attachmentReadFailed": "Failed to read attachment",
+    "preview.feedbackUp": "Helpful",
+    "preview.feedbackDown": "Not helpful",
+    "preview.preferenceDisabledIncognito": "Preference learning is disabled in incognito mode",
+    "preview.preferenceDisabledSetting": "Enable preference learning first"
   },
   "ja-JP": {
     "preview.title": "NeuroPen プレビュー",

@@ -12,12 +12,22 @@ export type PreviewSessionPayload =
     selectedText: string;
     instruction: string;
     startLoading?: boolean;
+    promptAppendix?: string;
+    requestId?: string;
+    preferenceCategoryKey?: string;
+    preferenceCategoryLabel?: string;
+    quickActionCommandId?: string;
   }
   | {
     sessionType: "screenshot";
     sourceMode: "C";
     selectedText: string;
     instruction: string;
+    promptAppendix?: string;
+    requestId?: string;
+    preferenceCategoryKey?: string;
+    preferenceCategoryLabel?: string;
+    quickActionCommandId?: string;
   };
 
 interface ShowPreviewWindowOptions {

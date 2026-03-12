@@ -2,7 +2,16 @@ import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { useI18n } from "../i18n";
+import { mainWindowService } from "../services/mainWindowService";
 import { useAppStore } from "../store/useAppStore";
+import {
+  buildOtherPreferenceCategory,
+  composePromptOverride,
+  generatePreferenceRequestId,
+  resolveHistoryPreferenceCategory,
+  resolveHistoryRequestId,
+  type PreferenceFeedbackRating,
+} from "../utils/preferenceLearning";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 
 interface HistoryEntry {
@@ -15,6 +24,11 @@ interface HistoryEntry {
   provider: string;
   model: string;
   favorited: boolean;
+  requestId?: string;
+  feedbackRating?: PreferenceFeedbackRating;
+  preferenceCategoryKey?: string;
+  preferenceCategoryLabel?: string;
+  quickActionCommandId?: string;
 }
 
 const MODE_LABELS: Record<string, string> = {
@@ -47,6 +61,9 @@ export default function HistoryPanel() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>("all");
   const { t } = useI18n();
+  const preferenceLearningEnabled = useAppStore((state) => state.preferenceLearningEnabled);
+  const incognito = useAppStore((state) => state.incognito);
+  const quickActionCommands = useAppStore((state) => state.quickActionCommands);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -87,17 +104,38 @@ export default function HistoryPanel() {
 
   const handleReExecute = async (entry: HistoryEntry) => {
     const state = useAppStore.getState();
-    const sourceMode = (entry.mode === "B1" || entry.mode === "B2") ? entry.mode : "C";
+    const sourceMode =
+      entry.mode === "A" || entry.mode === "B1" || entry.mode === "B2" || entry.mode === "C"
+        ? entry.mode
+        : "C";
     const promptMode = (entry.mode === "B1" || entry.mode === "B2") ? "B" : entry.mode === "A" ? "A" : "C";
+    const category = buildOtherPreferenceCategory(t("history.preferenceOther"));
+    const requestId = generatePreferenceRequestId();
+    const basePrompt =
+      promptMode === "B" ? state.modeBPrompt : promptMode === "A" ? state.modeAPrompt : state.modeCPrompt;
+    const learnedSummary =
+      state.preferenceLearningEnabled
+        ? await mainWindowService.preferenceGetSummary(category.key).catch(() => null)
+        : null;
+    const promptOverride = composePromptOverride(basePrompt, "", learnedSummary ?? "");
 
     // Set up session context
     state.setLastSelectedText(entry.inputText);
     state.setLastInstruction(entry.instruction);
+    state.setCurrentRequestContext({
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
+    });
+    state.setCurrentFeedbackRating(null);
 
     await emit("neuropen://llm-session-context", {
       mode: sourceMode,
       selectedText: entry.inputText,
       instruction: entry.instruction,
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
     });
 
     await emitPreviewSession({
@@ -105,6 +143,9 @@ export default function HistoryPanel() {
       sourceMode: sourceMode as "A" | "B1" | "B2" | "C",
       selectedText: entry.inputText,
       instruction: entry.instruction,
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
     });
     await showPreviewWindow({
       focusable: true,
@@ -113,7 +154,7 @@ export default function HistoryPanel() {
     });
 
     try {
-      await invoke("call_llm", {
+      await mainWindowService.callLlm({
         selectedText: entry.inputText,
         instruction: entry.instruction,
         outputMode: "PreviewStream",
@@ -121,8 +162,9 @@ export default function HistoryPanel() {
         model: state.llmModel,
         preferredLanguage: state.preferredLanguage,
         promptMode,
-        promptOverride: promptMode === "B" ? state.modeBPrompt : promptMode === "A" ? state.modeAPrompt : state.modeCPrompt,
+        promptOverride,
         streamOutput: true,
+        requestId,
       });
     } catch (err) {
       console.error("[History] re-execute call_llm failed:", err);
@@ -134,6 +176,8 @@ export default function HistoryPanel() {
     if (!entry.instruction) return;
 
     const state = useAppStore.getState();
+    const category = buildOtherPreferenceCategory(t("history.preferenceOther"));
+    const requestId = generatePreferenceRequestId();
 
     // Get current selection
     let selectedText = "";
@@ -150,11 +194,20 @@ export default function HistoryPanel() {
 
     state.setLastSelectedText(selectedText);
     state.setLastInstruction(entry.instruction);
+    state.setCurrentRequestContext({
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
+    });
+    state.setCurrentFeedbackRating(null);
 
     await emit("neuropen://llm-session-context", {
       mode: "B1",
       selectedText,
       instruction: entry.instruction,
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
     });
 
     await emitPreviewSession({
@@ -162,6 +215,9 @@ export default function HistoryPanel() {
       sourceMode: "B1",
       selectedText,
       instruction: entry.instruction,
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
     });
     await showPreviewWindow({
       focusable: true,
@@ -170,7 +226,11 @@ export default function HistoryPanel() {
     });
 
     try {
-      await invoke("call_llm", {
+      const learnedSummary =
+        state.preferenceLearningEnabled
+          ? await mainWindowService.preferenceGetSummary(category.key).catch(() => null)
+          : null;
+      await mainWindowService.callLlm({
         selectedText,
         instruction: entry.instruction,
         outputMode: "PreviewStream",
@@ -178,8 +238,9 @@ export default function HistoryPanel() {
         model: state.llmModel,
         preferredLanguage: state.preferredLanguage,
         promptMode: "B",
-        promptOverride: state.modeBPrompt,
+        promptOverride: composePromptOverride(state.modeBPrompt, "", learnedSummary ?? ""),
         streamOutput: state.modeBStreamOutput,
+        requestId,
       });
     } catch (err) {
       console.error("[History] apply-to-selection call_llm failed:", err);
@@ -205,6 +266,36 @@ export default function HistoryPanel() {
     };
 
     state.setQuickActionCommands([...existing, newCommand]);
+  };
+
+  const handleRate = async (entry: HistoryEntry, rating: PreferenceFeedbackRating) => {
+    if (!preferenceLearningEnabled || incognito || !entry.output.trim()) {
+      return;
+    }
+    const state = useAppStore.getState();
+    const category = resolveHistoryPreferenceCategory(
+      entry,
+      quickActionCommands,
+      t("history.preferenceOther"),
+    );
+    await mainWindowService.preferenceRateResult({
+      historyId: entry.id,
+      requestId: resolveHistoryRequestId({ id: entry.id, requestId: entry.requestId }),
+      rating,
+      mode: entry.mode,
+      inputText: entry.inputText,
+      instruction: entry.instruction,
+      output: entry.output,
+      outputProvider: entry.provider,
+      outputModel: entry.model,
+      categoryKey: category.key,
+      categoryLabel: category.label,
+      quickActionCommandId: category.quickActionCommandId,
+      analysisProvider: state.llmProvider,
+      analysisModel: state.llmModel,
+      appLanguage: state.language,
+    });
+    await loadHistory();
   };
 
   const displayedEntries = filter === "favorites"
@@ -328,6 +419,42 @@ export default function HistoryPanel() {
                   )}
                   {/* Action buttons */}
                   <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
+                    <button
+                      className={`text-[10px] ${
+                        entry.feedbackRating === "up"
+                          ? "text-emerald-600"
+                          : "text-zinc-400 hover:text-emerald-600"
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                      disabled={!preferenceLearningEnabled || incognito}
+                      onClick={() => void handleRate(entry, "up")}
+                      title={
+                        incognito
+                          ? t("history.preferenceDisabledIncognito")
+                          : !preferenceLearningEnabled
+                            ? t("history.preferenceDisabledSetting")
+                            : t("history.feedbackUp")
+                      }
+                    >
+                      {t("history.feedbackUp")}
+                    </button>
+                    <button
+                      className={`text-[10px] ${
+                        entry.feedbackRating === "down"
+                          ? "text-rose-600"
+                          : "text-zinc-400 hover:text-rose-600"
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                      disabled={!preferenceLearningEnabled || incognito}
+                      onClick={() => void handleRate(entry, "down")}
+                      title={
+                        incognito
+                          ? t("history.preferenceDisabledIncognito")
+                          : !preferenceLearningEnabled
+                            ? t("history.preferenceDisabledSetting")
+                            : t("history.feedbackDown")
+                      }
+                    >
+                      {t("history.feedbackDown")}
+                    </button>
                     <button
                       className="text-[10px] text-blue-600 hover:text-blue-800"
                       onClick={() => handleReExecute(entry)}

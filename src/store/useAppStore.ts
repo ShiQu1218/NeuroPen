@@ -88,6 +88,7 @@ interface AppState {
   modeBStreamOutput: boolean;
   translationTarget: TranslationTarget;
   historyEnabled: boolean;
+  preferenceLearningEnabled: boolean;
   appProfiles: AppProfile[];
 
   // --- Runtime state (not persisted) ---
@@ -108,6 +109,11 @@ interface AppState {
   sttDurationMs: number;
   llmDurationMs: number;
   pendingScreenshot: string;
+  currentRequestId: string;
+  currentPreferenceCategoryKey: string;
+  currentPreferenceCategoryLabel: string;
+  currentQuickActionCommandId: string;
+  currentFeedbackRating: "up" | "down" | null;
 
   // --- Actions ---
   setWakeWord: (word: string) => void;
@@ -157,12 +163,21 @@ interface AppState {
   setModeBStreamOutput: (enabled: boolean) => void;
   setTranslationTarget: (target: TranslationTarget) => void;
   setHistoryEnabled: (enabled: boolean) => void;
+  setPreferenceLearningEnabled: (enabled: boolean) => void;
   setAppProfiles: (profiles: AppProfile[]) => void;
   setIsTtsPlaying: (playing: boolean) => void;
   setPartialTranscript: (text: string) => void;
   setSttDurationMs: (ms: number) => void;
   setLlmDurationMs: (ms: number) => void;
   setPendingScreenshot: (base64: string) => void;
+  setCurrentRequestContext: (context: {
+    requestId?: string;
+    preferenceCategoryKey?: string;
+    preferenceCategoryLabel?: string;
+    quickActionCommandId?: string;
+  }) => void;
+  setCurrentFeedbackRating: (rating: "up" | "down" | null) => void;
+  clearCurrentRequestContext: () => void;
   resetSession: () => void;
 }
 
@@ -183,6 +198,11 @@ const SESSION_RUNTIME_RESET: Pick<
   | "sttDurationMs"
   | "llmDurationMs"
   | "pendingScreenshot"
+  | "currentRequestId"
+  | "currentPreferenceCategoryKey"
+  | "currentPreferenceCategoryLabel"
+  | "currentQuickActionCommandId"
+  | "currentFeedbackRating"
 > = {
   isRecording: false,
   selectedText: "",
@@ -199,6 +219,11 @@ const SESSION_RUNTIME_RESET: Pick<
   sttDurationMs: 0,
   llmDurationMs: 0,
   pendingScreenshot: "",
+  currentRequestId: "",
+  currentPreferenceCategoryKey: "",
+  currentPreferenceCategoryLabel: "",
+  currentQuickActionCommandId: "",
+  currentFeedbackRating: null,
 };
 
 export const useAppStore = create<AppState>()(
@@ -240,6 +265,7 @@ export const useAppStore = create<AppState>()(
       modeBStreamOutput: true,
       translationTarget: "off",
       historyEnabled: false,
+      preferenceLearningEnabled: false,
       appProfiles: DEFAULT_APP_PROFILES,
 
       isRecording: false,
@@ -259,6 +285,11 @@ export const useAppStore = create<AppState>()(
       sttDurationMs: 0,
       llmDurationMs: 0,
       pendingScreenshot: "",
+      currentRequestId: "",
+      currentPreferenceCategoryKey: "",
+      currentPreferenceCategoryLabel: "",
+      currentQuickActionCommandId: "",
+      currentFeedbackRating: null,
 
       setWakeWord: (word) => set({ wakeWord: word }),
       setSttModelPath: (path) => set({ sttModelPath: path }),
@@ -320,12 +351,29 @@ export const useAppStore = create<AppState>()(
       setModeBStreamOutput: (modeBStreamOutput) => set({ modeBStreamOutput }),
       setTranslationTarget: (target) => set({ translationTarget: target }),
       setHistoryEnabled: (enabled) => set({ historyEnabled: enabled }),
+      setPreferenceLearningEnabled: (enabled) => set({ preferenceLearningEnabled: enabled }),
       setAppProfiles: (profiles) => set({ appProfiles: profiles }),
       setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
       setPartialTranscript: (text) => set({ partialTranscript: text }),
       setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
       setLlmDurationMs: (ms) => set({ llmDurationMs: ms }),
       setPendingScreenshot: (base64) => set({ pendingScreenshot: base64 }),
+      setCurrentRequestContext: (context) =>
+        set({
+          currentRequestId: context.requestId?.trim() ?? "",
+          currentPreferenceCategoryKey: context.preferenceCategoryKey?.trim() ?? "",
+          currentPreferenceCategoryLabel: context.preferenceCategoryLabel?.trim() ?? "",
+          currentQuickActionCommandId: context.quickActionCommandId?.trim() ?? "",
+        }),
+      setCurrentFeedbackRating: (rating) => set({ currentFeedbackRating: rating }),
+      clearCurrentRequestContext: () =>
+        set({
+          currentRequestId: "",
+          currentPreferenceCategoryKey: "",
+          currentPreferenceCategoryLabel: "",
+          currentQuickActionCommandId: "",
+          currentFeedbackRating: null,
+        }),
       resetSession: () => set(SESSION_RUNTIME_RESET),
     }),
     {
@@ -356,6 +404,10 @@ export const useAppStore = create<AppState>()(
             Array.isArray(persisted.llmModelOptions) ? persisted.llmModelOptions : currentState.llmModelOptions,
             nextModel,
           ),
+          preferenceLearningEnabled:
+            typeof persisted.preferenceLearningEnabled === "boolean"
+              ? persisted.preferenceLearningEnabled
+              : currentState.preferenceLearningEnabled,
           appProfiles: Array.isArray(persisted.appProfiles) ? persisted.appProfiles : DEFAULT_APP_PROFILES,
         };
       },
@@ -396,6 +448,7 @@ export const useAppStore = create<AppState>()(
         modeBStreamOutput: state.modeBStreamOutput,
         translationTarget: state.translationTarget,
         historyEnabled: state.historyEnabled,
+        preferenceLearningEnabled: state.preferenceLearningEnabled,
         appProfiles: state.appProfiles,
       }),
     }

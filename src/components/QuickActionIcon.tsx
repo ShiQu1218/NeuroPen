@@ -4,7 +4,14 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
+import { mainWindowService } from "../services/mainWindowService";
 import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
+import {
+  buildOtherPreferenceCategory,
+  buildQuickActionPreferenceCategory,
+  composePromptOverride,
+  generatePreferenceRequestId,
+} from "../utils/preferenceLearning";
 import { resolveAppProfile } from "../utils/appText";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 import { clampToMonitorBounds } from "../utils/windowBounds";
@@ -27,6 +34,7 @@ export default function QuickActionIcon() {
   const setModeCPrompt = useAppStore((s) => s.setModeCPrompt);
   const setModeAStreamOutput = useAppStore((s) => s.setModeAStreamOutput);
   const setModeBStreamOutput = useAppStore((s) => s.setModeBStreamOutput);
+  const setPreferenceLearningEnabled = useAppStore((s) => s.setPreferenceLearningEnabled);
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
@@ -84,6 +92,7 @@ export default function QuickActionIcon() {
         modeAStreamOutput?: boolean;
         modeBStreamOutput?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
+        preferenceLearningEnabled?: boolean;
       }>(
         "neuropen://settings-saved",
         (event) => {
@@ -123,6 +132,9 @@ export default function QuickActionIcon() {
           if (event.payload.quickActionCommands) {
             setQuickActionCommands(event.payload.quickActionCommands);
           }
+          if (typeof event.payload.preferenceLearningEnabled === "boolean") {
+            setPreferenceLearningEnabled(event.payload.preferenceLearningEnabled);
+          }
         }
       );
     })();
@@ -139,7 +151,7 @@ export default function QuickActionIcon() {
       void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferenceLearningEnabled, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
 
   useEffect(() => {
     void setWindowFocusable(false);
@@ -198,6 +210,7 @@ export default function QuickActionIcon() {
 
   const showPreviewAndCallLlm = async (
     instruction: string,
+    command?: QuickActionCommand,
     pointer?: { x: number; y: number }
   ) => {
     const currentState = useAppStore.getState();
@@ -222,10 +235,32 @@ export default function QuickActionIcon() {
 
     await invoke("restore_clipboard");
     await emit("neuropen://qa-suppress-current-selection", { cooldownMs: 1600 });
+    const category = command
+      ? buildQuickActionPreferenceCategory(command)
+      : buildOtherPreferenceCategory(t("history.preferenceOther"));
+    const requestId = generatePreferenceRequestId();
+    let b1PreferredLanguage: string = currentState.preferredLanguage;
+    let promptAppendix = "";
+    if (currentState.contextAwareTone) {
+      try {
+        const windowTitle = await invoke<string>("get_foreground_window_title");
+        const profileB1 = resolveAppProfile(windowTitle, currentState.appProfiles, "B1");
+        if (profileB1) {
+          if (profileB1.preferredLanguage) b1PreferredLanguage = profileB1.preferredLanguage;
+          promptAppendix = profileB1.promptAppendix || "";
+        }
+      } catch {
+        // ignore — profile resolution is best-effort
+      }
+    }
     await emit("neuropen://llm-session-context", {
       mode: "B1",
       selectedText,
       instruction,
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
+      quickActionCommandId: category.quickActionCommandId,
     });
     await setWindowFocusable(false);
     await setQaInteracting(false);
@@ -243,6 +278,11 @@ export default function QuickActionIcon() {
       sourceMode: "B1",
       selectedText,
       instruction,
+      promptAppendix,
+      requestId,
+      preferenceCategoryKey: category.key,
+      preferenceCategoryLabel: category.label,
+      quickActionCommandId: category.quickActionCommandId,
     });
     const previewX = pointer
       ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
@@ -258,25 +298,18 @@ export default function QuickActionIcon() {
         y: previewY,
       },
     });
-
-    // Resolve app profile for B1 mode
-    let b1PreferredLanguage: string = currentState.preferredLanguage;
-    let b1PromptOverride = currentState.modeBPrompt;
-    if (currentState.contextAwareTone) {
-      try {
-        const windowTitle = await invoke<string>("get_foreground_window_title");
-        const profileB1 = resolveAppProfile(windowTitle, currentState.appProfiles, "B1");
-        if (profileB1) {
-          if (profileB1.preferredLanguage) b1PreferredLanguage = profileB1.preferredLanguage;
-          if (profileB1.promptAppendix) b1PromptOverride = `${b1PromptOverride}\n\n${profileB1.promptAppendix}`;
-        }
-      } catch {
-        // ignore — profile resolution is best-effort
-      }
-    }
+    const learnedSummary =
+      currentState.preferenceLearningEnabled
+        ? await mainWindowService.preferenceGetSummary(category.key).catch(() => null)
+        : null;
+    const b1PromptOverride = composePromptOverride(
+      currentState.modeBPrompt,
+      promptAppendix,
+      learnedSummary ?? "",
+    );
 
     try {
-      await invoke("call_llm", {
+      await mainWindowService.callLlm({
         selectedText,
         instruction,
         outputMode: llmOutputMode,
@@ -286,6 +319,7 @@ export default function QuickActionIcon() {
         promptMode: "B",
         promptOverride: b1PromptOverride,
         streamOutput: currentState.modeBStreamOutput,
+        requestId,
       });
     } catch (err) {
       console.error("[QuickAction] call_llm failed:", err);
@@ -300,13 +334,13 @@ export default function QuickActionIcon() {
     command: QuickActionCommand,
     pointer?: { x: number; y: number }
   ) => {
-    await showPreviewAndCallLlm(command.instruction, pointer);
+    await showPreviewAndCallLlm(command.instruction, command, pointer);
   };
 
   const invokeCustom = async (pointer?: { x: number; y: number }) => {
     const instruction = customInput.trim();
     if (!instruction) return;
-    await showPreviewAndCallLlm(instruction, pointer);
+    await showPreviewAndCallLlm(instruction, undefined, pointer);
   };
 
   const handleStartDrag = async () => {

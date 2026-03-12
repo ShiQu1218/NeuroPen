@@ -7,8 +7,15 @@ import { usePreviewDragGuard } from "./usePreviewDragGuard";
 import { usePreviewEventSync, type PreviewSession } from "./usePreviewEventSync";
 import { usePreviewTts } from "./usePreviewTts";
 import { useI18n } from "../i18n";
-import { useAppStore } from "../store/useAppStore";
+import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
 import { mainWindowService, type LoadedAttachment } from "../services/mainWindowService";
+import {
+  buildOtherPreferenceCategory,
+  buildQuickActionPreferenceCategory,
+  composePromptOverride,
+  generatePreferenceRequestId,
+  type PreferenceFeedbackRating,
+} from "../utils/preferenceLearning";
 import type { PreviewAttachment } from "../utils/previewAttachments";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
@@ -130,6 +137,8 @@ export function usePreviewWindowController() {
   const llmOutput = useAppStore((state) => state.llmOutput);
   const isLlmLoading = useAppStore((state) => state.isLlmLoading);
   const llmError = useAppStore((state) => state.llmError);
+  const incognito = useAppStore((state) => state.incognito);
+  const preferenceLearningEnabled = useAppStore((state) => state.preferenceLearningEnabled);
   const quickActionCommands = useAppStore((state) => state.quickActionCommands);
   const modeAPrompt = useAppStore((state) => state.modeAPrompt);
   const modeBPrompt = useAppStore((state) => state.modeBPrompt);
@@ -235,13 +244,19 @@ export function usePreviewWindowController() {
       sourceMode: current?.sourceMode ?? "C",
       instruction: current?.instruction ?? "",
       attachments: dedupeAttachments([...(current?.attachments ?? []), ...nextAttachments]),
+      promptAppendix: current?.promptAppendix ?? "",
+      requestId: current?.requestId ?? "",
+      preferenceCategoryKey: current?.preferenceCategoryKey ?? "",
+      preferenceCategoryLabel: current?.preferenceCategoryLabel ?? "",
+      quickActionCommandId: current?.quickActionCommandId,
+      feedbackRating: current?.feedbackRating ?? null,
     }));
     setLlmError("");
     return true;
   }, [setLlmError]);
 
   const runPreviewInstruction = useCallback(
-    async (instruction: string) => {
+    async (instruction: string, options?: { command?: QuickActionCommand }) => {
       const state = useAppStore.getState();
       const input = instruction.trim();
       if (!input) return;
@@ -251,15 +266,54 @@ export function usePreviewWindowController() {
       const attachmentsSnapshot = attachments;
       const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
       const instructionToSend = buildAttachmentInstruction(input, selectedText, attachments);
-      const { promptMode, promptOverride } = resolvePromptForPreviewMode(sourceMode);
+      const { promptMode, promptOverride: basePrompt } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
+      const category = options?.command
+        ? buildQuickActionPreferenceCategory(options.command)
+        : buildOtherPreferenceCategory(t("history.preferenceOther"));
+      const requestId = generatePreferenceRequestId();
+      const learnedSummary =
+        state.preferenceLearningEnabled
+          ? await mainWindowService.preferenceGetSummary(category.key).catch(() => null)
+          : null;
+      const promptOverride = composePromptOverride(
+        basePrompt,
+        previewSession?.promptAppendix ?? "",
+        learnedSummary ?? "",
+      );
       // Attachments are one-shot context for the current question. Clear them once
       // the request is launched so follow-up refinements do not resend stale files.
-      setPreviewSession((current) => clearPreviewAttachments(current));
+      state.setCurrentRequestContext({
+        requestId,
+        preferenceCategoryKey: category.key,
+        preferenceCategoryLabel: category.label,
+        quickActionCommandId: category.quickActionCommandId,
+      });
+      state.setCurrentFeedbackRating(null);
+      setPreviewSession((current) => {
+        const next = clearPreviewAttachments(current);
+        if (!next) {
+          return next;
+        }
+        return {
+          ...next,
+          instruction: input,
+          promptAppendix: next.promptAppendix,
+          requestId,
+          preferenceCategoryKey: category.key,
+          preferenceCategoryLabel: category.label,
+          quickActionCommandId: category.quickActionCommandId,
+          feedbackRating: null,
+        };
+      });
       await emit("neuropen://llm-session-context", {
         mode: sourceMode,
         selectedText,
         instruction: input,
+        requestId,
+        preferenceCategoryKey: category.key,
+        preferenceCategoryLabel: category.label,
+        quickActionCommandId: category.quickActionCommandId,
       });
       setLlmOutput("");
       setIsLlmLoading(true);
@@ -279,18 +333,20 @@ export function usePreviewWindowController() {
             promptMode: promptMode as "A" | "B" | "C",
             promptOverride,
             streamOutput,
+            requestId,
           });
         } else {
-          await invoke("call_llm", {
+          await mainWindowService.callLlm({
             selectedText,
             instruction: instructionToSend,
             outputMode: "PreviewStream",
             provider: state.llmProvider,
             model: state.llmModel,
             preferredLanguage: state.preferredLanguage,
-            promptMode,
+            promptMode: promptMode as "A" | "B" | "C",
             promptOverride,
             streamOutput,
+            requestId,
           });
         }
       } catch (err) {
@@ -315,7 +371,51 @@ export function usePreviewWindowController() {
         setIsLlmLoading(false);
       }
     },
-    [previewSession, resolvePromptForPreviewMode, resolveStreamingForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput]
+    [previewSession, resolvePromptForPreviewMode, resolveStreamingForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput, t]
+  );
+
+  const handleRateOutput = useCallback(
+    async (rating: PreferenceFeedbackRating) => {
+      const state = useAppStore.getState();
+      if (
+        !previewSession ||
+        !previewSession.requestId ||
+        !previewSession.preferenceCategoryKey ||
+        !llmOutput.trim() ||
+        state.incognito ||
+        !state.preferenceLearningEnabled
+      ) {
+        return;
+      }
+
+      await mainWindowService.preferenceRateResult({
+        requestId: previewSession.requestId,
+        rating,
+        mode: previewSession.sourceMode,
+        inputText: previewSession.selectedText,
+        instruction: previewSession.instruction,
+        output: llmOutput,
+        outputProvider: state.llmProvider,
+        outputModel: state.llmModel,
+        categoryKey: previewSession.preferenceCategoryKey,
+        categoryLabel: previewSession.preferenceCategoryLabel,
+        quickActionCommandId: previewSession.quickActionCommandId,
+        analysisProvider: state.llmProvider,
+        analysisModel: state.llmModel,
+        appLanguage: state.language,
+      });
+
+      state.setCurrentFeedbackRating(rating);
+      setPreviewSession((current) =>
+        current
+          ? {
+              ...current,
+              feedbackRating: rating,
+            }
+          : current
+      );
+    },
+    [llmOutput, previewSession]
   );
 
   const handleAttachFile = useCallback(async () => {
@@ -563,6 +663,7 @@ export function usePreviewWindowController() {
     setRefinementInput("");
     setToastMessage("");
     setPreviewSession(null);
+    useAppStore.getState().clearCurrentRequestContext();
   }, [setIsLlmLoading, setLlmError, setLlmOutput, setPreviewFocusable, stopFallbackTts]);
 
   const handleRefinement = useCallback(async () => {
@@ -626,6 +727,7 @@ export function usePreviewWindowController() {
     handleAttachFile,
     handleClose,
     handleCopy,
+    handleRateOutput,
     handleRefinement,
     handleRemoveAttachment,
     handleReplace,
@@ -653,5 +755,18 @@ export function usePreviewWindowController() {
     swallowDragRelease,
     t,
     toastMessage,
+    canRateOutput:
+      !!previewSession?.requestId &&
+      !!previewSession?.preferenceCategoryKey &&
+      !!llmOutput.trim() &&
+      !isLlmLoading &&
+      !incognito &&
+      preferenceLearningEnabled,
+    feedbackRating: previewSession?.feedbackRating ?? null,
+    feedbackDisabledReason: incognito
+      ? t("preview.preferenceDisabledIncognito")
+      : !preferenceLearningEnabled
+        ? t("preview.preferenceDisabledSetting")
+        : "",
   };
 }

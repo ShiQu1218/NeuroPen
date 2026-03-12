@@ -152,11 +152,22 @@ export function useMainWindowController() {
         mode: "A" | "B1" | "B2" | "C";
         selectedText?: string;
         instruction?: string;
+        requestId?: string;
+        preferenceCategoryKey?: string;
+        preferenceCategoryLabel?: string;
+        quickActionCommandId?: string;
       }>("neuropen://llm-session-context", (event) => {
         const store = useAppStore.getState();
         store.setCurrentMode(event.payload.mode);
         store.setLastSelectedText(event.payload.selectedText ?? "");
         store.setLastInstruction(event.payload.instruction ?? "");
+        store.setCurrentRequestContext({
+          requestId: event.payload.requestId,
+          preferenceCategoryKey: event.payload.preferenceCategoryKey,
+          preferenceCategoryLabel: event.payload.preferenceCategoryLabel,
+          quickActionCommandId: event.payload.quickActionCommandId,
+        });
+        store.setCurrentFeedbackRating(null);
       });
 
       await safeRegister<SettingsSavedPayload>(
@@ -236,21 +247,36 @@ export function useMainWindowController() {
         setSttError,
       });
 
-      await safeRegister<{ text: string; outputMode: "DirectInject" | "PreviewStream" }>(
+      await safeRegister<{ text: string; outputMode: "DirectInject" | "PreviewStream"; requestId?: string }>(
         "llm://result",
         (event) => {
+          const store = useAppStore.getState();
+          if (
+            event.payload.requestId &&
+            store.currentRequestId &&
+            event.payload.requestId !== store.currentRequestId
+          ) {
+            return;
+          }
           if (event.payload.outputMode !== "DirectInject") {
             return;
           }
           // Direct inject skips preview token updates, so keep the final output in
           // store long enough for the shared history-save handler to persist it.
-          useAppStore.getState().setLlmOutput(event.payload.text);
+          store.setLlmOutput(event.payload.text);
         }
       );
 
       // ── 3.5. History save on LLM done (Feature 3) ──
-      await safeRegister("llm://done", () => {
+      await safeRegister<{ requestId?: string }>("llm://done", (event) => {
         const s = useAppStore.getState();
+        if (
+          event.payload?.requestId &&
+          s.currentRequestId &&
+          event.payload.requestId !== s.currentRequestId
+        ) {
+          return;
+        }
         if (s.llmOutput.trim() && !s.incognito && s.historyEnabled) {
           // Preview sessions can finish without direct injection, so persist the
           // generated result here when the backend signals completion.
@@ -262,6 +288,10 @@ export function useMainWindowController() {
             output: s.llmOutput,
             provider: s.llmProvider,
             model: s.llmModel,
+            requestId: s.currentRequestId || undefined,
+            preferenceCategoryKey: s.currentPreferenceCategoryKey || undefined,
+            preferenceCategoryLabel: s.currentPreferenceCategoryLabel || undefined,
+            quickActionCommandId: s.currentQuickActionCommandId || undefined,
           });
         }
       });

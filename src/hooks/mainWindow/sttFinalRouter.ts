@@ -1,6 +1,10 @@
 import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
 import {
+  buildOtherPreferenceCategory,
+  generatePreferenceRequestId,
+} from "../../utils/preferenceLearning";
+import {
   applyPunctuationMode,
   formatModeAText,
   isLikelyUnexpectedEnglishTranslation,
@@ -11,6 +15,7 @@ import type { ErrorSetter, SafeRegister, StatusSetter, TranslateFn } from "./lis
 import {
   buildPromptOverride,
   createLlmRequestStateReset,
+  getPreferenceSummaryIfEnabled,
   isLikelyAuthError,
   openPreviewTextSession,
   resolveEffectiveProfile,
@@ -66,6 +71,8 @@ export async function registerSttFinalRouter({
         : "";
 
       if (mode === "A") {
+        const modeACategory = buildOtherPreferenceCategory(t("history.preferenceOther"));
+        const modeARequestId = generatePreferenceRequestId();
         let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
         let usedLlmForModeA = false;
         let postInjectWarning = "";
@@ -103,7 +110,11 @@ export async function registerSttFinalRouter({
           store.modeAStreamOutput &&
           ((shouldRefine && !shouldTranslate) || (!shouldRefine && shouldTranslate));
 
-        const modeAPromptOverride = buildPromptOverride(store.modeAPrompt, effectiveA.promptAppendix);
+        const modeAPromptOverride = buildPromptOverride(
+          store.modeAPrompt,
+          effectiveA.promptAppendix,
+          await getPreferenceSummaryIfEnabled(store, modeACategory.key),
+        );
 
         if (canStreamModeAPreview && llmReady) {
           // Stream directly into preview only when Mode A is doing exactly one LLM
@@ -113,7 +124,18 @@ export async function registerSttFinalRouter({
             ? store.translationTarget
             : effectiveA.lang;
           resetLlmRequestState(finalText, instruction);
-          await openPreviewTextSession("A", finalText, instruction);
+          store.setCurrentRequestContext({
+            requestId: modeARequestId,
+            preferenceCategoryKey: modeACategory.key,
+            preferenceCategoryLabel: modeACategory.label,
+          });
+          store.setCurrentFeedbackRating(null);
+          await openPreviewTextSession("A", finalText, instruction, undefined, {
+            promptAppendix: effectiveA.promptAppendix,
+            requestId: modeARequestId,
+            preferenceCategoryKey: modeACategory.key,
+            preferenceCategoryLabel: modeACategory.label,
+          });
           setStatusMsg(shouldTranslate ? t("status.translating") : t("status.llmRefining"));
           try {
             await mainWindowService.callLlm({
@@ -126,6 +148,7 @@ export async function registerSttFinalRouter({
               promptMode: "A",
               promptOverride: modeAPromptOverride,
               streamOutput: true,
+              requestId: modeARequestId,
             });
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
@@ -207,7 +230,18 @@ export async function registerSttFinalRouter({
         if (effectiveOutputModeA === "PreviewStream" && !shouldDirectPasteModeA) {
           store.setLastSelectedText(finalText);
           store.setLastInstruction("");
-          await openPreviewTextSession("A", finalText, "", finalText);
+          store.setCurrentRequestContext({
+            requestId: modeARequestId,
+            preferenceCategoryKey: modeACategory.key,
+            preferenceCategoryLabel: modeACategory.label,
+          });
+          store.setCurrentFeedbackRating(null);
+          await openPreviewTextSession("A", finalText, "", finalText, {
+            promptAppendix: effectiveA.promptAppendix,
+            requestId: modeARequestId,
+            preferenceCategoryKey: modeACategory.key,
+            preferenceCategoryLabel: modeACategory.label,
+          });
 
           saveHistoryIfAllowed(store, {
             mode: "A",
@@ -216,6 +250,9 @@ export async function registerSttFinalRouter({
             output: finalText,
             provider: usedLlmForModeA ? store.llmProvider : "",
             model: usedLlmForModeA ? store.llmModel : "",
+            requestId: modeARequestId,
+            preferenceCategoryKey: modeACategory.key,
+            preferenceCategoryLabel: modeACategory.label,
           });
 
           if (postInjectWarning) {
@@ -250,6 +287,9 @@ export async function registerSttFinalRouter({
           output: finalText,
           provider: usedLlmForModeA ? store.llmProvider : "",
           model: usedLlmForModeA ? store.llmModel : "",
+          requestId: modeARequestId,
+          preferenceCategoryKey: modeACategory.key,
+          preferenceCategoryLabel: modeACategory.label,
         });
 
         const injectSuccessStatus = usedLlmForModeA
@@ -265,10 +305,27 @@ export async function registerSttFinalRouter({
         // Mode B2 always preserves the original selected text separately and sends
         // the spoken instruction as the transformation request.
         const effectiveB2 = resolveEffectiveProfile(store, windowTitle, "B2");
-        const modeBPromptOverride = buildPromptOverride(store.modeBPrompt, effectiveB2.promptAppendix);
+        const modeB2Category = buildOtherPreferenceCategory(t("history.preferenceOther"));
+        const modeB2RequestId = generatePreferenceRequestId();
+        const modeBPromptOverride = buildPromptOverride(
+          store.modeBPrompt,
+          effectiveB2.promptAppendix,
+          await getPreferenceSummaryIfEnabled(store, modeB2Category.key),
+        );
 
         resetLlmRequestState(store.selectedText, result.transcript);
-        await openPreviewTextSession("B2", store.selectedText, result.transcript);
+        store.setCurrentRequestContext({
+          requestId: modeB2RequestId,
+          preferenceCategoryKey: modeB2Category.key,
+          preferenceCategoryLabel: modeB2Category.label,
+        });
+        store.setCurrentFeedbackRating(null);
+        await openPreviewTextSession("B2", store.selectedText, result.transcript, undefined, {
+          promptAppendix: effectiveB2.promptAppendix,
+          requestId: modeB2RequestId,
+          preferenceCategoryKey: modeB2Category.key,
+          preferenceCategoryLabel: modeB2Category.label,
+        });
 
         setStatusMsg(t("status.llmProcessing"));
         try {
@@ -282,6 +339,7 @@ export async function registerSttFinalRouter({
             promptMode: "B",
             promptOverride: modeBPromptOverride,
             streamOutput: store.modeBStreamOutput,
+            requestId: modeB2RequestId,
           });
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -299,12 +357,29 @@ export async function registerSttFinalRouter({
         // Mode C treats the transcript as a standalone assistant query with no
         // source text, so output mode comes entirely from the effective profile.
         const effectiveC = resolveEffectiveProfile(store, windowTitle, "C");
-        const modeCPromptOverride = buildPromptOverride(store.modeCPrompt, effectiveC.promptAppendix);
+        const modeCCategory = buildOtherPreferenceCategory(t("history.preferenceOther"));
+        const modeCRequestId = generatePreferenceRequestId();
+        const modeCPromptOverride = buildPromptOverride(
+          store.modeCPrompt,
+          effectiveC.promptAppendix,
+          await getPreferenceSummaryIfEnabled(store, modeCCategory.key),
+        );
         const effectiveOutputModeC = effectiveC.outputMode;
 
         resetLlmRequestState("", result.transcript);
+        store.setCurrentRequestContext({
+          requestId: modeCRequestId,
+          preferenceCategoryKey: modeCCategory.key,
+          preferenceCategoryLabel: modeCCategory.label,
+        });
+        store.setCurrentFeedbackRating(null);
         if (effectiveOutputModeC === "PreviewStream") {
-          await openPreviewTextSession("C", "", result.transcript);
+          await openPreviewTextSession("C", "", result.transcript, undefined, {
+            promptAppendix: effectiveC.promptAppendix,
+            requestId: modeCRequestId,
+            preferenceCategoryKey: modeCCategory.key,
+            preferenceCategoryLabel: modeCCategory.label,
+          });
         }
 
         setStatusMsg(t("status.llmProcessing"));
@@ -319,6 +394,7 @@ export async function registerSttFinalRouter({
             promptMode: "C",
             promptOverride: modeCPromptOverride,
             streamOutput: true,
+            requestId: modeCRequestId,
           });
           if (effectiveOutputModeC === "DirectInject") {
             await mainWindowService.restoreClipboard();

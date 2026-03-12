@@ -2,6 +2,7 @@ import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
 import type { AppProfileMode, OutputMode, PreferredLanguage } from "../../store/useAppStore";
 import { resolveAppProfile } from "../../utils/appText";
+import { composePromptOverride } from "../../utils/preferenceLearning";
 import {
   emitPreviewSession,
   emitPreviewStaticOutput,
@@ -27,6 +28,10 @@ interface HistorySaveParams {
   output: string;
   provider?: string;
   model?: string;
+  requestId?: string;
+  preferenceCategoryKey?: string;
+  preferenceCategoryLabel?: string;
+  quickActionCommandId?: string;
 }
 
 export const isLikelyAuthError = (err: unknown) =>
@@ -67,14 +72,39 @@ export const resolveEffectiveProfile = (
   };
 };
 
-export const buildPromptOverride = (basePrompt: string, promptAppendix: string) =>
-  promptAppendix ? `${basePrompt}\n\n${promptAppendix}` : basePrompt;
+export const buildPromptOverride = (
+  basePrompt: string,
+  promptAppendix: string,
+  learnedSummary = "",
+) => composePromptOverride(basePrompt, promptAppendix, learnedSummary);
+
+export const getPreferenceSummaryIfEnabled = async (
+  store: AppStoreSnapshot,
+  categoryKey: string,
+) => {
+  if (!store.preferenceLearningEnabled || !categoryKey.trim()) {
+    return "";
+  }
+  try {
+    return (await mainWindowService.preferenceGetSummary(categoryKey))?.trim() ?? "";
+  } catch (error) {
+    console.warn("[App] preference_get_summary failed:", error);
+    return "";
+  }
+};
 
 export const openPreviewTextSession = async (
   sourceMode: PreviewSourceMode,
   selectedText: string,
   instruction: string,
   staticOutput?: string,
+  requestContext?: {
+    promptAppendix?: string;
+    requestId?: string;
+    preferenceCategoryKey?: string;
+    preferenceCategoryLabel?: string;
+    quickActionCommandId?: string;
+  },
 ) => {
   // Emit the session payload before showing the window so the preview UI opens
   // with the correct mode metadata even if focus arrives immediately.
@@ -83,6 +113,11 @@ export const openPreviewTextSession = async (
     sourceMode,
     selectedText,
     instruction,
+    promptAppendix: requestContext?.promptAppendix,
+    requestId: requestContext?.requestId,
+    preferenceCategoryKey: requestContext?.preferenceCategoryKey,
+    preferenceCategoryLabel: requestContext?.preferenceCategoryLabel,
+    quickActionCommandId: requestContext?.quickActionCommandId,
   });
   await showPreviewWindow({ focusable: true, focus: true });
   if (typeof staticOutput === "string") {
@@ -101,6 +136,10 @@ export const saveHistoryIfAllowed = (store: AppStoreSnapshot, payload: HistorySa
     output: payload.output,
     provider: payload.provider ?? "",
     model: payload.model ?? "",
+    requestId: payload.requestId,
+    preferenceCategoryKey: payload.preferenceCategoryKey,
+    preferenceCategoryLabel: payload.preferenceCategoryLabel,
+    quickActionCommandId: payload.quickActionCommandId,
   });
 };
 

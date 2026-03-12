@@ -52,13 +52,17 @@ pub enum LlmProvider {
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmToken {
     pub text: String,
+    pub request_id: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmError {
     pub message: String,
+    pub request_id: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -66,9 +70,16 @@ pub struct LlmError {
 pub struct LlmResult {
     pub text: String,
     pub output_mode: OutputMode,
+    pub request_id: Option<String>,
 }
 
-async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str) {
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmDone {
+    pub request_id: Option<String>,
+}
+
+async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str, request_id: Option<&str>) {
     const CHUNK_CHARS: usize = 24;
     const CHUNK_DELAY_MS: u64 = 12;
 
@@ -79,7 +90,13 @@ async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str) {
         chunk.push(ch);
         chunk_len += 1;
         if chunk_len >= CHUNK_CHARS {
-            let _ = app.emit("llm://token", LlmToken { text: chunk.clone() });
+            let _ = app.emit(
+                "llm://token",
+                LlmToken {
+                    text: chunk.clone(),
+                    request_id: request_id.map(|value| value.to_string()),
+                },
+            );
             chunk.clear();
             chunk_len = 0;
             tokio::time::sleep(std::time::Duration::from_millis(CHUNK_DELAY_MS)).await;
@@ -87,7 +104,13 @@ async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str) {
     }
 
     if !chunk.is_empty() {
-        let _ = app.emit("llm://token", LlmToken { text: chunk });
+        let _ = app.emit(
+            "llm://token",
+            LlmToken {
+                text: chunk,
+                request_id: request_id.map(|value| value.to_string()),
+            },
+        );
     }
 }
 
@@ -324,17 +347,31 @@ async fn call_openai_compatible(
     extract_openai_text(&parsed).ok_or_else(|| format!("Unexpected LLM response: {body}"))
 }
 
-fn emit_token_chunk(app: &tauri::AppHandle, full_output: &mut String, token: &str) {
+fn emit_token_chunk(
+    app: &tauri::AppHandle,
+    full_output: &mut String,
+    token: &str,
+    request_id: Option<&str>,
+) {
     if token.is_empty() {
         return;
     }
     full_output.push_str(token);
-    let _ = app.emit("llm://token", LlmToken {
-        text: token.to_string(),
-    });
+    let _ = app.emit(
+        "llm://token",
+        LlmToken {
+            text: token.to_string(),
+            request_id: request_id.map(|value| value.to_string()),
+        },
+    );
 }
 
-fn handle_openai_stream_data(data: &str, app: &tauri::AppHandle, full_output: &mut String) {
+fn handle_openai_stream_data(
+    data: &str,
+    app: &tauri::AppHandle,
+    full_output: &mut String,
+    request_id: Option<&str>,
+) {
     if data.is_empty() || data == "[DONE]" {
         return;
     }
@@ -343,21 +380,21 @@ fn handle_openai_stream_data(data: &str, app: &tauri::AppHandle, full_output: &m
         Err(_) => return,
     };
     if let Some(token) = parsed["choices"][0]["delta"]["content"].as_str() {
-        emit_token_chunk(app, full_output, token);
+        emit_token_chunk(app, full_output, token, request_id);
         return;
     }
     if let Some(parts) = parsed["choices"][0]["delta"]["content"].as_array() {
         for part in parts {
             if let Some(token) = part["text"].as_str() {
-                emit_token_chunk(app, full_output, token);
+                emit_token_chunk(app, full_output, token, request_id);
             } else if let Some(token) = part.as_str() {
-                emit_token_chunk(app, full_output, token);
+                emit_token_chunk(app, full_output, token, request_id);
             }
         }
         return;
     }
     if let Some(token) = parsed["choices"][0]["message"]["content"].as_str() {
-        emit_token_chunk(app, full_output, token);
+        emit_token_chunk(app, full_output, token, request_id);
     }
 }
 
@@ -368,6 +405,7 @@ async fn call_openai_compatible_streaming(
     system_prompt: &str,
     user_message: &str,
     app: &tauri::AppHandle,
+    request_id: Option<&str>,
 ) -> Result<String, String> {
     let body = serde_json::json!({
         "model": model,
@@ -410,7 +448,7 @@ async fn call_openai_compatible_streaming(
                 continue;
             }
             let data = line["data:".len()..].trim();
-            handle_openai_stream_data(data, app, &mut full_output);
+            handle_openai_stream_data(data, app, &mut full_output, request_id);
         }
     }
 
@@ -420,7 +458,7 @@ async fn call_openai_compatible_streaming(
             continue;
         }
         let data = trimmed["data:".len()..].trim();
-        handle_openai_stream_data(data, app, &mut full_output);
+        handle_openai_stream_data(data, app, &mut full_output, request_id);
     }
 
     if full_output.is_empty() {
@@ -570,6 +608,7 @@ async fn call_ollama_streaming(
     system_prompt: &str,
     user_message: &str,
     app: &tauri::AppHandle,
+    request_id: Option<&str>,
 ) -> Result<String, String> {
     let body = serde_json::json!({
         "model": model,
@@ -615,7 +654,7 @@ async fn call_ollama_streaming(
                 Err(_) => continue,
             };
             if let Some(token) = parsed["message"]["content"].as_str() {
-                emit_token_chunk(app, &mut full_output, token);
+                emit_token_chunk(app, &mut full_output, token, request_id);
             }
         }
     }
@@ -630,7 +669,7 @@ async fn call_ollama_streaming(
             Err(_) => continue,
         };
         if let Some(token) = parsed["message"]["content"].as_str() {
-            emit_token_chunk(app, &mut full_output, token);
+            emit_token_chunk(app, &mut full_output, token, request_id);
         }
     }
 
@@ -686,6 +725,7 @@ async fn call_provider_preview_stream(
     system_prompt: &str,
     user_message: &str,
     app: &tauri::AppHandle,
+    request_id: Option<&str>,
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
         return call_openai_compatible_streaming(
@@ -695,12 +735,13 @@ async fn call_provider_preview_stream(
             system_prompt,
             user_message,
             app,
+            request_id,
         )
         .await;
     }
     match provider {
         LlmProvider::Ollama => {
-            call_ollama_streaming(chosen_model, system_prompt, user_message, app).await
+            call_ollama_streaming(chosen_model, system_prompt, user_message, app, request_id).await
         }
         _ => {
             // Providers without a streaming API still flow through preview mode by
@@ -708,7 +749,7 @@ async fn call_provider_preview_stream(
             let full_output =
                 call_provider(api_key, provider, chosen_model, system_prompt, user_message).await?;
             if !full_output.is_empty() {
-                emit_output_stream(app, &full_output).await;
+                emit_output_stream(app, &full_output, request_id).await;
             }
             Ok(full_output)
         }
@@ -726,6 +767,7 @@ pub async fn call_llm(
     preferred_language: Option<String>,
     prompt_mode: Option<String>,
     prompt_override: Option<String>,
+    request_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let resolved_prompt_mode = PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
@@ -773,6 +815,7 @@ pub async fn call_llm(
             &system_prompt,
             &effective_user_message,
             &app,
+            request_id.as_deref(),
         )
         .await
     } else {
@@ -786,7 +829,13 @@ pub async fn call_llm(
         .await
     }
     .map_err(|e| {
-        let _ = app.emit("llm://error", LlmError { message: e.clone() });
+        let _ = app.emit(
+            "llm://error",
+            LlmError {
+                message: e.clone(),
+                request_id: request_id.clone(),
+            },
+        );
         e
     })?;
 
@@ -795,12 +844,16 @@ pub async fn call_llm(
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         if stream_output {
             if !used_native_streaming {
-                emit_output_stream(&app, &full_output).await;
+                emit_output_stream(&app, &full_output, request_id.as_deref()).await;
             }
         } else {
-            let _ = app.emit("llm://token", LlmToken {
-                text: full_output.clone(),
-            });
+            let _ = app.emit(
+                "llm://token",
+                LlmToken {
+                    text: full_output.clone(),
+                    request_id: request_id.clone(),
+                },
+            );
         }
     }
 
@@ -826,7 +879,13 @@ pub async fn call_llm(
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
         if let Err(e) = crate::injection::inject_text_with_undo(&full_output, true) {
             let msg = format!("Injection failed: {e}");
-            let _ = app.emit("llm://error", LlmError { message: msg.clone() });
+            let _ = app.emit(
+                "llm://error",
+                LlmError {
+                    message: msg.clone(),
+                    request_id: request_id.clone(),
+                },
+            );
             return Err(msg);
         }
     }
@@ -837,11 +896,17 @@ pub async fn call_llm(
             LlmResult {
                 text: full_output.clone(),
                 output_mode: output_mode.clone(),
+                request_id: request_id.clone(),
             },
         );
     }
 
-    let _ = app.emit("llm://done", ());
+    let _ = app.emit(
+        "llm://done",
+        LlmDone {
+            request_id: request_id.clone(),
+        },
+    );
 
     Ok(())
 }
@@ -867,6 +932,17 @@ pub async fn call_llm_text(
     let chosen_model = resolve_model(model, &provider);
     let raw_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await?;
     Ok(normalize_math_output_if_needed(&raw_output, resolved_prompt_mode))
+}
+
+pub async fn call_custom_prompt_text(
+    api_key: &str,
+    provider: LlmProvider,
+    model: &str,
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, String> {
+    let chosen_model = resolve_model(model, &provider);
+    call_provider(api_key, &provider, &chosen_model, system_prompt, user_message).await
 }
 
 // ── Multimodal (image + text) support ───────────────────────────────────
@@ -1112,6 +1188,7 @@ pub async fn call_llm_with_image(
     preferred_language: Option<String>,
     prompt_mode: Option<String>,
     prompt_override: Option<String>,
+    request_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     call_llm_with_images(
@@ -1125,6 +1202,7 @@ pub async fn call_llm_with_image(
         preferred_language,
         prompt_mode,
         prompt_override,
+        request_id,
         app,
     )
     .await
@@ -1141,6 +1219,7 @@ pub async fn call_llm_with_images(
     preferred_language: Option<String>,
     prompt_mode: Option<String>,
     prompt_override: Option<String>,
+    request_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let language_hint = preferred_language_hint(preferred_language.as_deref())
@@ -1185,7 +1264,13 @@ pub async fn call_llm_with_images(
     )
     .await
     .map_err(|e| {
-        let _ = app.emit("llm://error", LlmError { message: e.clone() });
+        let _ = app.emit(
+            "llm://error",
+            LlmError {
+                message: e.clone(),
+                request_id: request_id.clone(),
+            },
+        );
         e
     })?;
     let full_output = normalize_math_output_if_needed(&raw_output, mode);
@@ -1194,11 +1279,15 @@ pub async fn call_llm_with_images(
     // preview sessions so direct-insert flows do not wake preview listeners.
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         if stream_output {
-            emit_output_stream(&app, &full_output).await;
+            emit_output_stream(&app, &full_output, request_id.as_deref()).await;
         } else {
-            let _ = app.emit("llm://token", LlmToken {
-                text: full_output.clone(),
-            });
+            let _ = app.emit(
+                "llm://token",
+                LlmToken {
+                    text: full_output.clone(),
+                    request_id: request_id.clone(),
+                },
+            );
         }
     }
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
@@ -1221,7 +1310,13 @@ pub async fn call_llm_with_images(
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
         if let Err(e) = crate::injection::inject_text(&full_output) {
             let msg = format!("Injection failed: {e}");
-            let _ = app.emit("llm://error", LlmError { message: msg.clone() });
+            let _ = app.emit(
+                "llm://error",
+                LlmError {
+                    message: msg.clone(),
+                    request_id: request_id.clone(),
+                },
+            );
             return Err(msg);
         }
     }
@@ -1232,12 +1327,18 @@ pub async fn call_llm_with_images(
             LlmResult {
                 text: full_output.clone(),
                 output_mode: output_mode.clone(),
+                request_id: request_id.clone(),
             },
         );
     }
 
     if output_mode == OutputMode::PreviewStream {
-        let _ = app.emit("llm://done", ());
+        let _ = app.emit(
+            "llm://done",
+            LlmDone {
+                request_id: request_id.clone(),
+            },
+        );
     }
 
     Ok(())

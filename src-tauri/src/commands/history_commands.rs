@@ -13,8 +13,23 @@ pub fn history_save(
     output: String,
     provider: String,
     model: String,
+    request_id: Option<String>,
+    preference_category_key: Option<String>,
+    preference_category_label: Option<String>,
+    quick_action_command_id: Option<String>,
 ) {
-    history::save(&mode, &input_text, &instruction, &output, &provider, &model);
+    history::save(
+        &mode,
+        &input_text,
+        &instruction,
+        &output,
+        &provider,
+        &model,
+        request_id.as_deref(),
+        preference_category_key.as_deref(),
+        preference_category_label.as_deref(),
+        quick_action_command_id.as_deref(),
+    );
 }
 
 #[tauri::command]
