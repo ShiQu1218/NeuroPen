@@ -24,7 +24,10 @@ import {
   setReadyStatus,
   setRouteFailureStatus,
 } from "./sttFinalRouterHelpers";
-import { resolveLanguageVariantPromptInstructionForLanguage } from "../../utils/languageVariants";
+import {
+  resolveLanguageVariantPromptInstructionForLanguage,
+  resolveLanguageVariantPromptInstructionForText,
+} from "../../utils/languageVariants";
 
 interface RegisterSttFinalRouterParams {
   safeRegister: SafeRegister;
@@ -103,7 +106,7 @@ export async function registerSttFinalRouter({
             ? aggressiveModeAFormattingHint
             : balancedModeAFormattingHint;
         const refineInstruction =
-          `Rewrite this speech-to-text transcript into a clean final version using the Mode A formatting guidance from the system prompt. Preserve meaning, fix obvious transcription issues, keep the same language and script, and output only the final text. ${modeAFormattingHint} ${toneHint} ${vocabHint}`;
+          `Rewrite this speech-to-text transcript into a clean final version using the Mode A formatting guidance from the system prompt. Preserve meaning, fix obvious transcription issues, keep the same language, follow any language-variant preference from the system prompt for script, locale, and wording, and output only the final text. ${modeAFormattingHint} ${toneHint} ${vocabHint}`;
         const translateInstruction =
           `Translate this speech-to-text transcript to ${store.translationTarget}. Preserve the intended structure from the system prompt and output only the final text. ${modeAFormattingHint}`;
         const canStreamModeAPreview =
@@ -116,18 +119,24 @@ export async function registerSttFinalRouter({
           effectiveA.promptAppendix,
           await getPreferenceSummaryIfEnabled(store, modeACategory.key),
         );
+        const modeAPreferredLanguage = shouldTranslate
+          ? resolveLanguageVariantPromptInstructionForLanguage(
+            store.translationTarget,
+            effectiveA.languagePreferences,
+            store.customLanguageVariants
+          )
+          : resolveLanguageVariantPromptInstructionForText(
+            result.transcript,
+            effectiveA.languagePreferences,
+            store.customLanguageVariants,
+            store.sttLanguage,
+          );
 
         if (canStreamModeAPreview && llmReady) {
           // Stream directly into preview only when Mode A is doing exactly one LLM
           // pass. Chaining refine + translate would make the visible partial output misleading.
           const instruction = shouldTranslate ? translateInstruction : refineInstruction;
-          const preferredLanguage = shouldTranslate
-            ? resolveLanguageVariantPromptInstructionForLanguage(
-              store.translationTarget,
-              effectiveA.languagePreferences,
-              store.customLanguageVariants
-            )
-            : effectiveA.lang;
+          const preferredLanguage = modeAPreferredLanguage;
           resetLlmRequestState(finalText, instruction);
           store.setCurrentRequestContext({
             requestId: modeARequestId,
@@ -175,7 +184,7 @@ export async function registerSttFinalRouter({
               instruction: refineInstruction,
               provider: store.llmProvider,
               model: store.llmModel,
-              preferredLanguage: effectiveA.lang,
+              preferredLanguage: modeAPreferredLanguage,
               promptMode: "A",
               promptOverride: modeAPromptOverride,
             });
@@ -248,7 +257,7 @@ export async function registerSttFinalRouter({
           store.setCurrentFeedbackRating(null);
           await openPreviewTextSession("A", finalText, "", finalText, {
             promptAppendix: effectiveA.promptAppendix,
-            preferredLanguage: effectiveA.lang,
+            preferredLanguage: modeAPreferredLanguage,
             requestId: modeARequestId,
             preferenceCategoryKey: modeACategory.key,
             preferenceCategoryLabel: modeACategory.label,
@@ -323,6 +332,12 @@ export async function registerSttFinalRouter({
           effectiveB2.promptAppendix,
           await getPreferenceSummaryIfEnabled(store, modeB2Category.key),
         );
+        const modeB2PreferredLanguage = resolveLanguageVariantPromptInstructionForText(
+          `${store.selectedText}\n${result.transcript}`,
+          effectiveB2.languagePreferences,
+          store.customLanguageVariants,
+          store.sttLanguage,
+        );
 
         resetLlmRequestState(store.selectedText, result.transcript);
         store.setCurrentRequestContext({
@@ -333,7 +348,7 @@ export async function registerSttFinalRouter({
         store.setCurrentFeedbackRating(null);
         await openPreviewTextSession("B2", store.selectedText, result.transcript, undefined, {
           promptAppendix: effectiveB2.promptAppendix,
-          preferredLanguage: effectiveB2.lang,
+          preferredLanguage: modeB2PreferredLanguage,
           requestId: modeB2RequestId,
           preferenceCategoryKey: modeB2Category.key,
           preferenceCategoryLabel: modeB2Category.label,
@@ -347,7 +362,7 @@ export async function registerSttFinalRouter({
             outputMode: "PreviewStream",
             provider: store.llmProvider,
             model: store.llmModel,
-            preferredLanguage: effectiveB2.lang,
+            preferredLanguage: modeB2PreferredLanguage,
             promptMode: "B",
             promptOverride: modeBPromptOverride,
             streamOutput: store.modeBStreamOutput,
@@ -377,6 +392,12 @@ export async function registerSttFinalRouter({
           await getPreferenceSummaryIfEnabled(store, modeCCategory.key),
         );
         const effectiveOutputModeC = effectiveC.outputMode;
+        const modeCPreferredLanguage = resolveLanguageVariantPromptInstructionForText(
+          result.transcript,
+          effectiveC.languagePreferences,
+          store.customLanguageVariants,
+          store.sttLanguage,
+        );
 
         resetLlmRequestState("", result.transcript);
         store.setCurrentRequestContext({
@@ -388,7 +409,7 @@ export async function registerSttFinalRouter({
         if (effectiveOutputModeC === "PreviewStream") {
           await openPreviewTextSession("C", "", result.transcript, undefined, {
             promptAppendix: effectiveC.promptAppendix,
-            preferredLanguage: effectiveC.lang,
+            preferredLanguage: modeCPreferredLanguage,
             requestId: modeCRequestId,
             preferenceCategoryKey: modeCCategory.key,
             preferenceCategoryLabel: modeCCategory.label,
@@ -403,7 +424,7 @@ export async function registerSttFinalRouter({
             outputMode: effectiveOutputModeC,
             provider: store.llmProvider,
             model: store.llmModel,
-            preferredLanguage: effectiveC.lang,
+            preferredLanguage: modeCPreferredLanguage,
             promptMode: "C",
             promptOverride: modeCPromptOverride,
             streamOutput: true,

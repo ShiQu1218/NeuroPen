@@ -9,7 +9,7 @@ import { usePreviewTts } from "./usePreviewTts";
 import { useI18n } from "../i18n";
 import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
 import { mainWindowService, type LoadedAttachment } from "../services/mainWindowService";
-import { resolveLanguageVariantPromptInstruction } from "../utils/languageVariants";
+import { resolveLanguageVariantPromptInstructionForText } from "../utils/languageVariants";
 import {
   buildOtherPreferenceCategory,
   buildQuickActionPreferenceCategory,
@@ -285,7 +285,11 @@ export function usePreviewWindowController() {
       );
       const preferredLanguage =
         previewSession?.preferredLanguage.trim() ||
-        resolveLanguageVariantPromptInstruction(state.preferredLanguage, state.customLanguageVariants);
+        resolveLanguageVariantPromptInstructionForText(
+          `${selectedText}\n${instructionToSend}`,
+          state.preferredLanguage,
+          state.customLanguageVariants
+        );
       // Attachments are one-shot context for the current question. Clear them once
       // the request is launched so follow-up refinements do not resend stale files.
       state.setCurrentRequestContext({

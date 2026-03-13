@@ -148,7 +148,7 @@ fn preferred_language_hint(preferred_language: Option<&str>) -> Option<String> {
     };
     let normalized_preference = normalized_preference.trim().trim_end_matches('.');
     Some(format!(
-        "Apply the following language-variant preference whenever you respond in the relevant language, unless the user explicitly requests another language: {normalized_preference}."
+        "For this request, treat this language-variant preference as a hard requirement whenever you respond in the relevant language: {normalized_preference}. Keep the final answer in that script, spelling standard, and regional variant even if the transcript or source material uses another script or locale, unless the user explicitly requests otherwise."
     ))
 }
 
@@ -265,7 +265,8 @@ fn build_prompt(
         PromptMode::A => format!(
             "You are refining speech-to-text output for Mode A. \
              Output only the final text the user wants to insert. \
-             Preserve the original language and script unless the instruction explicitly requests translation. \
+             Preserve the original language unless the instruction explicitly requests translation. \
+             If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when the transcript text uses another script or locale. \
              Follow the mode-specific formatting guidance carefully, keep the meaning intact, and do not add commentary or preamble. \
              If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
              Never leave equations as plain text without LaTeX delimiters.{language_hint}"
@@ -285,6 +286,8 @@ fn build_prompt(
         PromptMode::C => format!(
             "You are handling spoken assistant queries for Mode C. \
              Reply directly and clearly in natural text. \
+             Unless the user explicitly requests translation, answer in the same language as the user's request. \
+             If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when the transcript or quoted content uses another script or locale. \
              Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, and avoid filler opening lines. \
              Avoid unnecessary headings for simple answers, but structure longer answers clearly when needed. \
              If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
@@ -1302,6 +1305,8 @@ pub async fn call_llm_with_images(
             format!(
                 "You are handling a Mode C image-attachment query. \
                  Answer based on the image content directly and clearly in natural text. \
+                 Unless the user explicitly requests translation, answer in the same language as the user's request. \
+                 If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when OCR text or quoted image content uses another script or locale. \
                  Use short paragraphs or lists only when they genuinely help. \
                  If there are multiple images, use all of them and call out disagreements or comparisons explicitly. \
                  OCR may produce imperfect symbols, so normalize detected formulas into valid LaTeX. \
@@ -1496,13 +1501,47 @@ mod tests {
         .expect("expected hint");
 
         assert!(hint.contains("British English spelling"));
-        assert!(hint.contains("language-variant preference"));
+        assert!(hint.contains("hard requirement"));
     }
 
     #[test]
     fn preferred_language_hint_still_normalizes_legacy_locale_codes() {
         let hint = preferred_language_hint(Some("zh-TW")).expect("expected hint");
         assert!(hint.contains("Traditional Chinese as commonly written in Taiwan"));
+    }
+
+    #[test]
+    fn mode_a_prompt_prioritizes_language_variant_over_transcript_script() {
+        let (system_prompt, _) = build_prompt(
+            "请帮我整理这段逐字稿",
+            "Rewrite this speech-to-text transcript into a clean final version.",
+            Some("Use Traditional Chinese as commonly written in Taiwan, with Traditional characters and Taiwan-standard phrasing."),
+            Some("A"),
+            None,
+        );
+
+        assert!(system_prompt.contains("follow that preferred script and regional variant strictly"));
+        assert!(system_prompt.contains("Traditional Chinese as commonly written in Taiwan"));
+    }
+
+    #[test]
+    fn mode_c_prompt_prioritizes_language_variant_over_transcript_script() {
+        let (system_prompt, user_message) = build_prompt(
+            "",
+            "请解释这段内容",
+            Some(
+                "Use Traditional Chinese as commonly written in Taiwan, with Traditional characters and Taiwan-standard phrasing.",
+            ),
+            Some("C"),
+            None,
+        );
+
+        assert!(system_prompt.contains("same language as the user's request"));
+        assert!(system_prompt.contains(
+            "follow that preferred script and regional variant strictly"
+        ));
+        assert!(system_prompt.contains("Traditional Chinese as commonly written in Taiwan"));
+        assert_eq!(user_message, "请解释这段内容");
     }
 
     #[test]

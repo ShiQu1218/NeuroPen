@@ -711,6 +711,66 @@ export const resolveLanguageVariantPromptInstructionForLanguage = (
   return trimmedHint;
 };
 
+const JAPANESE_SCRIPT_RE = /[\u3040-\u30ff]/;
+const KOREAN_SCRIPT_RE = /[\uac00-\ud7af]/;
+const ARABIC_SCRIPT_RE = /[\u0600-\u06ff]/;
+const CYRILLIC_SCRIPT_RE = /[\u0400-\u04ff]/;
+const HAN_SCRIPT_RE = /[\u3400-\u9fff]/;
+
+export const inferLanguageCodeFromText = (
+  text: string,
+  explicitLanguageHint = ""
+) => {
+  const normalizedExplicitHint = sanitizeVariantText(explicitLanguageHint);
+  if (
+    normalizedExplicitHint &&
+    normalizedExplicitHint.toLowerCase() !== AUTO_LANGUAGE_VARIANT
+  ) {
+    const normalizedLanguageCode = normalizeLanguageCode(normalizedExplicitHint);
+    if (normalizedLanguageCode) {
+      return normalizedLanguageCode;
+    }
+  }
+
+  const sample = sanitizeVariantText(text);
+  if (!sample) {
+    return "";
+  }
+  if (JAPANESE_SCRIPT_RE.test(sample)) {
+    return "ja";
+  }
+  if (KOREAN_SCRIPT_RE.test(sample)) {
+    return "ko";
+  }
+  if (ARABIC_SCRIPT_RE.test(sample)) {
+    return "ar";
+  }
+  if (CYRILLIC_SCRIPT_RE.test(sample)) {
+    return "ru";
+  }
+  if (HAN_SCRIPT_RE.test(sample)) {
+    return "zh";
+  }
+  return "";
+};
+
+export const resolveLanguageVariantPromptInstructionForText = (
+  text: string,
+  preferences: PreferredLanguage,
+  customVariants: CustomLanguageVariant[],
+  explicitLanguageHint = ""
+) => {
+  const inferredLanguageCode = inferLanguageCodeFromText(text, explicitLanguageHint);
+  if (inferredLanguageCode) {
+    return resolveLanguageVariantPromptInstructionForLanguage(
+      inferredLanguageCode,
+      preferences,
+      customVariants
+    );
+  }
+  return buildLanguageVariantPreferencePrompt(preferences, customVariants);
+};
+
 export const getLanguageVariantSelectionSummary = (
   preferences: PreferredLanguage | "",
   customVariants: CustomLanguageVariant[],

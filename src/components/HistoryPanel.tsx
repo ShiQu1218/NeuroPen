@@ -12,7 +12,7 @@ import {
   resolveHistoryRequestId,
   type PreferenceFeedbackRating,
 } from "../utils/preferenceLearning";
-import { resolveLanguageVariantPromptInstruction } from "../utils/languageVariants";
+import { resolveLanguageVariantPromptInstructionForText } from "../utils/languageVariants";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 
 interface HistoryEntry {
@@ -144,7 +144,8 @@ export default function HistoryPanel() {
       sourceMode: sourceMode as "A" | "B1" | "B2" | "C",
       selectedText: entry.inputText,
       instruction: entry.instruction,
-      preferredLanguage: resolveLanguageVariantPromptInstruction(
+      preferredLanguage: resolveLanguageVariantPromptInstructionForText(
+        `${entry.inputText}\n${entry.instruction}`,
         state.preferredLanguage,
         state.customLanguageVariants
       ),
@@ -165,7 +166,8 @@ export default function HistoryPanel() {
         outputMode: "PreviewStream",
         provider: state.llmProvider,
         model: state.llmModel,
-        preferredLanguage: resolveLanguageVariantPromptInstruction(
+        preferredLanguage: resolveLanguageVariantPromptInstructionForText(
+          `${entry.inputText}\n${entry.instruction}`,
           state.preferredLanguage,
           state.customLanguageVariants
         ),
@@ -223,7 +225,8 @@ export default function HistoryPanel() {
       sourceMode: "B1",
       selectedText,
       instruction: entry.instruction,
-      preferredLanguage: resolveLanguageVariantPromptInstruction(
+      preferredLanguage: resolveLanguageVariantPromptInstructionForText(
+        `${selectedText}\n${entry.instruction}`,
         state.preferredLanguage,
         state.customLanguageVariants
       ),
@@ -248,7 +251,8 @@ export default function HistoryPanel() {
         outputMode: "PreviewStream",
         provider: state.llmProvider,
         model: state.llmModel,
-        preferredLanguage: resolveLanguageVariantPromptInstruction(
+        preferredLanguage: resolveLanguageVariantPromptInstructionForText(
+          `${selectedText}\n${entry.instruction}`,
           state.preferredLanguage,
           state.customLanguageVariants
         ),

@@ -22,7 +22,7 @@ import {
 import { resolveAppProfile } from "../utils/appText";
 import {
   mergeLanguageVariantPreferences,
-  resolveLanguageVariantPromptInstruction,
+  resolveLanguageVariantPromptInstructionForText,
 } from "../utils/languageVariants";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 import { clampToMonitorBounds } from "../utils/windowBounds";
@@ -292,7 +292,8 @@ export default function QuickActionIcon() {
       : buildOtherPreferenceCategory(t("history.preferenceOther"));
     const requestId = generatePreferenceRequestId();
     let b1LanguagePreferences = currentState.preferredLanguage;
-    let b1PreferredLanguage = resolveLanguageVariantPromptInstruction(
+    let b1PreferredLanguage = resolveLanguageVariantPromptInstructionForText(
+      `${selectedText}\n${instruction}`,
       b1LanguagePreferences,
       currentState.customLanguageVariants
     );
@@ -307,7 +308,8 @@ export default function QuickActionIcon() {
             profileB1.preferredLanguage,
             currentState.customLanguageVariants
           );
-          b1PreferredLanguage = resolveLanguageVariantPromptInstruction(
+          b1PreferredLanguage = resolveLanguageVariantPromptInstructionForText(
+            `${selectedText}\n${instruction}`,
             b1LanguagePreferences,
             currentState.customLanguageVariants
           );
