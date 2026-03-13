@@ -26,6 +26,7 @@ interface SettingsLanguageVariantOverlayProps {
   globalPreferences: PreferredLanguage;
   customVariants: CustomLanguageVariant[];
   useGlobalByDefault: boolean;
+  uiLanguage: string;
   onApply: (payload: SettingsLanguageVariantOverlayApplyPayload) => void | Promise<void>;
   onClose: () => void;
   t: (key: TranslationKey, params?: Record<string, string>) => string;
@@ -38,6 +39,7 @@ export default function SettingsLanguageVariantOverlay({
   globalPreferences,
   customVariants,
   useGlobalByDefault,
+  uiLanguage,
   onApply,
   onClose,
   t,
@@ -75,8 +77,8 @@ export default function SettingsLanguageVariantOverlay({
   }, [onClose]);
 
   const languageGroups = useMemo(
-    () => getLanguageVariantGroups(draftCustomVariants, "zh-TW"),
-    [draftCustomVariants],
+    () => getLanguageVariantGroups(draftCustomVariants, uiLanguage),
+    [draftCustomVariants, uiLanguage],
   );
 
   const submit = useCallback(
@@ -192,7 +194,7 @@ export default function SettingsLanguageVariantOverlay({
       const nextCustomVariants = normalizeCustomLanguageVariants(
         draftCustomVariants.filter((variant) => variant.id !== variantId),
       );
-      const nextGroups = getLanguageVariantGroups(nextCustomVariants, "zh-TW");
+      const nextGroups = getLanguageVariantGroups(nextCustomVariants, uiLanguage);
       const nextPreferences = { ...draftPreferences };
 
       for (const [languageCode, selectedVariantId] of Object.entries(nextPreferences)) {
@@ -211,7 +213,7 @@ export default function SettingsLanguageVariantOverlay({
       setDraftPreferences(nextPreferences);
       void submit(nextPreferences, nextCustomVariants, useGlobalSettings);
     },
-    [draftCustomVariants, draftPreferences, submit, useGlobalSettings],
+    [draftCustomVariants, draftPreferences, submit, uiLanguage, useGlobalSettings],
   );
 
   return (
@@ -284,7 +286,7 @@ export default function SettingsLanguageVariantOverlay({
                   >
                     {group.variants.map((variant) => (
                       <option key={variant.id} value={variant.id}>
-                        {getLanguageVariantOptionLabel(variant, "zh-TW")}
+                        {getLanguageVariantOptionLabel(variant, uiLanguage)}
                       </option>
                     ))}
                   </select>

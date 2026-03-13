@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type { TranslationKey } from "../../i18n";
 import type { SettingsSection } from "./settingsShared";
 
@@ -8,6 +8,7 @@ interface SettingsSidebarProps {
   onSelectSection: (section: SettingsSection) => void;
   sectionLabelKey: Record<SettingsSection, TranslationKey>;
   t: (key: TranslationKey) => string;
+  footer?: ReactNode;
 }
 
 export default function SettingsSidebar({
@@ -16,13 +17,14 @@ export default function SettingsSidebar({
   onSelectSection,
   sectionLabelKey,
   t,
+  footer,
 }: SettingsSidebarProps) {
   return (
     <div className="settings-shell-card flex h-full min-h-0 flex-col overflow-hidden p-3">
       <div className="px-2 pb-2">
-        <p className="text-lg font-semibold text-zinc-900">設定</p>
+        <p className="text-base font-semibold leading-tight text-zinc-900">{t("settings.title")}</p>
       </div>
-      <div className="space-y-1.5">
+      <div className="flex-1 space-y-1.5">
         {navItems.map((item) => (
           <button
             key={item.id}
@@ -44,6 +46,11 @@ export default function SettingsSidebar({
           </button>
         ))}
       </div>
+      {footer ? (
+        <div className="mt-3 border-t border-black/5 px-1 pt-3">
+          {footer}
+        </div>
+      ) : null}
     </div>
   );
 }

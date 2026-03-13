@@ -16,9 +16,10 @@ type UpdateStatus =
 
 interface SettingsUpdaterProps {
   t: ReturnType<typeof useI18n>["t"];
+  layout?: "content" | "rail";
 }
 
-export default function SettingsUpdater({ t }: SettingsUpdaterProps) {
+export default function SettingsUpdater({ t, layout = "content" }: SettingsUpdaterProps) {
   const [version, setVersion] = useState("");
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [progress, setProgress] = useState(0);
@@ -81,21 +82,23 @@ export default function SettingsUpdater({ t }: SettingsUpdaterProps) {
     handleCheck();
   }, [handleCheck]);
 
+  const isRailLayout = layout === "rail";
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className={`flex flex-wrap gap-3 ${isRailLayout ? "rounded-[22px] border border-zinc-200 bg-white/80 p-3" : "items-center"}`}>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-zinc-900">{t("settings.updater.title")}</label>
-          <SettingsInfoHint text="檢查是否有新版可安裝，安裝完成後會重新啟動程式。" />
+          <SettingsInfoHint text={t("settings.updater.hint")} />
         </div>
         <p className="text-xs text-zinc-500">
           {t("settings.updater.currentVersion")}: v{version}
         </p>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex flex-wrap items-center gap-2 ${isRailLayout ? "w-full" : ""}`}>
         <button
           type="button"
-          className="btn-secondary px-3 py-2 text-xs"
+          className={`btn-secondary px-3 py-2 text-xs ${isRailLayout ? "w-full justify-center" : ""}`}
           disabled={status === "checking" || status === "downloading"}
           onClick={handleCheck}
         >
@@ -124,7 +127,7 @@ export default function SettingsUpdater({ t }: SettingsUpdaterProps) {
             {status === "available" && (
               <button
                 type="button"
-                className="btn-primary px-3 py-2 text-xs"
+                className={`btn-primary px-3 py-2 text-xs ${isRailLayout ? "w-full justify-center" : ""}`}
                 onClick={handleDownloadAndInstall}
               >
                 {t("settings.updater.installAndRestart")}

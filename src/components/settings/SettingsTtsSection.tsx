@@ -13,6 +13,8 @@ interface SettingsTtsSectionProps {
   failedTtsDownloadModelId: string;
   ttsModelStatus: { type: "" | "success" | "error"; message: string };
   formatBytes: (bytes?: number) => string;
+  getLocalizedModelName: (model: LocalTtsModel) => string;
+  getLocalizedModelDescription: (model: LocalTtsModel) => string;
   onPitchChange: (value: string) => void;
   onRateChange: (value: string) => void;
   onVoiceChange: (value: string) => void;
@@ -35,6 +37,8 @@ export default function SettingsTtsSection({
   failedTtsDownloadModelId,
   ttsModelStatus,
   formatBytes,
+  getLocalizedModelName,
+  getLocalizedModelDescription,
   onPitchChange,
   onRateChange,
   onVoiceChange,
@@ -89,7 +93,7 @@ export default function SettingsTtsSection({
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-medium text-gray-900">{model.name}</h4>
+                      <h4 className="text-sm font-medium text-gray-900">{getLocalizedModelName(model)}</h4>
                       {isSelected && (
                         <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
                           {t("settings.tts.activeNow")}
@@ -101,7 +105,7 @@ export default function SettingsTtsSection({
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 text-xs text-gray-600">{model.description}</p>
+                    <p className="mt-1 text-xs text-gray-600">{getLocalizedModelDescription(model)}</p>
                   </div>
                 </div>
 

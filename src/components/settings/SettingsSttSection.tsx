@@ -144,15 +144,15 @@ export default function SettingsSttSection({
               onChange={(event) => onSttLanguageChange(event.target.value as SttLanguage)}
             >
               <option value="auto">{t("settings.stt.language.auto")}</option>
-              <option value="en">English</option>
-              <option value="zh">中文</option>
-              <option value="ja">日本語</option>
-              <option value="ko">한국어</option>
-              <option value="de">Deutsch</option>
-              <option value="fr">Français</option>
-              <option value="es">Español</option>
-              <option value="ru">Русский</option>
-              <option value="ar">العربية</option>
+              <option value="en">{t("settings.language.en-US")}</option>
+              <option value="zh">{t("settings.language.zh-TW")}</option>
+              <option value="ja">{t("settings.language.ja-JP")}</option>
+              <option value="ko">{t("settings.language.ko-KR")}</option>
+              <option value="de">{t("settings.language.de-DE")}</option>
+              <option value="fr">{t("settings.language.fr-FR")}</option>
+              <option value="es">{t("settings.language.es-ES")}</option>
+              <option value="ru">{t("settings.language.ru-RU")}</option>
+              <option value="ar">{t("settings.language.ar-SA")}</option>
             </select>
             <p className="text-xs text-zinc-500">{t("settings.stt.language.hint")}</p>
           </div>

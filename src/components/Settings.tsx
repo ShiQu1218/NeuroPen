@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { translate, type TranslationKey } from "../i18n";
+import { translate, useI18n, type TranslationKey } from "../i18n";
 import { settingsService } from "../services/settingsService";
 import {
   normalizeLlmModelOptions,
   useAppStore,
+  type AppLanguage,
   type AppProfile,
   type CustomLanguageVariant,
   type PreferredLanguage,
@@ -55,36 +56,8 @@ interface AppProfilePromptDraft {
   promptAppendix: string;
 }
 
-const SETTINGS_LOCALE = "zh-TW";
 const EMPTY_PANEL_MESSAGE: PanelMessage = { tone: "", message: "" };
 const EMPTY_BUSY_MESSAGE = { type: "" as const, message: "" };
-
-const SECTION_META: Record<SettingsSection, { title: string; description?: string }> = {
-  general: {
-    title: "一般",
-  },
-  shortcuts: {
-    title: "快捷鍵",
-  },
-  stt: {
-    title: "語音輸入",
-  },
-  llm: {
-    title: "LLM",
-  },
-  quickAction: {
-    title: "快捷指令",
-  },
-  tts: {
-    title: "語音合成",
-  },
-  appProfile: {
-    title: "應用程式設定檔",
-  },
-  history: {
-    title: "歷史與偏好",
-  },
-};
 
 const SECTION_LABEL_KEYS: Record<SettingsSection, TranslationKey> = {
   general: "settings.section.general",
@@ -97,9 +70,22 @@ const SECTION_LABEL_KEYS: Record<SettingsSection, TranslationKey> = {
   history: "settings.section.history",
 };
 
-const createDefaultProfile = (index: number): AppProfile => ({
+const UI_LANGUAGE_OPTIONS: AppLanguage[] = [
+  "zh-TW",
+  "en-US",
+  "ja-JP",
+  "es-ES",
+  "ko-KR",
+  "zh-CN",
+  "de-DE",
+  "fr-FR",
+  "ar-SA",
+  "ru-RU",
+];
+
+const createDefaultProfile = (name: string): AppProfile => ({
   id: `custom-${Date.now()}`,
-  name: `新設定檔 ${index}`,
+  name,
   keywords: [],
   enabled: true,
   applyToModes: ["A", "B1", "B2", "C"],
@@ -154,6 +140,7 @@ function WorkspaceShell({
 }
 
 export default function Settings() {
+  const { t, language } = useI18n();
   const {
     wakeWord, setWakeWord,
     sttModelPath, setSttModelPath,
@@ -178,6 +165,7 @@ export default function Settings() {
     microphoneSource, setMicrophoneSource,
     launchOnStartup, setLaunchOnStartup,
     quickActionCommands, setQuickActionCommands,
+    setLanguage,
     localSttAvailable, setLocalSttAvailable,
     apiKeySet, setApiKeySet,
     ttsVoice, setTtsVoice,
@@ -193,11 +181,6 @@ export default function Settings() {
     preferenceLearningEnabled, setPreferenceLearningEnabled,
     appProfiles, setAppProfiles,
   } = useAppStore();
-
-  const t = useCallback(
-    (key: TranslationKey, params?: Record<string, string>) => translate(SETTINGS_LOCALE, key, params),
-    [],
-  );
 
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [sttApiKeyInput, setSttApiKeyInput] = useState("");
@@ -230,6 +213,16 @@ export default function Settings() {
   const [languageVariantOverlay, setLanguageVariantOverlay] = useState<{ scope: "global" | "profile"; profileId?: string } | null>(null);
 
   const statusTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
+  const sectionMeta = useMemo(
+    () =>
+      Object.fromEntries(
+        (Object.entries(SECTION_LABEL_KEYS) as Array<[SettingsSection, TranslationKey]>).map(([section, key]) => [
+          section,
+          { title: t(key) },
+        ]),
+      ) as Record<SettingsSection, { title: string }>,
+    [t],
+  );
 
   const setPanelMessage = useCallback((panel: string, tone: PanelTone, message: string, ttlMs = STATUS_RESET_MS) => {
     setPanelMessages((prev) => ({ ...prev, [panel]: { tone, message } }));
@@ -293,6 +286,42 @@ export default function Settings() {
         countLabel: (count) => t("settings.languageVariant.profileSummary", { count: String(count) }),
       }),
     [customLanguageVariants, preferredLanguage, t],
+  );
+
+  const getLocalizedSttModelName = useCallback(
+    (model: LocalSttModel) => {
+      const key = `settings.stt.model.${model.id}.name` as TranslationKey;
+      const localized = t(key);
+      return localized === key ? model.name : localized;
+    },
+    [t],
+  );
+
+  const getLocalizedSttModelDescription = useCallback(
+    (model: LocalSttModel) => {
+      const key = `settings.stt.model.${model.id}.description` as TranslationKey;
+      const localized = t(key);
+      return localized === key ? model.description : localized;
+    },
+    [t],
+  );
+
+  const getLocalizedTtsModelName = useCallback(
+    (model: LocalTtsModel) => {
+      const key = `settings.tts.model.${model.id}.name` as TranslationKey;
+      const localized = t(key);
+      return localized === key ? model.name : localized;
+    },
+    [t],
+  );
+
+  const getLocalizedTtsModelDescription = useCallback(
+    (model: LocalTtsModel) => {
+      const key = `settings.tts.model.${model.id}.description` as TranslationKey;
+      const localized = t(key);
+      return localized === key ? model.description : localized;
+    },
+    [t],
   );
 
   useEffect(() => {
@@ -667,12 +696,12 @@ export default function Settings() {
 
   const handleWakeWordChange = useCallback(async (value: string) => {
     if (!value.trim()) {
-      setPanelMessage("stt", "error", "喚醒詞不能留白。");
+      setPanelMessage("stt", "error", t("settings.status.wakeWordRequired"));
       return;
     }
     setWakeWord(value);
     await broadcastSettingsSaved({ wakeWord: value.trim() });
-  }, [broadcastSettingsSaved, setPanelMessage, setWakeWord]);
+  }, [broadcastSettingsSaved, setPanelMessage, setWakeWord, t]);
 
   const handleLaunchOnStartupChange = useCallback(async (value: boolean) => {
     const previousValue = launchOnStartup;
@@ -686,6 +715,15 @@ export default function Settings() {
       setPanelMessage("general", "error", error instanceof Error ? error.message : String(error));
     }
   }, [broadcastSettingsSaved, launchOnStartup, setLaunchOnStartup, setPanelMessage, t]);
+
+  const handleLanguageChange = useCallback(async (value: AppLanguage) => {
+    if (value === language) {
+      return;
+    }
+    setLanguage(value);
+    await broadcastSettingsSaved({ language: value });
+    setPanelMessage("general", "success", translate(value, "settings.saveApplied"));
+  }, [broadcastSettingsSaved, language, setLanguage, setPanelMessage]);
 
   const handleMicrophoneSourceChange = useCallback(async (value: string) => {
     const previousValue = microphoneSource;
@@ -1000,7 +1038,7 @@ export default function Settings() {
     const nextModeBPrompt = promptDrafts.modeBPrompt.trim();
     const nextModeCPrompt = promptDrafts.modeCPrompt.trim();
     if (!nextModeAPrompt || !nextModeBPrompt || !nextModeCPrompt) {
-      setPanelMessage("llm", "error", "Mode Prompt 不可留白。");
+      setPanelMessage("llm", "error", t("settings.status.modePromptRequired"));
       return;
     }
     setModeAPrompt(nextModeAPrompt);
@@ -1011,8 +1049,8 @@ export default function Settings() {
       modeBPrompt: nextModeBPrompt,
       modeCPrompt: nextModeCPrompt,
     });
-    setPanelMessage("llm", "success", "Prompt 已儲存並套用。");
-  }, [broadcastSettingsSaved, promptDrafts, setModeAPrompt, setModeBPrompt, setModeCPrompt, setPanelMessage]);
+    setPanelMessage("llm", "success", t("settings.status.modePromptSaved"));
+  }, [broadcastSettingsSaved, promptDrafts, setModeAPrompt, setModeBPrompt, setModeCPrompt, setPanelMessage, t]);
 
   const updateProfiles = useCallback(async (
     nextProfiles: AppProfile[],
@@ -1029,13 +1067,17 @@ export default function Settings() {
   }, [broadcastSettingsSaved, setAppProfiles, setPanelMessage]);
 
   const handleAddProfile = useCallback(() => {
-    const newProfile = createDefaultProfile(appProfiles.length + 1);
-    void updateProfiles([...appProfiles, newProfile], { message: "已新增設定檔。" });
+    const newProfile = createDefaultProfile(
+      t("settings.appProfile.defaultName", { index: String(appProfiles.length + 1) }),
+    );
+    void updateProfiles([...appProfiles, newProfile], { message: t("settings.status.profileAdded") });
     setActiveProfileOverlayId(newProfile.id);
-  }, [appProfiles, updateProfiles]);
+  }, [appProfiles, t, updateProfiles]);
 
   const handleDeleteProfile = useCallback((profileId: string) => {
-    void updateProfiles(appProfiles.filter((profile) => profile.id !== profileId), { message: "設定檔已刪除。" });
+    void updateProfiles(appProfiles.filter((profile) => profile.id !== profileId), {
+      message: t("settings.status.profileDeleted"),
+    });
     setProfilePromptDrafts((prev) => {
       const next = { ...prev };
       delete next[profileId];
@@ -1044,7 +1086,7 @@ export default function Settings() {
     if (activeProfileOverlayId === profileId) {
       setActiveProfileOverlayId(null);
     }
-  }, [activeProfileOverlayId, appProfiles, updateProfiles]);
+  }, [activeProfileOverlayId, appProfiles, t, updateProfiles]);
 
   const handleMoveProfile = useCallback((profileId: string, direction: "up" | "down") => {
     const currentIndex = appProfiles.findIndex((profile) => profile.id === profileId);
@@ -1089,8 +1131,8 @@ export default function Settings() {
     );
     setAppProfiles(nextProfiles);
     await broadcastSettingsSaved({ appProfiles: nextProfiles });
-    setPanelMessage("appProfile", "success", "設定檔 prompt 已儲存。");
-  }, [appProfiles, broadcastSettingsSaved, profilePromptDrafts, setAppProfiles, setPanelMessage]);
+    setPanelMessage("appProfile", "success", t("settings.status.profilePromptSaved"));
+  }, [appProfiles, broadcastSettingsSaved, profilePromptDrafts, setAppProfiles, setPanelMessage, t]);
 
   const handleApplyLanguageVariantSelection = useCallback(async (payload: SettingsLanguageVariantOverlayApplyPayload) => {
     const nextCustomVariants = normalizeCustomLanguageVariants(payload.customVariants);
@@ -1103,7 +1145,7 @@ export default function Settings() {
         preferredLanguage: normalizedPreferences,
         customLanguageVariants: nextCustomVariants,
       });
-      setPanelMessage("llm", "success", "語言變體已立即套用。");
+      setPanelMessage("llm", "success", t("settings.status.languageVariantApplied"));
       return;
     }
 
@@ -1120,7 +1162,7 @@ export default function Settings() {
       ),
       { includeCustomVariants: nextCustomVariants },
     );
-    setPanelMessage("appProfile", "success", "設定檔語言變體已立即套用。");
+    setPanelMessage("appProfile", "success", t("settings.status.profileLanguageVariantApplied"));
   }, [
     appProfiles,
     broadcastSettingsSaved,
@@ -1128,108 +1170,128 @@ export default function Settings() {
     setCustomLanguageVariants,
     setPanelMessage,
     setPreferredLanguage,
+    t,
     updateProfiles,
   ]);
 
   const renderGeneralSection = () => (
-    <WorkspaceShell {...SECTION_META.general} status={panelMessages.general}>
+    <WorkspaceShell {...sectionMeta.general} status={panelMessages.general}>
       <div className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-            <section className="settings-stage-card p-4">
-              <div className="grid gap-3 lg:grid-cols-2">
-                {[
-                  [
-                    "settings.feature.stt",
-                    "控制按住錄音、喚醒詞與語音辨識流程是否啟用。",
-                    sttEnabled,
-                    setSttEnabled,
-                    "sttEnabled",
-                  ],
-                  [
-                    "settings.feature.selection",
-                    "控制選詞後的 Quick Action 與選詞語音流程是否啟用。",
-                    selectionEnabled,
-                    setSelectionEnabled,
-                    "selectionEnabled",
-                  ],
-                  [
-                    "settings.feature.screenshot",
-                    "控制截圖問 AI 與相關熱鍵是否啟用。",
-                    screenshotEnabled,
-                    setScreenshotEnabled,
-                    "screenshotEnabled",
-                  ],
-                ].map(([labelKey, hintText, enabled, setter, payloadKey]) => (
-                  <div
-                    key={String(labelKey)}
-                    className="flex min-h-[52px] items-center justify-between rounded-2xl border border-zinc-200 bg-white px-3 py-2"
-                  >
-                    <div className="flex min-w-0 items-center gap-2 pr-3">
-                      <span className="truncate text-sm font-medium text-zinc-800">{t(labelKey as TranslationKey)}</span>
-                      <SettingsInfoHint text={String(hintText)} />
-                    </div>
-                    <SettingsToggle
-                      checked={Boolean(enabled)}
-                      onChange={(nextValue) =>
-                        void handleToggleSetting(
-                          "general",
-                          setter as (value: boolean) => void,
-                          payloadKey as never,
-                          nextValue,
-                        )}
-                      ariaLabel={t(labelKey as TranslationKey)}
-                    />
-                  </div>
-                ))}
-                <div className="flex min-h-[52px] items-center justify-between rounded-2xl border border-zinc-200 bg-[#fcfbf8] px-3 py-2">
-                  <div className="pr-3">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-zinc-800">{t("settings.launchOnStartup.label")}</p>
-                      <SettingsInfoHint text={t("settings.launchOnStartup.hint")} />
-                    </div>
-                    <p className="text-[11px] text-zinc-500">{t("settings.launchOnStartup.hint")}</p>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <section className="settings-stage-card p-4">
+            <div className="grid gap-3 lg:grid-cols-2">
+              {[
+                [
+                  "settings.feature.stt",
+                  "settings.general.feature.sttHint",
+                  sttEnabled,
+                  setSttEnabled,
+                  "sttEnabled",
+                ],
+                [
+                  "settings.feature.selection",
+                  "settings.general.feature.selectionHint",
+                  selectionEnabled,
+                  setSelectionEnabled,
+                  "selectionEnabled",
+                ],
+                [
+                  "settings.feature.screenshot",
+                  "settings.general.feature.screenshotHint",
+                  screenshotEnabled,
+                  setScreenshotEnabled,
+                  "screenshotEnabled",
+                ],
+              ].map(([labelKey, hintKey, enabled, setter, payloadKey]) => (
+                <div
+                  key={String(labelKey)}
+                  className="flex min-h-[52px] items-center justify-between rounded-2xl border border-zinc-200 bg-white px-3 py-2"
+                >
+                  <div className="flex min-w-0 items-center gap-2 pr-3">
+                    <span className="truncate text-sm font-medium text-zinc-800">{t(labelKey as TranslationKey)}</span>
+                    <SettingsInfoHint text={t(hintKey as TranslationKey)} />
                   </div>
                   <SettingsToggle
-                    checked={launchOnStartup}
-                    onChange={(nextValue) => void handleLaunchOnStartupChange(nextValue)}
-                    ariaLabel={t("settings.launchOnStartup.label")}
+                    checked={Boolean(enabled)}
+                    onChange={(nextValue) =>
+                      void handleToggleSetting(
+                        "general",
+                        setter as (value: boolean) => void,
+                        payloadKey as never,
+                        nextValue,
+                      )}
+                    ariaLabel={t(labelKey as TranslationKey)}
                   />
                 </div>
+              ))}
+              <div className="flex min-h-[52px] items-center justify-between rounded-2xl border border-zinc-200 bg-[#fcfbf8] px-3 py-2">
+                <div className="pr-3">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-zinc-800">{t("settings.launchOnStartup.label")}</p>
+                    <SettingsInfoHint text={t("settings.launchOnStartup.hint")} />
+                  </div>
+                  <p className="text-[11px] text-zinc-500">{t("settings.launchOnStartup.hint")}</p>
+                </div>
+                <SettingsToggle
+                  checked={launchOnStartup}
+                  onChange={(nextValue) => void handleLaunchOnStartupChange(nextValue)}
+                  ariaLabel={t("settings.launchOnStartup.label")}
+                />
               </div>
-            </section>
-            <section className="settings-stage-card p-4">
-              <SettingsUpdater t={t} />
-            </section>
-          </div>
-          <section className="settings-stage-card p-4">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-medium text-zinc-900">{SECTION_META.shortcuts.title}</h3>
-              <SettingsInfoHint text="設定錄音、截圖與 AI 對話框的全域快捷鍵，變更後立即註冊。" />
-            </div>
-            <div className="mt-3">
-              <SettingsShortcutsSection
-                draftHotkey={hotkey}
-                draftScreenshotHotkey={screenshotHotkey}
-                draftDialogHotkey={dialogHotkey}
-                hotkeyStatus={hotkeyStatus}
-                hotkeyErrorMessage={hotkeyErrorMessage}
-                onHotkeyChange={(value) => void applyHotkeyUpdate("trigger", value)}
-                onScreenshotHotkeyChange={(value) => void applyHotkeyUpdate("screenshot", value)}
-                onDialogHotkeyChange={(value) => void applyHotkeyUpdate("dialog", value)}
-                onClearHotkeyError={() => {
-                  setHotkeyStatus("");
-                  setHotkeyErrorMessage("");
-                }}
-                t={t}
-              />
             </div>
           </section>
+          <section className="settings-stage-card p-4">
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-zinc-500">{t("settings.language.label")}</label>
+                  <SettingsInfoHint text={t("settings.language.hint")} />
+                </div>
+                <select
+                  className="settings-input-compact mt-1.5"
+                  value={language}
+                  onChange={(event) => void handleLanguageChange(event.target.value as AppLanguage)}
+                  aria-label={t("settings.language.label")}
+                >
+                  {UI_LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {t(`settings.language.${option}` as TranslationKey)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+        </div>
+        <section className="settings-stage-card p-4">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-zinc-900">{sectionMeta.shortcuts.title}</h3>
+            <SettingsInfoHint text={t("settings.general.shortcutsHint")} />
+          </div>
+          <div className="mt-3">
+            <SettingsShortcutsSection
+              draftHotkey={hotkey}
+              draftScreenshotHotkey={screenshotHotkey}
+              draftDialogHotkey={dialogHotkey}
+              hotkeyStatus={hotkeyStatus}
+              hotkeyErrorMessage={hotkeyErrorMessage}
+              onHotkeyChange={(value) => void applyHotkeyUpdate("trigger", value)}
+              onScreenshotHotkeyChange={(value) => void applyHotkeyUpdate("screenshot", value)}
+              onDialogHotkeyChange={(value) => void applyHotkeyUpdate("dialog", value)}
+              onClearHotkeyError={() => {
+                setHotkeyStatus("");
+                setHotkeyErrorMessage("");
+              }}
+              t={t}
+            />
+          </div>
+        </section>
       </div>
     </WorkspaceShell>
   );
 
   const renderQuickActionSection = () => (
-    <WorkspaceShell {...SECTION_META.quickAction} status={panelMessages.quickAction}>
+    <WorkspaceShell {...sectionMeta.quickAction} status={panelMessages.quickAction}>
       <section className="settings-stage-card p-4">
         <SettingsQuickActionSection
           commands={quickActionCommands}
@@ -1244,7 +1306,7 @@ export default function Settings() {
   );
 
   const renderAppProfileSection = () => (
-    <WorkspaceShell {...SECTION_META.appProfile} status={panelMessages.appProfile}>
+    <WorkspaceShell {...sectionMeta.appProfile} status={panelMessages.appProfile}>
       <div className="space-y-4">
         <section className="settings-stage-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1265,7 +1327,7 @@ export default function Settings() {
         </section>
         <section className={`settings-stage-card p-4 ${contextAwareTone ? "" : "opacity-50"}`}>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="text-sm font-medium text-zinc-900">設定檔</h3>
+            <h3 className="text-sm font-medium text-zinc-900">{t("settings.appProfile.listTitle")}</h3>
             <button type="button" onClick={handleAddProfile} disabled={!contextAwareTone} className="btn-primary px-4 py-2 text-sm disabled:opacity-40">
               + {t("settings.appProfile.add")}
             </button>
@@ -1279,7 +1341,7 @@ export default function Settings() {
                       {profile.name || t("settings.appProfile.namePlaceholder")}
                     </h4>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {profile.keywords.length > 0 ? profile.keywords.join("、") : "尚未設定關鍵字"}
+                      {profile.keywords.length > 0 ? profile.keywords.join("、") : t("settings.appProfile.noKeywords")}
                     </p>
                   </div>
                   <div className="flex flex-col gap-1">
@@ -1300,7 +1362,7 @@ export default function Settings() {
                 </div>
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-zinc-500">啟用</span>
+                    <span className="text-xs text-zinc-500">{t("settings.appProfile.enabled")}</span>
                     <SettingsToggle
                       checked={profile.enabled}
                       disabled={!contextAwareTone}
@@ -1309,7 +1371,7 @@ export default function Settings() {
                     />
                   </div>
                   <button type="button" onClick={() => setActiveProfileOverlayId(profile.id)} disabled={!contextAwareTone} className="btn-primary px-4 py-2 text-sm disabled:opacity-40">
-                    編輯
+                    {t("settings.appProfile.edit")}
                   </button>
                 </div>
               </article>
@@ -1328,7 +1390,7 @@ export default function Settings() {
         return renderGeneralSection();
       case "stt":
         return (
-          <WorkspaceShell {...SECTION_META.stt} status={panelMessages.stt}>
+          <WorkspaceShell {...sectionMeta.stt} status={panelMessages.stt}>
             <SettingsSttSection
               draftWakeWord={wakeWord}
               draftSttEnabled={sttEnabled}
@@ -1353,8 +1415,8 @@ export default function Settings() {
               sttApiKeySet={sttApiKeySet}
               sttApiKeySaveStatus={sttApiKeySaveStatus}
               formatBytes={formatBytes}
-              getLocalizedModelName={(model) => model.name}
-              getLocalizedModelDescription={(model) => model.description}
+              getLocalizedModelName={getLocalizedSttModelName}
+              getLocalizedModelDescription={getLocalizedSttModelDescription}
               onWakeWordChange={(value) => void handleWakeWordChange(value)}
               onSttModelChoiceChange={(value) => void handleSttModelChoiceChange(value)}
               onSttLanguageChange={(value) => void handleSttLanguageChange(value)}
@@ -1375,7 +1437,7 @@ export default function Settings() {
         );
       case "llm":
         return (
-          <WorkspaceShell {...SECTION_META.llm} status={panelMessages.llm}>
+          <WorkspaceShell {...sectionMeta.llm} status={panelMessages.llm}>
             <div className="space-y-4">
               <section className="settings-stage-card p-4">
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
@@ -1383,7 +1445,7 @@ export default function Settings() {
                     <div className="rounded-[22px] border border-zinc-200 bg-[#fcfbf8] p-4">
                       <div className="flex items-center gap-2">
                         <label className="text-xs font-medium text-zinc-500">{t("settings.llm.outputMode")}</label>
-                        <SettingsInfoHint text="決定 LLM 結果先進預覽視窗，或直接注入到目前輸入位置。" />
+                        <SettingsInfoHint text={t("settings.llm.outputModeHint")} />
                       </div>
                       <div className="mt-2 grid gap-2">
                         {(["PreviewStream", "DirectInject"] as const).map((mode) => (
@@ -1396,7 +1458,7 @@ export default function Settings() {
                             }`}
                           >
                             <span>{mode === "PreviewStream" ? t("settings.llm.previewStream") : t("settings.llm.directInject")}</span>
-                            <span className="text-xs">{outputMode === mode ? "使用中" : "切換"}</span>
+                            <span className="text-xs">{outputMode === mode ? t("settings.llm.status.active") : t("settings.llm.status.switch")}</span>
                           </button>
                         ))}
                       </div>
@@ -1430,7 +1492,7 @@ export default function Settings() {
                     <div className="rounded-[22px] border border-zinc-200 bg-[#fcfbf8] p-4">
                       <div className="flex items-center gap-2">
                         <label className="text-xs font-medium text-zinc-500">{t("settings.llm.provider")}</label>
-                        <SettingsInfoHint text="切換要呼叫的 LLM 服務商，變更後立即套用。" />
+                        <SettingsInfoHint text={t("settings.llm.providerHint")} />
                       </div>
                       <select className="settings-input-compact mt-1.5" value={llmProvider} onChange={(event) => void handleLlmProviderChange(event.target.value as typeof llmProvider)}>
                         <option value="openAi">OpenAI</option>
@@ -1480,7 +1542,7 @@ export default function Settings() {
                     <div className="rounded-[22px] border border-zinc-200 bg-white p-4">
                       <div className="flex items-center gap-2">
                         <label className="text-xs font-medium text-zinc-500">{t("settings.llm.apiKey")}</label>
-                        <SettingsInfoHint text="只在按下儲存後安全送往後端，不會直接寫進前端偏好儲存。" />
+                        <SettingsInfoHint text={t("settings.llm.apiKeyHint")} />
                       </div>
                       {apiKeySet && <p className="mt-1 text-xs text-green-600">{t("settings.llm.apiKeySet")}</p>}
                       <div className="mt-2 flex gap-2">
@@ -1499,7 +1561,7 @@ export default function Settings() {
                     <h3 className="text-sm font-medium text-zinc-900">{t("settings.llm.modePrompts")}</h3>
                     <SettingsInfoHint text={t("settings.llm.modePromptsHint")} />
                   </div>
-                  <button type="button" onClick={() => void handleSaveModePrompts()} disabled={!llmPromptDirty} className="btn-primary px-4 py-2 text-sm disabled:opacity-40">儲存</button>
+                  <button type="button" onClick={() => void handleSaveModePrompts()} disabled={!llmPromptDirty} className="btn-primary px-4 py-2 text-sm disabled:opacity-40">{t("settings.save")}</button>
                 </div>
                 <div className="mt-3 grid gap-3 xl:grid-cols-3">
                   {[
@@ -1521,15 +1583,15 @@ export default function Settings() {
         return renderQuickActionSection();
       case "tts":
         return (
-          <WorkspaceShell {...SECTION_META.tts} status={panelMessages.tts}>
-            <SettingsTtsSection draftTtsPitch={ttsPitch} draftTtsRate={ttsRate} draftTtsVoice={ttsVoice} localTtsModels={localTtsModels} localTtsModelsLoading={localTtsModelsLoading} ttsModelBusyId={ttsModelBusyId} ttsModelBusyAction={ttsModelBusyAction} ttsModelDownloadProgress={ttsModelDownloadProgress} failedTtsDownloadModelId={failedTtsDownloadModelId} ttsModelStatus={ttsModelStatus} formatBytes={formatBytes} onPitchChange={(value) => void handleTtsPitchChange(value)} onRateChange={(value) => void handleTtsRateChange(value)} onVoiceChange={(value) => void handleTtsVoiceChange(value)} onInstallModel={handleInstallLocalTtsModel} onCancelDownload={handleCancelLocalTtsModelDownload} onDeleteModel={handleDeleteLocalTtsModel} onSelectModel={handleSelectLocalTtsModel} t={t} />
+          <WorkspaceShell {...sectionMeta.tts} status={panelMessages.tts}>
+            <SettingsTtsSection draftTtsPitch={ttsPitch} draftTtsRate={ttsRate} draftTtsVoice={ttsVoice} localTtsModels={localTtsModels} localTtsModelsLoading={localTtsModelsLoading} ttsModelBusyId={ttsModelBusyId} ttsModelBusyAction={ttsModelBusyAction} ttsModelDownloadProgress={ttsModelDownloadProgress} failedTtsDownloadModelId={failedTtsDownloadModelId} ttsModelStatus={ttsModelStatus} formatBytes={formatBytes} getLocalizedModelName={getLocalizedTtsModelName} getLocalizedModelDescription={getLocalizedTtsModelDescription} onPitchChange={(value) => void handleTtsPitchChange(value)} onRateChange={(value) => void handleTtsRateChange(value)} onVoiceChange={(value) => void handleTtsVoiceChange(value)} onInstallModel={handleInstallLocalTtsModel} onCancelDownload={handleCancelLocalTtsModelDownload} onDeleteModel={handleDeleteLocalTtsModel} onSelectModel={handleSelectLocalTtsModel} t={t} />
           </WorkspaceShell>
         );
       case "appProfile":
         return renderAppProfileSection();
       case "history":
         return (
-          <WorkspaceShell {...SECTION_META.history} status={panelMessages.history}>
+          <WorkspaceShell {...sectionMeta.history} status={panelMessages.history}>
             <SettingsHistorySection draftHistoryEnabled={historyEnabled} draftPreferenceLearningEnabled={preferenceLearningEnabled} onToggleHistory={() => void handleToggleSetting("history", setHistoryEnabled, "historyEnabled", !historyEnabled)} onTogglePreferenceLearning={() => void handleToggleSetting("history", setPreferenceLearningEnabled, "preferenceLearningEnabled", !preferenceLearningEnabled)} t={t} />
           </WorkspaceShell>
         );
@@ -1539,12 +1601,19 @@ export default function Settings() {
   };
 
   return (
-    <div className="relative h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(250,240,220,0.94),_rgba(243,244,246,1)_40%,_rgba(232,238,245,1)_100%)] text-zinc-900" style={{ fontFamily: "'Noto Sans TC', 'Microsoft JhengHei', 'PingFang TC', sans-serif" }}>
+    <div className="relative h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(250,240,220,0.94),_rgba(243,244,246,1)_40%,_rgba(232,238,245,1)_100%)] text-zinc-900" style={{ fontFamily: "'Noto Sans TC', 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', 'Microsoft JhengHei', 'Segoe UI', sans-serif" }}>
       <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.52),transparent_35%,rgba(255,255,255,0.24)_100%)]" />
       <div className="relative z-10 flex h-full min-h-0 flex-col px-4 py-4">
         <div className="grid h-full min-h-0 flex-1 gap-4 overflow-hidden grid-cols-[220px_minmax(0,1fr)]">
           <aside className="h-full min-h-0">
-            <SettingsSidebar activeSection={activeSection} navItems={NAV_ITEMS} onSelectSection={setActiveSection} sectionLabelKey={SECTION_LABEL_KEYS} t={t} />
+            <SettingsSidebar
+              activeSection={activeSection}
+              navItems={NAV_ITEMS}
+              onSelectSection={setActiveSection}
+              sectionLabelKey={SECTION_LABEL_KEYS}
+              t={t}
+              footer={<SettingsUpdater t={t} layout="rail" />}
+            />
           </aside>
           <main className="relative flex h-full min-h-0 overflow-hidden">
             {renderSection()}
@@ -1582,6 +1651,7 @@ export default function Settings() {
                     ? !appProfiles.find((profile) => profile.id === languageVariantOverlay.profileId)?.preferredLanguage
                     : false
                 }
+                uiLanguage={language}
                 onApply={handleApplyLanguageVariantSelection}
                 onClose={() => setLanguageVariantOverlay(null)}
                 t={t}

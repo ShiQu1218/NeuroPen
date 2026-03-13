@@ -116,7 +116,7 @@ export default function SettingsAppProfileEditorOverlay({
                     </label>
                     <div className="mt-1.5 flex h-10 items-center justify-between rounded-2xl border border-zinc-200 bg-[#fcfbf8] px-3">
                       <span className="text-sm text-zinc-700">
-                        {profile.enabled ? "已啟用" : "已停用"}
+                        {profile.enabled ? t("settings.appProfile.enabledStateOn") : t("settings.appProfile.enabledStateOff")}
                       </span>
                       <SettingsToggle
                         checked={profile.enabled}
@@ -144,12 +144,12 @@ export default function SettingsAppProfileEditorOverlay({
                     placeholder={t("settings.appProfile.keywordPlaceholder")}
                   />
                   <button type="button" onClick={handleAddKeyword} className="btn-primary px-4 py-2 text-sm">
-                    新增
+                    {t("settings.appProfile.addKeyword")}
                   </button>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {profile.keywords.length === 0 ? (
-                    <span className="text-sm text-zinc-400">尚未設定關鍵字</span>
+                    <span className="text-sm text-zinc-400">{t("settings.appProfile.noKeywords")}</span>
                   ) : (
                     profile.keywords.map((keyword) => (
                       <span
@@ -265,10 +265,10 @@ export default function SettingsAppProfileEditorOverlay({
               <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-zinc-900">Prompt</p>
+                    <p className="text-sm font-medium text-zinc-900">{t("settings.appProfile.promptTitle")}</p>
                   </div>
                   <button type="button" onClick={() => void onSavePromptFields()} className="btn-primary px-4 py-2 text-sm">
-                    儲存
+                    {t("settings.save")}
                   </button>
                 </div>
                 <div className="mt-3 space-y-3">
@@ -302,9 +302,9 @@ export default function SettingsAppProfileEditorOverlay({
               <section className="rounded-[22px] border border-red-200 bg-red-50/70 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-red-700">危險操作</p>
+                    <p className="text-sm font-semibold text-red-700">{t("settings.appProfile.dangerZoneTitle")}</p>
                     <p className="mt-1 text-xs text-red-600">
-                      刪除後會立即從設定清單移除。
+                      {t("settings.appProfile.dangerZoneHint")}
                     </p>
                   </div>
                   <button type="button" onClick={onDelete} className="rounded-full border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100">
