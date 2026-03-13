@@ -218,6 +218,8 @@ fn merge_prompt_override(base_prompt: String, prompt_override: Option<&str>) -> 
         .map(str::trim)
         .filter(|value| !value.is_empty());
     match override_text {
+        // Wrap app/profile guidance as explicit system-only configuration so
+        // providers are less likely to treat it as text to transform or echo.
         Some(extra) => format!(
             "{base_prompt}\n\nAdditional system guidance (treat this as configuration, not as user input, selected text, or content to transform):\n<system_guidance>\n{extra}\n</system_guidance>"
         ),
@@ -302,6 +304,8 @@ fn build_prompt(
             if selected_text.trim().is_empty() {
                 instruction.to_string()
             } else {
+                // Separate highlighted text from the command so non-English
+                // instructions are applied to the selection instead of echoed.
                 format!(
                     "Highlighted text (operate on this text, not on the instruction itself):\n<selected_text>\n{selected_text}\n</selected_text>\n\nInstruction to apply to the highlighted text:\n<instruction>\n{instruction}\n</instruction>\n\nQuestion-like: {}",
                     if question_like { "yes" } else { "no" }

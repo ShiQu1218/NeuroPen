@@ -139,6 +139,8 @@ export default function QuickActionIcon() {
           if (typeof event.payload.modeBStreamOutput === "boolean") {
             setModeBStreamOutput(event.payload.modeBStreamOutput);
           }
+          // Quick Action resolves app-profile prompt appendix at invoke time, so its
+          // local store must receive profile changes immediately after Apply.
           if (typeof event.payload.contextAwareTone === "boolean") {
             setContextAwareTone(event.payload.contextAwareTone);
           }
@@ -199,12 +201,22 @@ export default function QuickActionIcon() {
     }
   }, [expanded]);
 
-  const scheduleCollapse = useCallback((force = false) => {
-    if (Date.now() < dragLockUntil.current) return;
+  const scheduleCollapse = useCallback(function scheduleCollapse(force = false) {
+    const remainingDragLockMs = dragLockUntil.current - Date.now();
     clearCollapseTimer();
+    // Window dragging can fire mouseleave before the native drag loop ends. Retry
+    // after the lock expires so qa-interacting does not stay stuck at true.
+    if (remainingDragLockMs > 0) {
+      collapseTimer.current = setTimeout(() => {
+        collapseTimer.current = null;
+        scheduleCollapse(force);
+      }, remainingDragLockMs + 16);
+      return;
+    }
     collapseTimer.current = setTimeout(() => {
       collapseTimer.current = null;
       if (Date.now() < dragLockUntil.current) {
+        scheduleCollapse(force);
         return;
       }
       if (panelRef.current?.matches(":hover")) {
@@ -223,6 +235,20 @@ export default function QuickActionIcon() {
         .catch(() => { });
     }, 180);
   }, [clearCollapseTimer, isInputFocused, setQaInteracting, setWindowFocusable]);
+
+  useEffect(() => {
+    if (!expanded) {
+      return;
+    }
+    const postExpandHoverCheck = setTimeout(() => {
+      // A fast pointer sweep can expand the panel without ever delivering a
+      // follow-up leave event on the mounted panel. Collapse it if nothing hovers it.
+      if (!panelRef.current?.matches(":hover")) {
+        scheduleCollapse();
+      }
+    }, 32);
+    return () => clearTimeout(postExpandHoverCheck);
+  }, [expanded, scheduleCollapse]);
 
   const showPreviewAndCallLlm = async (
     instruction: string,

@@ -248,6 +248,8 @@ export function applySettingsSavedPayload(
   if (typeof payload.modeBStreamOutput === "boolean") {
     store.setModeBStreamOutput(payload.modeBStreamOutput);
   }
+  // Keep the main-window store aligned with settings-saved so preview TTS picks
+  // up newly applied voice/rate/pitch values immediately.
   if (typeof payload.ttsVoice === "string") {
     store.setTtsVoice(payload.ttsVoice);
   }

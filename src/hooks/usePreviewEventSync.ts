@@ -236,6 +236,8 @@ export function usePreviewEventSync({
         if (typeof event.payload.modeBStreamOutput === "boolean") {
           state.setModeBStreamOutput(event.payload.modeBStreamOutput);
         }
+        // Preview follow-up requests reuse app-profile and TTS settings from the
+        // shared store, so keep this window in sync without requiring a reopen.
         if (typeof event.payload.contextAwareTone === "boolean") {
           state.setContextAwareTone(event.payload.contextAwareTone);
         }
