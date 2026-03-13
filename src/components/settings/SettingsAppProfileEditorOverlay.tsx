@@ -21,10 +21,14 @@ const OUTPUT_MODE_OPTIONS: Array<{ value: OutputMode | ""; labelKey: Translation
 interface SettingsAppProfileEditorOverlayProps {
   profile: AppProfile;
   customLanguageVariants: CustomLanguageVariant[];
+  textDraft: { name: string };
+  textFieldsDirty: boolean;
   promptDraft: { toneHint: string; promptAppendix: string };
   onClose: () => void;
   onDelete: () => void;
   onImmediateChange: (patch: Partial<AppProfile>) => void;
+  onTextDraftChange: (patch: { name?: string }) => void;
+  onSaveTextFields: () => void | Promise<void>;
   onPromptDraftChange: (patch: { toneHint?: string; promptAppendix?: string }) => void;
   onSavePromptFields: () => void | Promise<void>;
   onOpenLanguageVariantPicker: () => void;
@@ -34,10 +38,14 @@ interface SettingsAppProfileEditorOverlayProps {
 export default function SettingsAppProfileEditorOverlay({
   profile,
   customLanguageVariants,
+  textDraft,
+  textFieldsDirty,
   promptDraft,
   onClose,
   onDelete,
   onImmediateChange,
+  onTextDraftChange,
+  onSaveTextFields,
   onPromptDraftChange,
   onSavePromptFields,
   onOpenLanguageVariantPicker,
@@ -81,7 +89,7 @@ export default function SettingsAppProfileEditorOverlay({
         <div className="flex items-start justify-between gap-4 border-b border-black/5 px-6 py-5">
           <div>
             <h2 className="text-[28px] font-semibold tracking-tight text-zinc-900">
-              {profile.name || t("settings.appProfile.namePlaceholder")}
+              {textDraft.name || t("settings.appProfile.namePlaceholder")}
             </h2>
           </div>
           <button
@@ -100,14 +108,30 @@ export default function SettingsAppProfileEditorOverlay({
               <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="text-xs font-medium text-zinc-500">
-                      {t("settings.appProfile.name")}
-                    </label>
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-xs font-medium text-zinc-500">
+                        {t("settings.appProfile.name")}
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void onSaveTextFields()}
+                        disabled={!textFieldsDirty}
+                        className="btn-primary px-3 py-1.5 text-xs disabled:opacity-40"
+                      >
+                        {t("settings.save")}
+                      </button>
+                    </div>
                     <input
                       className="settings-input-compact mt-1.5"
-                      value={profile.name}
-                      onChange={(event) => onImmediateChange({ name: event.target.value })}
+                      value={textDraft.name}
+                      onChange={(event) => onTextDraftChange({ name: event.target.value })}
                       placeholder={t("settings.appProfile.namePlaceholder")}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && textFieldsDirty) {
+                          event.preventDefault();
+                          void onSaveTextFields();
+                        }
+                      }}
                     />
                   </div>
                   <div>

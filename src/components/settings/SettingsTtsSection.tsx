@@ -18,6 +18,8 @@ interface SettingsTtsSectionProps {
   onPitchChange: (value: string) => void;
   onRateChange: (value: string) => void;
   onVoiceChange: (value: string) => void;
+  onSaveTextSettings: () => void;
+  textSettingsDirty: boolean;
   onInstallModel: (modelId: string) => void | Promise<unknown>;
   onCancelDownload: () => void | Promise<unknown>;
   onDeleteModel: (modelId: string) => void | Promise<unknown>;
@@ -42,6 +44,8 @@ export default function SettingsTtsSection({
   onPitchChange,
   onRateChange,
   onVoiceChange,
+  onSaveTextSettings,
+  textSettingsDirty,
   onInstallModel,
   onCancelDownload,
   onDeleteModel,
@@ -197,7 +201,17 @@ export default function SettingsTtsSection({
       </div>
 
       <div>
-        <label className="text-xs font-medium">{t("settings.tts.manualModel")}</label>
+        <div className="flex items-center justify-between gap-3">
+          <label className="text-xs font-medium">{t("settings.tts.manualModel")}</label>
+          <button
+            type="button"
+            onClick={onSaveTextSettings}
+            disabled={!textSettingsDirty}
+            className="btn-primary px-3 py-1.5 text-xs disabled:opacity-40"
+          >
+            {t("settings.save")}
+          </button>
+        </div>
         <input
           className="w-full input-field px-2.5 py-1.5 text-sm mt-1"
           placeholder="C:\\Users\\you\\.neuropen\\piper\\models\\en-us-lessac-medium\\en_US-lessac-medium.onnx"

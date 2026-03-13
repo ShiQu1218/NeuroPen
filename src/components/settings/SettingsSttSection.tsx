@@ -38,7 +38,10 @@ interface SettingsSttSectionProps {
   formatBytes: (bytes?: number) => string;
   getLocalizedModelName: (model: LocalSttModel) => string;
   getLocalizedModelDescription: (model: LocalSttModel) => string;
-  onWakeWordChange: (value: string) => void;
+  wakeWordDirty: boolean;
+  vocabularyDirty: boolean;
+  onWakeWordDraftChange: (value: string) => void;
+  onSaveWakeWord: () => void;
   onSttModelChoiceChange: (value: string) => void;
   onSttLanguageChange: (value: SttLanguage) => void;
   onMicrophoneSourceChange: (value: string) => void;
@@ -47,7 +50,8 @@ interface SettingsSttSectionProps {
   onSttOutputStrategyChange: (value: SttOutputStrategy) => void;
   onTranslationTargetChange: (value: TranslationTarget) => void;
   onPunctuationModeChange: (value: PunctuationMode) => void;
-  onVocabularyTermsChange: (value: string) => void;
+  onVocabularyTermsDraftChange: (value: string) => void;
+  onSaveVocabularyTerms: () => void;
   onImportVocabularyFile: (file: File | null) => void | Promise<unknown>;
   onInstallLocalModel: (modelId: string) => void | Promise<unknown>;
   onCancelLocalModelDownload: () => void | Promise<unknown>;
@@ -81,7 +85,10 @@ export default function SettingsSttSection({
   formatBytes,
   getLocalizedModelName,
   getLocalizedModelDescription,
-  onWakeWordChange,
+  wakeWordDirty,
+  vocabularyDirty,
+  onWakeWordDraftChange,
+  onSaveWakeWord,
   onSttModelChoiceChange,
   onSttLanguageChange,
   onMicrophoneSourceChange,
@@ -90,7 +97,8 @@ export default function SettingsSttSection({
   onSttOutputStrategyChange,
   onTranslationTargetChange,
   onPunctuationModeChange,
-  onVocabularyTermsChange,
+  onVocabularyTermsDraftChange,
+  onSaveVocabularyTerms,
   onImportVocabularyFile,
   onInstallLocalModel,
   onCancelLocalModelDownload,
@@ -107,12 +115,28 @@ export default function SettingsSttSection({
 
       <div className="settings-card space-y-4">
         <div className="space-y-1">
-          <label className="font-medium">{t("settings.wakeWord.label")}</label>
+          <div className="flex items-center justify-between gap-3">
+            <label className="font-medium">{t("settings.wakeWord.label")}</label>
+            <button
+              type="button"
+              onClick={onSaveWakeWord}
+              disabled={!wakeWordDirty}
+              className="btn-primary px-3 py-1.5 text-xs disabled:opacity-40"
+            >
+              {t("settings.save")}
+            </button>
+          </div>
           <input
             className="w-full input-field px-3 py-2"
             value={draftWakeWord}
-            onChange={(event) => onWakeWordChange(event.target.value)}
+            onChange={(event) => onWakeWordDraftChange(event.target.value)}
             placeholder={t("settings.wakeWord.placeholder")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && wakeWordDirty) {
+                event.preventDefault();
+                onSaveWakeWord();
+              }
+            }}
           />
           <p className="text-xs text-zinc-500">{t("settings.wakeWord.hint")}</p>
         </div>
@@ -282,7 +306,17 @@ export default function SettingsSttSection({
           </div>
 
           <div className="space-y-1">
-            <label className="font-medium">{t("settings.stt.vocabulary")}</label>
+            <div className="flex items-center justify-between gap-3">
+              <label className="font-medium">{t("settings.stt.vocabulary")}</label>
+              <button
+                type="button"
+                onClick={onSaveVocabularyTerms}
+                disabled={!vocabularyDirty}
+                className="btn-primary px-3 py-1.5 text-xs disabled:opacity-40"
+              >
+                {t("settings.save")}
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="file"
@@ -298,7 +332,7 @@ export default function SettingsSttSection({
         <textarea
           className="w-full min-h-[112px] input-field px-3 py-2 text-xs font-mono"
           value={draftVocabularyTerms}
-          onChange={(event) => onVocabularyTermsChange(event.target.value)}
+          onChange={(event) => onVocabularyTermsDraftChange(event.target.value)}
           placeholder={t("settings.stt.vocabularyPlaceholder")}
         />
       </div>

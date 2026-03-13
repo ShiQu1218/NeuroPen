@@ -4,19 +4,23 @@ import SettingsInfoHint from "./SettingsInfoHint";
 
 interface SettingsQuickActionSectionProps {
   commands: QuickActionCommand[];
+  commandsDirty: boolean;
   onAdd: () => void;
   onDelete: (commandId: string) => void;
   onMove: (commandId: string, direction: "up" | "down") => void;
   onUpdate: (commandId: string, field: "label" | "instruction", value: string) => void;
+  onSave: () => void;
   t: ReturnType<typeof useI18n>["t"];
 }
 
 export default function SettingsQuickActionSection({
   commands,
+  commandsDirty,
   onAdd,
   onDelete,
   onMove,
   onUpdate,
+  onSave,
   t,
 }: SettingsQuickActionSectionProps) {
   return (
@@ -26,12 +30,23 @@ export default function SettingsQuickActionSection({
           <label className="font-medium text-zinc-900">{t("settings.quickAction.label")}</label>
           <SettingsInfoHint text={t("settings.quickAction.hint")} />
         </div>
-        <button
-          onClick={onAdd}
-          className="btn-primary px-3 py-1.5 text-xs"
-        >
-          {t("settings.quickAction.add")}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!commandsDirty}
+            className="btn-primary px-3 py-1.5 text-xs disabled:opacity-40"
+          >
+            {t("settings.save")}
+          </button>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="btn-primary px-3 py-1.5 text-xs"
+          >
+            {t("settings.quickAction.add")}
+          </button>
+        </div>
       </div>
       <div className="space-y-2">
         {commands.map((command, index) => (

@@ -56,6 +56,21 @@ interface AppProfilePromptDraft {
   promptAppendix: string;
 }
 
+interface AppProfileTextDraft {
+  name: string;
+}
+
+interface SttTextDrafts {
+  wakeWord: string;
+  vocabularyTerms: string;
+}
+
+interface TtsTextDrafts {
+  voice: string;
+  rate: string;
+  pitch: string;
+}
+
 const EMPTY_PANEL_MESSAGE: PanelMessage = { tone: "", message: "" };
 const EMPTY_BUSY_MESSAGE = { type: "" as const, message: "" };
 
@@ -209,6 +224,18 @@ export default function Settings() {
   const [ttsModelStatus, setTtsModelStatus] = useState<{ type: "" | "success" | "error"; message: string }>(EMPTY_BUSY_MESSAGE);
   const [promptDrafts, setPromptDrafts] = useState({ modeAPrompt, modeBPrompt, modeCPrompt });
   const [profilePromptDrafts, setProfilePromptDrafts] = useState<Record<string, AppProfilePromptDraft>>({});
+  const [profileTextDrafts, setProfileTextDrafts] = useState<Record<string, AppProfileTextDraft>>({});
+  const [sttTextDrafts, setSttTextDrafts] = useState<SttTextDrafts>({
+    wakeWord,
+    vocabularyTerms: vocabularyTerms.join("\n"),
+  });
+  const [llmModelDraft, setLlmModelDraft] = useState(llmModel);
+  const [quickActionDraftCommands, setQuickActionDraftCommands] = useState<QuickActionCommand[]>(quickActionCommands);
+  const [ttsTextDrafts, setTtsTextDrafts] = useState<TtsTextDrafts>({
+    voice: ttsVoice,
+    rate: ttsRate,
+    pitch: ttsPitch,
+  });
   const [activeProfileOverlayId, setActiveProfileOverlayId] = useState<string | null>(null);
   const [languageVariantOverlay, setLanguageVariantOverlay] = useState<{ scope: "global" | "profile"; profileId?: string } | null>(null);
 
@@ -274,10 +301,31 @@ export default function Settings() {
       }
     : null;
 
+  const activeProfileTextDraft = activeProfile
+    ? profileTextDrafts[activeProfile.id] ?? {
+        name: activeProfile.name,
+      }
+    : null;
+
   const llmPromptDirty =
     promptDrafts.modeAPrompt !== modeAPrompt ||
     promptDrafts.modeBPrompt !== modeBPrompt ||
     promptDrafts.modeCPrompt !== modeCPrompt;
+
+  const wakeWordDirty = sttTextDrafts.wakeWord !== wakeWord;
+  const vocabularyDirty = sttTextDrafts.vocabularyTerms !== vocabularyTerms.join("\n");
+  const llmModelDraftDirty = Boolean(
+    llmModelDraft.trim() && (
+      llmModelDraft.trim() !== llmModel ||
+      !llmModelOptions.includes(llmModelDraft.trim())
+    ),
+  );
+  const quickActionDraftDirty =
+    JSON.stringify(quickActionDraftCommands) !== JSON.stringify(quickActionCommands);
+  const ttsTextDraftDirty =
+    ttsTextDrafts.voice !== ttsVoice ||
+    ttsTextDrafts.rate !== ttsRate ||
+    ttsTextDrafts.pitch !== ttsPitch;
 
   const globalLanguageVariantSummary = useMemo(
     () =>
@@ -362,6 +410,41 @@ export default function Settings() {
       return next;
     });
   }, [appProfiles]);
+
+  useEffect(() => {
+    setProfileTextDrafts((prev) => {
+      const next: Record<string, AppProfileTextDraft> = {};
+      for (const profile of appProfiles) {
+        next[profile.id] = prev[profile.id] ?? {
+          name: profile.name,
+        };
+      }
+      return next;
+    });
+  }, [appProfiles]);
+
+  useEffect(() => {
+    setSttTextDrafts({
+      wakeWord,
+      vocabularyTerms: vocabularyTerms.join("\n"),
+    });
+  }, [vocabularyTerms, wakeWord]);
+
+  useEffect(() => {
+    setLlmModelDraft(llmModel);
+  }, [llmModel]);
+
+  useEffect(() => {
+    setQuickActionDraftCommands(quickActionCommands);
+  }, [quickActionCommands]);
+
+  useEffect(() => {
+    setTtsTextDrafts({
+      voice: ttsVoice,
+      rate: ttsRate,
+      pitch: ttsPitch,
+    });
+  }, [ttsPitch, ttsRate, ttsVoice]);
 
   useEffect(() => {
     settingsService.getSttCapabilities()
@@ -694,14 +777,17 @@ export default function Settings() {
     validateHotkeys,
   ]);
 
-  const handleWakeWordChange = useCallback(async (value: string) => {
-    if (!value.trim()) {
+  const handleSaveWakeWord = useCallback(async () => {
+    const nextWakeWord = sttTextDrafts.wakeWord.trim();
+    if (!nextWakeWord) {
       setPanelMessage("stt", "error", t("settings.status.wakeWordRequired"));
       return;
     }
-    setWakeWord(value);
-    await broadcastSettingsSaved({ wakeWord: value.trim() });
-  }, [broadcastSettingsSaved, setPanelMessage, setWakeWord, t]);
+    setWakeWord(nextWakeWord);
+    setSttTextDrafts((prev) => ({ ...prev, wakeWord: nextWakeWord }));
+    await broadcastSettingsSaved({ wakeWord: nextWakeWord });
+    setPanelMessage("stt", "success", t("settings.saveApplied"));
+  }, [broadcastSettingsSaved, setPanelMessage, setWakeWord, sttTextDrafts.wakeWord, t]);
 
   const handleLaunchOnStartupChange = useCallback(async (value: boolean) => {
     const previousValue = launchOnStartup;
@@ -796,14 +882,19 @@ export default function Settings() {
     await broadcastSettingsSaved({ punctuationMode: value });
   }, [broadcastSettingsSaved, setPunctuationMode]);
 
-  const handleVocabularyTermsChange = useCallback(async (value: string) => {
-    const nextVocabularyTerms = value
+  const handleSaveVocabularyTerms = useCallback(async () => {
+    const nextVocabularyTerms = sttTextDrafts.vocabularyTerms
       .split(/\r?\n|,/)
       .map((term) => term.trim())
       .filter(Boolean);
     setVocabularyTerms(nextVocabularyTerms);
+    setSttTextDrafts((prev) => ({
+      ...prev,
+      vocabularyTerms: nextVocabularyTerms.join("\n"),
+    }));
     await broadcastSettingsSaved({ vocabularyTerms: nextVocabularyTerms });
-  }, [broadcastSettingsSaved, setVocabularyTerms]);
+    setPanelMessage("stt", "success", t("settings.saveApplied"));
+  }, [broadcastSettingsSaved, setPanelMessage, setVocabularyTerms, sttTextDrafts.vocabularyTerms, t]);
 
   const handleImportVocabularyFile = useCallback(async (file: File | null) => {
     if (!file) {
@@ -812,15 +903,21 @@ export default function Settings() {
     try {
       const text = await file.text();
       const imported = text.split(/\r?\n|,/).map((term) => term.trim()).filter(Boolean);
-      const merged = Array.from(new Set([...vocabularyTerms, ...imported]));
-      setVocabularyTerms(merged);
-      await broadcastSettingsSaved({ vocabularyTerms: merged });
-      setLocalModelStatus({ type: "success", message: t("settings.stt.vocabularyImported") });
+      const currentDraftTerms = sttTextDrafts.vocabularyTerms
+        .split(/\r?\n|,/)
+        .map((term) => term.trim())
+        .filter(Boolean);
+      const merged = Array.from(new Set([...currentDraftTerms, ...imported]));
+      setSttTextDrafts((prev) => ({
+        ...prev,
+        vocabularyTerms: merged.join("\n"),
+      }));
+      setPanelMessage("stt", "success", t("settings.stt.vocabularyImported"));
     } catch (error) {
       console.error("[Settings] import vocabulary failed:", error);
-      setLocalModelStatus({ type: "error", message: t("settings.stt.vocabularyImportFailed") });
+      setPanelMessage("stt", "error", t("settings.stt.vocabularyImportFailed"));
     }
-  }, [broadcastSettingsSaved, setVocabularyTerms, t, vocabularyTerms]);
+  }, [setPanelMessage, sttTextDrafts.vocabularyTerms, t]);
 
   const handleLlmProviderChange = useCallback(async (value: typeof llmProvider) => {
     setLlmProvider(value);
@@ -832,17 +929,23 @@ export default function Settings() {
     if (!nextValue) {
       return;
     }
+    setLlmModel(nextValue);
+    setLlmModelDraft(nextValue);
+    await broadcastSettingsSaved({ llmModel: nextValue, llmModelOptions });
+  }, [broadcastSettingsSaved, llmModelOptions, setLlmModel]);
+
+  const handleAddLlmModelOption = useCallback(async () => {
+    const nextValue = llmModelDraft.trim();
+    if (!nextValue) {
+      return;
+    }
     const nextOptions = normalizeLlmModelOptions(llmModelOptions, nextValue);
     setLlmModel(nextValue);
     setLlmModelOptions(nextOptions);
-    await broadcastSettingsSaved({ llmModel: nextValue, llmModelOptions: nextOptions });
-  }, [broadcastSettingsSaved, llmModelOptions, setLlmModel, setLlmModelOptions]);
-
-  const handleAddLlmModelOption = useCallback(async () => {
-    const nextOptions = normalizeLlmModelOptions(llmModelOptions, llmModel);
-    setLlmModelOptions(nextOptions);
-    await broadcastSettingsSaved({ llmModelOptions: nextOptions, llmModel });
-  }, [broadcastSettingsSaved, llmModel, llmModelOptions, setLlmModelOptions]);
+    setLlmModelDraft(nextValue);
+    await broadcastSettingsSaved({ llmModelOptions: nextOptions, llmModel: nextValue });
+    setPanelMessage("llm", "success", t("settings.saveApplied"));
+  }, [broadcastSettingsSaved, llmModelDraft, llmModelOptions, setLlmModel, setLlmModelOptions, setPanelMessage, t]);
 
   const handleDeleteLlmModelOption = useCallback(async (modelToDelete: string) => {
     const remainingModels = llmModelOptions.filter((model) => model !== modelToDelete);
@@ -851,12 +954,13 @@ export default function Settings() {
     setLlmModelOptions(nextOptions);
     if (llmModel === modelToDelete && fallbackModel.trim()) {
       setLlmModel(fallbackModel.trim());
+      setLlmModelDraft(fallbackModel.trim());
     }
     await broadcastSettingsSaved({
       llmModel: llmModel === modelToDelete ? fallbackModel.trim() || llmModel : llmModel,
       llmModelOptions: nextOptions,
     });
-  }, [broadcastSettingsSaved, llmModel, llmModelOptions, setLlmModel, setLlmModelOptions]);
+  }, [broadcastSettingsSaved, llmModel, llmModelOptions, setLlmModel, setLlmModelDraft, setLlmModelOptions]);
 
   const handleOutputModeChange = useCallback(async (value: typeof outputMode) => {
     setOutputMode(value);
@@ -869,53 +973,67 @@ export default function Settings() {
   }, [broadcastSettingsSaved, setQuickActionCommands]);
 
   const handleAddQuickActionCommand = useCallback(() => {
-    void commitQuickActionCommands([
-      ...quickActionCommands,
+    setQuickActionDraftCommands([
+      ...quickActionDraftCommands,
       { id: `custom-${Date.now()}`, label: t("settings.quickAction.newCommand"), instruction: "" },
     ]);
-  }, [commitQuickActionCommands, quickActionCommands, t]);
+  }, [quickActionDraftCommands, t]);
 
   const handleUpdateQuickActionCommand = useCallback((commandId: string, field: "label" | "instruction", value: string) => {
-    void commitQuickActionCommands(
-      quickActionCommands.map((command) =>
+    setQuickActionDraftCommands(
+      quickActionDraftCommands.map((command) =>
         command.id === commandId ? { ...command, [field]: value } : command,
       ),
     );
-  }, [commitQuickActionCommands, quickActionCommands]);
+  }, [quickActionDraftCommands]);
 
   const handleDeleteQuickActionCommand = useCallback((commandId: string) => {
-    void commitQuickActionCommands(quickActionCommands.filter((command) => command.id !== commandId));
-  }, [commitQuickActionCommands, quickActionCommands]);
+    setQuickActionDraftCommands(quickActionDraftCommands.filter((command) => command.id !== commandId));
+  }, [quickActionDraftCommands]);
 
   const handleMoveQuickActionCommand = useCallback((commandId: string, direction: "up" | "down") => {
-    const index = quickActionCommands.findIndex((command) => command.id === commandId);
+    const index = quickActionDraftCommands.findIndex((command) => command.id === commandId);
     if (index < 0) {
       return;
     }
     const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= quickActionCommands.length) {
+    if (targetIndex < 0 || targetIndex >= quickActionDraftCommands.length) {
       return;
     }
-    const nextCommands = [...quickActionCommands];
+    const nextCommands = [...quickActionDraftCommands];
     const [movedCommand] = nextCommands.splice(index, 1);
     nextCommands.splice(targetIndex, 0, movedCommand);
-    void commitQuickActionCommands(nextCommands);
-  }, [commitQuickActionCommands, quickActionCommands]);
+    setQuickActionDraftCommands(nextCommands);
+  }, [quickActionDraftCommands]);
 
-  const handleTtsVoiceChange = useCallback(async (value: string) => {
-    setTtsVoice(value);
-    await broadcastSettingsSaved({ ttsVoice: value, ttsRate, ttsPitch });
-  }, [broadcastSettingsSaved, setTtsVoice, ttsPitch, ttsRate]);
+  const handleSaveQuickActionCommands = useCallback(async () => {
+    if (quickActionDraftCommands.length === 0) {
+      setPanelMessage("quickAction", "error", t("settings.quickAction.requireOne"));
+      return;
+    }
+    await commitQuickActionCommands(quickActionDraftCommands);
+    setPanelMessage("quickAction", "success", t("settings.saveApplied"));
+  }, [commitQuickActionCommands, quickActionDraftCommands, setPanelMessage, t]);
 
-  const handleTtsRateChange = useCallback(async (value: string) => {
-    setTtsRate(value);
-    await broadcastSettingsSaved({ ttsVoice, ttsRate: value, ttsPitch });
-  }, [broadcastSettingsSaved, setTtsRate, ttsPitch, ttsVoice]);
-
-  const handleTtsPitchChange = useCallback(async (value: string) => {
-    setTtsPitch(value);
-    await broadcastSettingsSaved({ ttsVoice, ttsRate, ttsPitch: value });
-  }, [broadcastSettingsSaved, setTtsPitch, ttsRate, ttsVoice]);
+  const handleSaveTtsTextSettings = useCallback(async () => {
+    const nextVoice = ttsTextDrafts.voice.trim();
+    const nextRate = ttsTextDrafts.rate.trim();
+    const nextPitch = ttsTextDrafts.pitch.trim();
+    setTtsVoice(nextVoice);
+    setTtsRate(nextRate);
+    setTtsPitch(nextPitch);
+    setTtsTextDrafts({
+      voice: nextVoice,
+      rate: nextRate,
+      pitch: nextPitch,
+    });
+    await broadcastSettingsSaved({
+      ttsVoice: nextVoice,
+      ttsRate: nextRate,
+      ttsPitch: nextPitch,
+    });
+    setPanelMessage("tts", "success", t("settings.saveApplied"));
+  }, [broadcastSettingsSaved, setPanelMessage, setTtsPitch, setTtsRate, setTtsVoice, t, ttsTextDrafts]);
 
   const handleInstallLocalModel = useCallback(async (modelId: string) => {
     setFailedDownloadModelId("");
@@ -1009,6 +1127,7 @@ export default function Settings() {
       async () => {
         const modelPath = await settingsService.selectLocalTtsModel(modelId);
         setTtsVoice(modelPath);
+        setTtsTextDrafts((prev) => ({ ...prev, voice: modelPath }));
         await broadcastSettingsSaved({ ttsVoice: modelPath, ttsRate, ttsPitch });
       },
       t("settings.status.ttsModelSelected"),
@@ -1025,6 +1144,7 @@ export default function Settings() {
         await settingsService.deleteLocalTtsModel(modelId);
         if (deletingModel?.modelPath === ttsVoice) {
           setTtsVoice("");
+          setTtsTextDrafts((prev) => ({ ...prev, voice: "" }));
           await broadcastSettingsSaved({ ttsVoice: "", ttsRate, ttsPitch });
         }
       },
@@ -1109,6 +1229,15 @@ export default function Settings() {
     );
   }, [appProfiles, updateProfiles]);
 
+  const handleProfileTextDraftChange = useCallback((profileId: string, patch: Partial<AppProfileTextDraft>) => {
+    setProfileTextDrafts((prev) => ({
+      ...prev,
+      [profileId]: {
+        name: patch.name ?? prev[profileId]?.name ?? "",
+      },
+    }));
+  }, []);
+
   const handleProfilePromptDraftChange = useCallback((profileId: string, patch: { toneHint?: string; promptAppendix?: string }) => {
     setProfilePromptDrafts((prev) => ({
       ...prev,
@@ -1133,6 +1262,26 @@ export default function Settings() {
     await broadcastSettingsSaved({ appProfiles: nextProfiles });
     setPanelMessage("appProfile", "success", t("settings.status.profilePromptSaved"));
   }, [appProfiles, broadcastSettingsSaved, profilePromptDrafts, setAppProfiles, setPanelMessage, t]);
+
+  const handleSaveProfileTextFields = useCallback(async (profileId: string) => {
+    const textDraft = profileTextDrafts[profileId];
+    if (!textDraft) {
+      return;
+    }
+    const nextName = textDraft.name.trim();
+    setProfileTextDrafts((prev) => ({
+      ...prev,
+      [profileId]: {
+        name: nextName,
+      },
+    }));
+    await updateProfiles(
+      appProfiles.map((profile) =>
+        profile.id === profileId ? { ...profile, name: nextName } : profile,
+      ),
+      { message: t("settings.saveApplied") },
+    );
+  }, [appProfiles, profileTextDrafts, t, updateProfiles]);
 
   const handleApplyLanguageVariantSelection = useCallback(async (payload: SettingsLanguageVariantOverlayApplyPayload) => {
     const nextCustomVariants = normalizeCustomLanguageVariants(payload.customVariants);
@@ -1294,11 +1443,13 @@ export default function Settings() {
     <WorkspaceShell {...sectionMeta.quickAction} status={panelMessages.quickAction}>
       <section className="settings-stage-card p-4">
         <SettingsQuickActionSection
-          commands={quickActionCommands}
+          commands={quickActionDraftCommands}
+          commandsDirty={quickActionDraftDirty}
           onAdd={handleAddQuickActionCommand}
           onDelete={handleDeleteQuickActionCommand}
           onMove={handleMoveQuickActionCommand}
           onUpdate={handleUpdateQuickActionCommand}
+          onSave={handleSaveQuickActionCommands}
           t={t}
         />
       </section>
@@ -1392,7 +1543,8 @@ export default function Settings() {
         return (
           <WorkspaceShell {...sectionMeta.stt} status={panelMessages.stt}>
             <SettingsSttSection
-              draftWakeWord={wakeWord}
+              draftWakeWord={sttTextDrafts.wakeWord}
+              wakeWordDirty={wakeWordDirty}
               draftSttEnabled={sttEnabled}
               draftSttModelChoice={currentSttModelChoice}
               draftSttLanguage={sttLanguage}
@@ -1400,7 +1552,8 @@ export default function Settings() {
               draftTranslationTarget={translationTarget}
               draftSttOutputStrategy={sttOutputStrategy}
               draftPunctuationMode={punctuationMode}
-              draftVocabularyTerms={vocabularyTerms.join("\n")}
+              draftVocabularyTerms={sttTextDrafts.vocabularyTerms}
+              vocabularyDirty={vocabularyDirty}
               audioDevices={audioDevices}
               audioDevicesLoading={audioDevicesLoading}
               localSttAvailable={localSttAvailable}
@@ -1417,7 +1570,10 @@ export default function Settings() {
               formatBytes={formatBytes}
               getLocalizedModelName={getLocalizedSttModelName}
               getLocalizedModelDescription={getLocalizedSttModelDescription}
-              onWakeWordChange={(value) => void handleWakeWordChange(value)}
+              onWakeWordDraftChange={(value) =>
+                setSttTextDrafts((prev) => ({ ...prev, wakeWord: value }))
+              }
+              onSaveWakeWord={handleSaveWakeWord}
               onSttModelChoiceChange={(value) => void handleSttModelChoiceChange(value)}
               onSttLanguageChange={(value) => void handleSttLanguageChange(value)}
               onMicrophoneSourceChange={(value) => void handleMicrophoneSourceChange(value)}
@@ -1426,7 +1582,10 @@ export default function Settings() {
               onSttOutputStrategyChange={(value) => void handleSttOutputStrategyChange(value)}
               onTranslationTargetChange={(value) => void handleTranslationTargetChange(value)}
               onPunctuationModeChange={(value) => void handlePunctuationModeChange(value)}
-              onVocabularyTermsChange={(value) => void handleVocabularyTermsChange(value)}
+              onVocabularyTermsDraftChange={(value) =>
+                setSttTextDrafts((prev) => ({ ...prev, vocabularyTerms: value }))
+              }
+              onSaveVocabularyTerms={handleSaveVocabularyTerms}
               onImportVocabularyFile={handleImportVocabularyFile}
               onInstallLocalModel={handleInstallLocalModel}
               onCancelLocalModelDownload={handleCancelLocalModelDownload}
@@ -1515,9 +1674,20 @@ export default function Settings() {
                           <option key={model} value={model}>{model}</option>
                         ))}
                       </select>
-                      <input className="settings-input-compact mt-2 font-mono" value={llmModel} onChange={(event) => void handleLlmModelChange(event.target.value)} placeholder="gpt-4o-mini / qwen-plus / deepseek-chat" />
+                      <input
+                        className="settings-input-compact mt-2 font-mono"
+                        value={llmModelDraft}
+                        onChange={(event) => setLlmModelDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && llmModelDraftDirty) {
+                            event.preventDefault();
+                            void handleAddLlmModelOption();
+                          }
+                        }}
+                        placeholder="gpt-4o-mini / qwen-plus / deepseek-chat"
+                      />
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <button type="button" onClick={() => void handleAddLlmModelOption()} className="btn-secondary px-3 py-2 text-xs">{t("settings.llm.modelAdd")}</button>
+                        <button type="button" onClick={() => void handleAddLlmModelOption()} disabled={!llmModelDraftDirty} className="btn-secondary px-3 py-2 text-xs disabled:opacity-40">{t("settings.llm.modelAdd")}</button>
                         {llmModelOptions.map((model) => (
                           <button key={model} type="button" onClick={() => void handleDeleteLlmModelOption(model)} className="rounded-full bg-white px-2.5 py-1 text-[11px] text-zinc-700 hover:bg-red-100 hover:text-red-700">
                             {model} ×
@@ -1584,7 +1754,7 @@ export default function Settings() {
       case "tts":
         return (
           <WorkspaceShell {...sectionMeta.tts} status={panelMessages.tts}>
-            <SettingsTtsSection draftTtsPitch={ttsPitch} draftTtsRate={ttsRate} draftTtsVoice={ttsVoice} localTtsModels={localTtsModels} localTtsModelsLoading={localTtsModelsLoading} ttsModelBusyId={ttsModelBusyId} ttsModelBusyAction={ttsModelBusyAction} ttsModelDownloadProgress={ttsModelDownloadProgress} failedTtsDownloadModelId={failedTtsDownloadModelId} ttsModelStatus={ttsModelStatus} formatBytes={formatBytes} getLocalizedModelName={getLocalizedTtsModelName} getLocalizedModelDescription={getLocalizedTtsModelDescription} onPitchChange={(value) => void handleTtsPitchChange(value)} onRateChange={(value) => void handleTtsRateChange(value)} onVoiceChange={(value) => void handleTtsVoiceChange(value)} onInstallModel={handleInstallLocalTtsModel} onCancelDownload={handleCancelLocalTtsModelDownload} onDeleteModel={handleDeleteLocalTtsModel} onSelectModel={handleSelectLocalTtsModel} t={t} />
+            <SettingsTtsSection draftTtsPitch={ttsTextDrafts.pitch} draftTtsRate={ttsTextDrafts.rate} draftTtsVoice={ttsTextDrafts.voice} localTtsModels={localTtsModels} localTtsModelsLoading={localTtsModelsLoading} ttsModelBusyId={ttsModelBusyId} ttsModelBusyAction={ttsModelBusyAction} ttsModelDownloadProgress={ttsModelDownloadProgress} failedTtsDownloadModelId={failedTtsDownloadModelId} ttsModelStatus={ttsModelStatus} formatBytes={formatBytes} getLocalizedModelName={getLocalizedTtsModelName} getLocalizedModelDescription={getLocalizedTtsModelDescription} onPitchChange={(value) => setTtsTextDrafts((prev) => ({ ...prev, pitch: value }))} onRateChange={(value) => setTtsTextDrafts((prev) => ({ ...prev, rate: value }))} onVoiceChange={(value) => setTtsTextDrafts((prev) => ({ ...prev, voice: value }))} onSaveTextSettings={handleSaveTtsTextSettings} textSettingsDirty={ttsTextDraftDirty} onInstallModel={handleInstallLocalTtsModel} onCancelDownload={handleCancelLocalTtsModelDownload} onDeleteModel={handleDeleteLocalTtsModel} onSelectModel={handleSelectLocalTtsModel} t={t} />
           </WorkspaceShell>
         );
       case "appProfile":
@@ -1621,10 +1791,14 @@ export default function Settings() {
               <SettingsAppProfileEditorOverlay
                 profile={activeProfile}
                 customLanguageVariants={customLanguageVariants}
+                textDraft={activeProfileTextDraft ?? { name: activeProfile.name }}
+                textFieldsDirty={(activeProfileTextDraft?.name ?? activeProfile.name) !== activeProfile.name}
                 promptDraft={activeProfilePromptDraft}
                 onClose={() => setActiveProfileOverlayId(null)}
                 onDelete={() => handleDeleteProfile(activeProfile.id)}
                 onImmediateChange={(patch) => handleImmediateProfileChange(activeProfile.id, patch)}
+                onTextDraftChange={(patch) => handleProfileTextDraftChange(activeProfile.id, patch)}
+                onSaveTextFields={() => handleSaveProfileTextFields(activeProfile.id)}
                 onPromptDraftChange={(patch) => handleProfilePromptDraftChange(activeProfile.id, patch)}
                 onSavePromptFields={() => handleSaveProfilePrompts(activeProfile.id)}
                 onOpenLanguageVariantPicker={() => setLanguageVariantOverlay({ scope: "profile", profileId: activeProfile.id })}
