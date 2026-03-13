@@ -1,7 +1,11 @@
 import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
-import type { AppProfileMode, OutputMode, PreferredLanguage } from "../../store/useAppStore";
+import type { AppProfileMode, OutputMode } from "../../store/useAppStore";
 import { resolveAppProfile } from "../../utils/appText";
+import {
+  mergeLanguageVariantPreferences,
+  resolveLanguageVariantPromptInstruction,
+} from "../../utils/languageVariants";
 import { composePromptOverride } from "../../utils/preferenceLearning";
 import {
   emitPreviewSession,
@@ -14,7 +18,8 @@ import type { StatusSetter, TranslateFn } from "./listenerTypes";
 type AppStoreSnapshot = ReturnType<typeof useAppStore.getState>;
 
 export interface EffectiveProfile {
-  lang: PreferredLanguage;
+  lang: string;
+  languagePreferences: ReturnType<typeof mergeLanguageVariantPreferences>;
   outputMode: OutputMode;
   promptAppendix: string;
   toneHint: string;
@@ -63,8 +68,17 @@ export const resolveEffectiveProfile = (
   const profile = store.contextAwareTone
     ? resolveAppProfile(windowTitle, store.appProfiles, mode)
     : null;
+  const languagePreferences = mergeLanguageVariantPreferences(
+    store.preferredLanguage,
+    profile?.preferredLanguage ?? "",
+    store.customLanguageVariants
+  );
   return {
-    lang: (profile?.preferredLanguage || store.preferredLanguage) as PreferredLanguage,
+    lang: resolveLanguageVariantPromptInstruction(
+      languagePreferences,
+      store.customLanguageVariants
+    ),
+    languagePreferences,
     outputMode: (profile?.outputMode || store.outputMode) as OutputMode,
     promptAppendix: profile?.promptAppendix || "",
     toneHint: profile?.toneHint || (store.contextAwareTone ? "Keep neutral and clear style." : "Keep original style."),
@@ -100,6 +114,7 @@ export const openPreviewTextSession = async (
   staticOutput?: string,
   requestContext?: {
     promptAppendix?: string;
+    preferredLanguage?: string;
     requestId?: string;
     preferenceCategoryKey?: string;
     preferenceCategoryLabel?: string;
@@ -114,6 +129,7 @@ export const openPreviewTextSession = async (
     selectedText,
     instruction,
     promptAppendix: requestContext?.promptAppendix,
+    preferredLanguage: requestContext?.preferredLanguage,
     requestId: requestContext?.requestId,
     preferenceCategoryKey: requestContext?.preferenceCategoryKey,
     preferenceCategoryLabel: requestContext?.preferenceCategoryLabel,

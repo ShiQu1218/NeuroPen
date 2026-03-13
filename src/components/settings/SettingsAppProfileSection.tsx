@@ -1,7 +1,8 @@
 import { useState, useCallback } from "react";
 import type { useI18n, TranslationKey } from "../../i18n";
-import type { AppProfile, AppProfileMode, OutputMode, PreferredLanguage } from "../../store/useAppStore";
+import type { AppProfile, AppProfileMode, CustomLanguageVariant, OutputMode, PreferredLanguage } from "../../store/useAppStore";
 import { DEFAULT_APP_PROFILES } from "../../store/appStoreDefaults";
+import { getLanguageVariantSelectionSummary } from "../../utils/languageVariants";
 
 const ALL_MODES: AppProfileMode[] = ["A", "B1", "B2", "C"];
 
@@ -13,7 +14,9 @@ const OUTPUT_MODE_OPTIONS: Array<{ value: OutputMode | ""; labelKey: Translation
 
 interface SettingsAppProfileSectionProps {
   profiles: AppProfile[];
+  customLanguageVariants: CustomLanguageVariant[];
   onChange: (profiles: AppProfile[]) => void;
+  onOpenLanguageVariantPicker: (profileId: string) => void;
   contextAwareTone: boolean;
   onContextAwareToneChange: (enabled: boolean) => void;
   t: ReturnType<typeof useI18n>["t"];
@@ -21,27 +24,15 @@ interface SettingsAppProfileSectionProps {
 
 export default function SettingsAppProfileSection({
   profiles,
+  customLanguageVariants,
   onChange,
+  onOpenLanguageVariantPicker,
   contextAwareTone,
   onContextAwareToneChange,
   t,
 }: SettingsAppProfileSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [keywordInputs, setKeywordInputs] = useState<Record<string, string>>({});
-  const languageOptions: Array<{ value: PreferredLanguage | ""; label: string }> = [
-    { value: "", label: "" },
-    { value: "auto", label: t("settings.preferredLanguage.auto") },
-    { value: "zh-TW", label: t("settings.language.zh-TW") },
-    { value: "en-US", label: t("settings.language.en-US") },
-    { value: "ja-JP", label: t("settings.language.ja-JP") },
-    { value: "es-ES", label: t("settings.language.es-ES") },
-    { value: "ko-KR", label: t("settings.language.ko-KR") },
-    { value: "zh-CN", label: t("settings.language.zh-CN") },
-    { value: "de-DE", label: t("settings.language.de-DE") },
-    { value: "fr-FR", label: t("settings.language.fr-FR") },
-    { value: "ar-SA", label: t("settings.language.ar-SA") },
-    { value: "ru-RU", label: t("settings.language.ru-RU") },
-  ];
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -129,6 +120,16 @@ export default function SettingsAppProfileSection({
       updateProfile(profileId, { keywords: profile.keywords.filter((k) => k !== keyword) });
     },
     [profiles, updateProfile],
+  );
+
+  const getProfileLanguageLabel = useCallback(
+    (selection: PreferredLanguage | "") =>
+      getLanguageVariantSelectionSummary(selection, customLanguageVariants, {
+        emptyLabel: t("settings.appProfile.useGlobal"),
+        globalLabel: t("settings.appProfile.useGlobal"),
+        countLabel: (count) => t("settings.languageVariant.profileSummary", { count: String(count) }),
+      }),
+    [customLanguageVariants, t]
   );
 
   return (
@@ -364,23 +365,16 @@ export default function SettingsAppProfileSection({
                   <div className="grid grid-cols-3 gap-2">
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-zinc-600">
-                        {t("settings.appProfile.preferredLanguage")}
+                        {t("settings.languageVariant.label")}
                       </label>
-                      <select
-                        className="w-full input-field px-2 py-1 text-xs"
-                        value={profile.preferredLanguage}
-                        onChange={(e) =>
-                          updateProfile(profile.id, {
-                            preferredLanguage: e.target.value as PreferredLanguage | "",
-                          })
-                        }
+                      <button
+                        type="button"
+                        className="flex min-h-[38px] w-full items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-left text-xs font-medium text-zinc-800 transition-colors hover:border-zinc-300 hover:bg-white"
+                        onClick={() => onOpenLanguageVariantPicker(profile.id)}
                       >
-                        {languageOptions.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.value === "" ? t("settings.appProfile.useGlobal") : opt.label}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="truncate">{getProfileLanguageLabel(profile.preferredLanguage)}</span>
+                        <span className="ml-3 text-zinc-400">▾</span>
+                      </button>
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-zinc-600">

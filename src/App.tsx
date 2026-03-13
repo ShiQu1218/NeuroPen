@@ -8,6 +8,7 @@ const MainWindowHost = lazy(() => import("./components/MainWindowHost"));
 const PreviewWindow = lazy(() => import("./components/PreviewWindow"));
 const QuickActionIcon = lazy(() => import("./components/QuickActionIcon"));
 const Settings = lazy(() => import("./components/Settings"));
+const LanguageVariantPickerWindow = lazy(() => import("./components/LanguageVariantPickerWindow"));
 const RecordingIndicator = lazy(() => import("./components/RecordingIndicator"));
 const ScreenshotOverlay = lazy(() => import("./components/ScreenshotOverlay"));
 
@@ -27,6 +28,9 @@ function App() {
       break;
     case "settings":
       content = <Settings />;
+      break;
+    case "language-variant-picker":
+      content = <LanguageVariantPickerWindow />;
       break;
     case "recording-indicator":
       content = <RecordingIndicator />;

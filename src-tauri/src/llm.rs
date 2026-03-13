@@ -130,24 +130,25 @@ fn default_model(provider: &LlmProvider) -> &'static str {
 const AUTO_LANGUAGE: &str = "auto";
 
 fn preferred_language_hint(preferred_language: Option<&str>) -> Option<String> {
-    let code = preferred_language
+    let preference = preferred_language
         .map(str::trim)
         .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case(AUTO_LANGUAGE))?;
-    let name = match code {
-        "zh-TW" => "Traditional Chinese",
-        "zh-CN" => "Simplified Chinese",
-        "en-US" => "English",
+    let normalized_preference = match preference {
+        "zh-TW" => "Traditional Chinese as commonly written in Taiwan",
+        "zh-CN" => "Simplified Chinese as commonly written in Mainland China",
+        "en-US" => "American English",
         "ja-JP" => "Japanese",
-        "es-ES" => "Spanish",
+        "es-ES" => "Spanish as commonly written in Spain",
         "ko-KR" => "Korean",
-        "de-DE" => "German",
-        "fr-FR" => "French",
-        "ar-SA" => "Arabic",
+        "de-DE" => "German as commonly written in Germany",
+        "fr-FR" => "French as commonly written in France",
+        "ar-SA" => "Modern Standard Arabic",
         "ru-RU" => "Russian",
-        _ => code,
+        _ => preference,
     };
+    let normalized_preference = normalized_preference.trim().trim_end_matches('.');
     Some(format!(
-        "Always respond in {name} unless the user explicitly requests another language."
+        "Apply the following language-variant preference whenever you respond in the relevant language, unless the user explicitly requests another language: {normalized_preference}."
     ))
 }
 
@@ -1485,6 +1486,23 @@ mod tests {
         assert!(system_prompt.contains("Additional system guidance"));
         assert!(system_prompt.contains("not as user input"));
         assert!(system_prompt.contains("<system_guidance>\n在結尾要加喵\n</system_guidance>"));
+    }
+
+    #[test]
+    fn preferred_language_hint_accepts_custom_variant_instruction() {
+        let hint = preferred_language_hint(Some(
+            "Use British English spelling, legal vocabulary, punctuation, and grammar.",
+        ))
+        .expect("expected hint");
+
+        assert!(hint.contains("British English spelling"));
+        assert!(hint.contains("language-variant preference"));
+    }
+
+    #[test]
+    fn preferred_language_hint_still_normalizes_legacy_locale_codes() {
+        let hint = preferred_language_hint(Some("zh-TW")).expect("expected hint");
+        assert!(hint.contains("Traditional Chinese as commonly written in Taiwan"));
     }
 
     #[test]

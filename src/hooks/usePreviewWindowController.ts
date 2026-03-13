@@ -9,6 +9,7 @@ import { usePreviewTts } from "./usePreviewTts";
 import { useI18n } from "../i18n";
 import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
 import { mainWindowService, type LoadedAttachment } from "../services/mainWindowService";
+import { resolveLanguageVariantPromptInstruction } from "../utils/languageVariants";
 import {
   buildOtherPreferenceCategory,
   buildQuickActionPreferenceCategory,
@@ -245,6 +246,7 @@ export function usePreviewWindowController() {
       instruction: current?.instruction ?? "",
       attachments: dedupeAttachments([...(current?.attachments ?? []), ...nextAttachments]),
       promptAppendix: current?.promptAppendix ?? "",
+      preferredLanguage: current?.preferredLanguage ?? "",
       requestId: current?.requestId ?? "",
       preferenceCategoryKey: current?.preferenceCategoryKey ?? "",
       preferenceCategoryLabel: current?.preferenceCategoryLabel ?? "",
@@ -281,6 +283,9 @@ export function usePreviewWindowController() {
         previewSession?.promptAppendix ?? "",
         learnedSummary ?? "",
       );
+      const preferredLanguage =
+        previewSession?.preferredLanguage.trim() ||
+        resolveLanguageVariantPromptInstruction(state.preferredLanguage, state.customLanguageVariants);
       // Attachments are one-shot context for the current question. Clear them once
       // the request is launched so follow-up refinements do not resend stale files.
       state.setCurrentRequestContext({
@@ -299,6 +304,7 @@ export function usePreviewWindowController() {
           ...next,
           instruction: input,
           promptAppendix: next.promptAppendix,
+          preferredLanguage: next.preferredLanguage,
           requestId,
           preferenceCategoryKey: category.key,
           preferenceCategoryLabel: category.label,
@@ -329,7 +335,7 @@ export function usePreviewWindowController() {
             outputMode: "PreviewStream",
             provider: state.llmProvider,
             model: state.llmModel,
-            preferredLanguage: state.preferredLanguage,
+            preferredLanguage,
             promptMode: promptMode as "A" | "B" | "C",
             promptOverride,
             streamOutput,
@@ -342,7 +348,7 @@ export function usePreviewWindowController() {
             outputMode: "PreviewStream",
             provider: state.llmProvider,
             model: state.llmModel,
-            preferredLanguage: state.preferredLanguage,
+            preferredLanguage,
             promptMode: promptMode as "A" | "B" | "C",
             promptOverride,
             streamOutput,

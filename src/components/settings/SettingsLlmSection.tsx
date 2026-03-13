@@ -1,5 +1,5 @@
 import type { useI18n } from "../../i18n";
-import type { LlmProvider, OutputMode, PreferredLanguage } from "../../store/useAppStore";
+import type { LlmProvider, OutputMode } from "../../store/useAppStore";
 
 interface SettingsLlmSectionProps {
   draftOutputMode: OutputMode;
@@ -8,7 +8,7 @@ interface SettingsLlmSectionProps {
   draftLlmProvider: LlmProvider;
   draftLlmModel: string;
   draftLlmModelOptions: string[];
-  draftPreferredLanguage: PreferredLanguage;
+  languageVariantButtonLabel: string;
   draftModeAPrompt: string;
   draftModeBPrompt: string;
   draftModeCPrompt: string;
@@ -22,7 +22,7 @@ interface SettingsLlmSectionProps {
   onLlmModelChange: (value: string) => void;
   onAddLlmModelOption: () => void;
   onDeleteLlmModelOption: (modelToDelete: string) => void;
-  onPreferredLanguageChange: (value: PreferredLanguage) => void;
+  onOpenLanguageVariantPicker: () => void;
   onModeAPromptChange: (value: string) => void;
   onModeBPromptChange: (value: string) => void;
   onModeCPromptChange: (value: string) => void;
@@ -38,7 +38,7 @@ export default function SettingsLlmSection({
   draftLlmProvider,
   draftLlmModel,
   draftLlmModelOptions,
-  draftPreferredLanguage,
+  languageVariantButtonLabel,
   draftModeAPrompt,
   draftModeBPrompt,
   draftModeCPrompt,
@@ -52,7 +52,7 @@ export default function SettingsLlmSection({
   onLlmModelChange,
   onAddLlmModelOption,
   onDeleteLlmModelOption,
-  onPreferredLanguageChange,
+  onOpenLanguageVariantPicker,
   onModeAPromptChange,
   onModeBPromptChange,
   onModeCPromptChange,
@@ -133,26 +133,20 @@ export default function SettingsLlmSection({
             </select>
           </div>
 
-          <div className="space-y-1">
-            <label className="font-medium">{t("settings.preferredLanguage.label")}</label>
-            <select
-              className="w-full input-field px-3 py-2"
-              value={draftPreferredLanguage}
-              onChange={(event) => onPreferredLanguageChange(event.target.value as PreferredLanguage)}
-            >
-              <option value="auto">{t("settings.preferredLanguage.auto")}</option>
-              <option value="zh-TW">{t("settings.language.zh-TW")}</option>
-              <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-              <option value="en-US">{t("settings.language.en-US")}</option>
-              <option value="ja-JP">{t("settings.language.ja-JP")}</option>
-              <option value="es-ES">{t("settings.language.es-ES")}</option>
-              <option value="ko-KR">{t("settings.language.ko-KR")}</option>
-              <option value="de-DE">{t("settings.language.de-DE")}</option>
-              <option value="fr-FR">{t("settings.language.fr-FR")}</option>
-              <option value="ar-SA">{t("settings.language.ar-SA")}</option>
-              <option value="ru-RU">{t("settings.language.ru-RU")}</option>
-            </select>
-            <p className="text-xs text-zinc-500">{t("settings.preferredLanguage.hint")}</p>
+          <div className="rounded-[24px] border border-zinc-200 bg-[#f8f6f2] px-4 py-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1 pr-4">
+                <label className="font-medium text-zinc-900">{t("settings.languageVariant.label")}</label>
+                <p className="text-xs text-zinc-500">{t("settings.languageVariant.summaryHint")}</p>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenLanguageVariantPicker}
+                className="inline-flex min-h-[52px] min-w-[210px] items-center justify-center rounded-full border border-zinc-200 bg-white px-5 py-3 text-sm font-semibold text-zinc-800 shadow-[0_12px_30px_rgba(15,23,42,0.08)] transition-all hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-[0_16px_40px_rgba(15,23,42,0.12)]"
+              >
+                {languageVariantButtonLabel}
+              </button>
+            </div>
           </div>
         </div>
       </div>

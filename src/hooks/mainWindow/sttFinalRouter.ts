@@ -24,6 +24,7 @@ import {
   setReadyStatus,
   setRouteFailureStatus,
 } from "./sttFinalRouterHelpers";
+import { resolveLanguageVariantPromptInstructionForLanguage } from "../../utils/languageVariants";
 
 interface RegisterSttFinalRouterParams {
   safeRegister: SafeRegister;
@@ -121,7 +122,11 @@ export async function registerSttFinalRouter({
           // pass. Chaining refine + translate would make the visible partial output misleading.
           const instruction = shouldTranslate ? translateInstruction : refineInstruction;
           const preferredLanguage = shouldTranslate
-            ? store.translationTarget
+            ? resolveLanguageVariantPromptInstructionForLanguage(
+              store.translationTarget,
+              effectiveA.languagePreferences,
+              store.customLanguageVariants
+            )
             : effectiveA.lang;
           resetLlmRequestState(finalText, instruction);
           store.setCurrentRequestContext({
@@ -132,6 +137,7 @@ export async function registerSttFinalRouter({
           store.setCurrentFeedbackRating(null);
           await openPreviewTextSession("A", finalText, instruction, undefined, {
             promptAppendix: effectiveA.promptAppendix,
+            preferredLanguage,
             requestId: modeARequestId,
             preferenceCategoryKey: modeACategory.key,
             preferenceCategoryLabel: modeACategory.label,
@@ -203,7 +209,11 @@ export async function registerSttFinalRouter({
               instruction: translateInstruction,
               provider: store.llmProvider,
               model: store.llmModel,
-              preferredLanguage: store.translationTarget,
+              preferredLanguage: resolveLanguageVariantPromptInstructionForLanguage(
+                store.translationTarget,
+                effectiveA.languagePreferences,
+                store.customLanguageVariants
+              ),
               promptMode: "A",
               promptOverride: modeAPromptOverride,
             });
@@ -238,6 +248,7 @@ export async function registerSttFinalRouter({
           store.setCurrentFeedbackRating(null);
           await openPreviewTextSession("A", finalText, "", finalText, {
             promptAppendix: effectiveA.promptAppendix,
+            preferredLanguage: effectiveA.lang,
             requestId: modeARequestId,
             preferenceCategoryKey: modeACategory.key,
             preferenceCategoryLabel: modeACategory.label,
@@ -322,6 +333,7 @@ export async function registerSttFinalRouter({
         store.setCurrentFeedbackRating(null);
         await openPreviewTextSession("B2", store.selectedText, result.transcript, undefined, {
           promptAppendix: effectiveB2.promptAppendix,
+          preferredLanguage: effectiveB2.lang,
           requestId: modeB2RequestId,
           preferenceCategoryKey: modeB2Category.key,
           preferenceCategoryLabel: modeB2Category.label,
@@ -376,6 +388,7 @@ export async function registerSttFinalRouter({
         if (effectiveOutputModeC === "PreviewStream") {
           await openPreviewTextSession("C", "", result.transcript, undefined, {
             promptAppendix: effectiveC.promptAppendix,
+            preferredLanguage: effectiveC.lang,
             requestId: modeCRequestId,
             preferenceCategoryKey: modeCCategory.key,
             preferenceCategoryLabel: modeCCategory.label,

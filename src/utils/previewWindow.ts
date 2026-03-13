@@ -13,6 +13,7 @@ export type PreviewSessionPayload =
     instruction: string;
     startLoading?: boolean;
     promptAppendix?: string;
+    preferredLanguage?: string;
     requestId?: string;
     preferenceCategoryKey?: string;
     preferenceCategoryLabel?: string;
@@ -24,6 +25,7 @@ export type PreviewSessionPayload =
     selectedText: string;
     instruction: string;
     promptAppendix?: string;
+    preferredLanguage?: string;
     requestId?: string;
     preferenceCategoryKey?: string;
     preferenceCategoryLabel?: string;

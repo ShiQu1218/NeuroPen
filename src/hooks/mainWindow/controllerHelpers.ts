@@ -2,6 +2,7 @@ import { mainWindowService } from "../../services/mainWindowService";
 import type {
   AppLanguage,
   AppProfile,
+  CustomLanguageVariant,
   LlmProvider,
   PreferredLanguage,
   QuickActionCommand,
@@ -15,6 +16,7 @@ import type { SelectionListenerState, StatusSetter, TranslateFn } from "./listen
 
 const MAIN_WINDOW_AUX_LABELS = [
   "settings",
+  "language-variant-picker",
   "preview",
   "quick-action",
   "recording-indicator",
@@ -22,25 +24,26 @@ const MAIN_WINDOW_AUX_LABELS = [
 ] as const;
 
 export interface SettingsSavedPayload {
-  wakeWord: string;
-  hotkey: string;
+  wakeWord?: string;
+  hotkey?: string;
   dialogHotkey?: string;
   sttEnabled?: boolean;
   selectionEnabled?: boolean;
   screenshotEnabled?: boolean;
-  sttEngine: "openAi" | "localWhisper" | "senseVoice" | "moonshine";
+  sttEngine?: "openAi" | "localWhisper" | "senseVoice" | "moonshine";
   sttModelPath?: string;
   sttLanguage?: SttLanguage;
-  outputMode: "DirectInject" | "PreviewStream";
+  outputMode?: "DirectInject" | "PreviewStream";
   sttOutputStrategy?: "raw" | "llmRefine";
   punctuationMode?: "off" | "balanced" | "aggressive";
   contextAwareTone?: boolean;
   vocabularyTerms?: string[];
-  llmProvider: LlmProvider;
-  llmModel: string;
+  llmProvider?: LlmProvider;
+  llmModel?: string;
   llmModelOptions?: string[];
   language?: AppLanguage;
   preferredLanguage?: PreferredLanguage;
+  customLanguageVariants?: CustomLanguageVariant[];
   modeAPrompt?: string;
   modeBPrompt?: string;
   modeCPrompt?: string;
@@ -226,6 +229,9 @@ export function applySettingsSavedPayload(
   }
   if (payload.llmModelOptions) {
     store.setLlmModelOptions(payload.llmModelOptions);
+  }
+  if (payload.customLanguageVariants) {
+    store.setCustomLanguageVariants(payload.customLanguageVariants);
   }
   if (payload.language) {
     store.setLanguage(payload.language);

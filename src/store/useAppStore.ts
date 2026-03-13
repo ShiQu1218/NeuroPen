@@ -9,6 +9,7 @@ import {
 import {
   DEFAULT_MODE_A_PROMPT,
   DEFAULT_MODE_B_PROMPT,
+  type CustomLanguageVariant,
   DEFAULT_MODE_C_PROMPT,
   type AppLanguage,
   type AppMode,
@@ -23,11 +24,18 @@ import {
   type SttOutputStrategy,
   type TranslationTarget,
 } from "./appStoreTypes";
+import {
+  getDefaultLanguageVariantPreferences,
+  normalizeCustomLanguageVariants,
+  normalizePreferredLanguageSelection,
+  normalizeProfilePreferredLanguageSelection,
+} from "../utils/languageVariants";
 
 export type {
   AppLanguage,
   AppMode,
   AppProfile,
+  CustomLanguageVariant,
   LlmProvider,
   OutputMode,
   PreferredLanguage,
@@ -51,6 +59,24 @@ const LEGACY_MODE_C_PROMPT =
 const normalizePersistedPrompt = (value: unknown, legacyValue: string, nextDefault: string) =>
   typeof value === "string" && value.trim() === legacyValue ? nextDefault : value;
 
+const normalizePersistedAppProfiles = (
+  value: unknown,
+  customLanguageVariants: CustomLanguageVariant[]
+): AppProfile[] => {
+  if (!Array.isArray(value)) {
+    return DEFAULT_APP_PROFILES;
+  }
+  return value
+    .filter((profile): profile is AppProfile => Boolean(profile) && typeof profile === "object")
+    .map((profile) => ({
+      ...profile,
+      preferredLanguage: normalizeProfilePreferredLanguageSelection(
+        profile.preferredLanguage,
+        customLanguageVariants
+      ),
+    }));
+};
+
 interface AppState {
   // --- User preferences (persisted) ---
   wakeWord: string;
@@ -72,6 +98,7 @@ interface AppState {
   punctuationMode: PunctuationMode;
   contextAwareTone: boolean;
   preferredLanguage: PreferredLanguage;
+  customLanguageVariants: CustomLanguageVariant[];
   microphoneSource: string;
   launchOnStartup: boolean;
   quickActionCommands: QuickActionCommand[];
@@ -135,6 +162,7 @@ interface AppState {
   setPunctuationMode: (mode: PunctuationMode) => void;
   setContextAwareTone: (enabled: boolean) => void;
   setPreferredLanguage: (language: PreferredLanguage) => void;
+  setCustomLanguageVariants: (variants: CustomLanguageVariant[]) => void;
   setMicrophoneSource: (source: string) => void;
   setLaunchOnStartup: (enabled: boolean) => void;
   setQuickActionCommands: (commands: QuickActionCommand[]) => void;
@@ -248,7 +276,8 @@ export const useAppStore = create<AppState>()(
       sttOutputStrategy: "raw",
       punctuationMode: "balanced",
       contextAwareTone: true,
-      preferredLanguage: "auto",
+      preferredLanguage: getDefaultLanguageVariantPreferences(),
+      customLanguageVariants: [],
       microphoneSource: "",
       launchOnStartup: false,
       quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
@@ -322,7 +351,28 @@ export const useAppStore = create<AppState>()(
       setSttOutputStrategy: (strategy) => set({ sttOutputStrategy: strategy }),
       setPunctuationMode: (mode) => set({ punctuationMode: mode }),
       setContextAwareTone: (enabled) => set({ contextAwareTone: enabled }),
-      setPreferredLanguage: (preferredLanguage) => set({ preferredLanguage }),
+      setPreferredLanguage: (preferredLanguage) =>
+        set((state) => ({
+          preferredLanguage: normalizePreferredLanguageSelection(
+            preferredLanguage,
+            state.customLanguageVariants
+          ),
+        })),
+      setCustomLanguageVariants: (customLanguageVariants) =>
+        set((state) => {
+          const normalizedCustomLanguageVariants = normalizeCustomLanguageVariants(customLanguageVariants);
+          return {
+            customLanguageVariants: normalizedCustomLanguageVariants,
+            preferredLanguage: normalizePreferredLanguageSelection(
+              state.preferredLanguage,
+              normalizedCustomLanguageVariants
+            ),
+            appProfiles: normalizePersistedAppProfiles(
+              state.appProfiles,
+              normalizedCustomLanguageVariants
+            ),
+          };
+        }),
       setMicrophoneSource: (microphoneSource) => set({ microphoneSource }),
       setLaunchOnStartup: (launchOnStartup) => set({ launchOnStartup }),
       setQuickActionCommands: (commands) => set({ quickActionCommands: commands }),
@@ -352,7 +402,13 @@ export const useAppStore = create<AppState>()(
       setTranslationTarget: (target) => set({ translationTarget: target }),
       setHistoryEnabled: (enabled) => set({ historyEnabled: enabled }),
       setPreferenceLearningEnabled: (enabled) => set({ preferenceLearningEnabled: enabled }),
-      setAppProfiles: (profiles) => set({ appProfiles: profiles }),
+      setAppProfiles: (profiles) =>
+        set((state) => ({
+          appProfiles: normalizePersistedAppProfiles(
+            profiles,
+            state.customLanguageVariants
+          ),
+        })),
       setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
       setPartialTranscript: (text) => set({ partialTranscript: text }),
       setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
@@ -394,9 +450,14 @@ export const useAppStore = create<AppState>()(
           typeof persisted.llmModel === "string" && persisted.llmModel.trim()
             ? persisted.llmModel.trim()
             : currentState.llmModel;
+        const normalizedCustomVariants = normalizeCustomLanguageVariants(persisted.customLanguageVariants);
         return {
           ...currentState,
           ...persisted,
+          preferredLanguage: normalizePreferredLanguageSelection(
+            persisted.preferredLanguage,
+            normalizedCustomVariants
+          ),
           modeBPrompt: typeof normalizedModeBPrompt === "string" ? normalizedModeBPrompt : currentState.modeBPrompt,
           modeCPrompt: typeof normalizedModeCPrompt === "string" ? normalizedModeCPrompt : currentState.modeCPrompt,
           llmModel: nextModel,
@@ -408,7 +469,11 @@ export const useAppStore = create<AppState>()(
             typeof persisted.preferenceLearningEnabled === "boolean"
               ? persisted.preferenceLearningEnabled
               : currentState.preferenceLearningEnabled,
-          appProfiles: Array.isArray(persisted.appProfiles) ? persisted.appProfiles : DEFAULT_APP_PROFILES,
+          customLanguageVariants: normalizedCustomVariants,
+          appProfiles: normalizePersistedAppProfiles(
+            persisted.appProfiles,
+            normalizedCustomVariants
+          ),
         };
       },
       // Only persist user preferences, not runtime state
@@ -432,6 +497,7 @@ export const useAppStore = create<AppState>()(
         punctuationMode: state.punctuationMode,
         contextAwareTone: state.contextAwareTone,
         preferredLanguage: state.preferredLanguage,
+        customLanguageVariants: state.customLanguageVariants,
         microphoneSource: state.microphoneSource,
         launchOnStartup: state.launchOnStartup,
         quickActionCommands: state.quickActionCommands,

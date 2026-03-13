@@ -23,6 +23,7 @@ import {
   useAppStore,
   type AppLanguage,
   type AppProfile,
+  type CustomLanguageVariant,
   type PreferredLanguage,
   type TranslationTarget,
   type QuickActionCommand,
@@ -49,6 +50,16 @@ import {
   type ModelDownloadProgressEvent,
   type SettingsSection,
 } from "./settings/settingsShared";
+import {
+  diffLanguageVariantPreferences,
+  mergeLanguageVariantPreferences,
+  normalizeCustomLanguageVariants,
+  normalizePreferredLanguageSelection,
+} from "../utils/languageVariants";
+import {
+  showLanguageVariantPickerWindow,
+  type LanguageVariantPickerApplyPayload,
+} from "../utils/languageVariantWindow";
 
 export default function Settings() {
   const {
@@ -71,6 +82,7 @@ export default function Settings() {
     sttEngine, setSttEngine,
     sttLanguage, setSttLanguage,
     preferredLanguage, setPreferredLanguage,
+    customLanguageVariants, setCustomLanguageVariants,
     microphoneSource, setMicrophoneSource,
     launchOnStartup, setLaunchOnStartup,
     quickActionCommands, setQuickActionCommands,
@@ -184,6 +196,9 @@ export default function Settings() {
   const [draftModeAStreamOutput, setDraftModeAStreamOutput] = useState(modeAStreamOutput);
   const [draftModeBStreamOutput, setDraftModeBStreamOutput] = useState(modeBStreamOutput);
   const [draftPreferredLanguage, setDraftPreferredLanguage] = useState<PreferredLanguage>(preferredLanguage);
+  const [draftCustomLanguageVariants, setDraftCustomLanguageVariants] = useState<CustomLanguageVariant[]>(
+    customLanguageVariants
+  );
   const [draftMicrophoneSource, setDraftMicrophoneSource] = useState(microphoneSource);
   const [draftLaunchOnStartup, setDraftLaunchOnStartup] = useState(launchOnStartup);
   const [draftQuickActionCommands, setDraftQuickActionCommands] = useState<QuickActionCommand[]>(quickActionCommands);
@@ -342,6 +357,7 @@ export default function Settings() {
     setDraftModeAStreamOutput(modeAStreamOutput);
     setDraftModeBStreamOutput(modeBStreamOutput);
     setDraftPreferredLanguage(preferredLanguage);
+    setDraftCustomLanguageVariants(customLanguageVariants);
     setDraftMicrophoneSource(microphoneSource);
     setDraftLaunchOnStartup(launchOnStartup);
     setDraftQuickActionCommands(quickActionCommands);
@@ -370,6 +386,7 @@ export default function Settings() {
     outputMode,
     preferenceLearningEnabled,
     preferredLanguage,
+    customLanguageVariants,
     punctuationMode,
     quickActionCommands,
     screenshotEnabled,
@@ -733,6 +750,7 @@ export default function Settings() {
       setModeAStreamOutput(draftModeAStreamOutput);
       setModeBStreamOutput(draftModeBStreamOutput);
       setPreferredLanguage(draftPreferredLanguage);
+      setCustomLanguageVariants(draftCustomLanguageVariants);
       setMicrophoneSource(draftMicrophoneSource);
       setLaunchOnStartup(draftLaunchOnStartup);
       setQuickActionCommands(nextQuickActionCommands);
@@ -761,6 +779,7 @@ export default function Settings() {
         llmModel: nextModel,
         llmModelOptions: nextLlmModelOptions,
         preferredLanguage: draftPreferredLanguage,
+        customLanguageVariants: draftCustomLanguageVariants,
         modeAPrompt: draftModeAPrompt.trim(),
         modeBPrompt: draftModeBPrompt.trim(),
         modeCPrompt: draftModeCPrompt.trim(),
@@ -1080,6 +1099,140 @@ export default function Settings() {
       t("settings.status.modelDeleteFailed"),
     );
 
+  const languageVariantButtonLabel = t("settings.languageVariant.openButton");
+
+  const openGlobalLanguageVariantDialog = useCallback(() => {
+    void showLanguageVariantPickerWindow({
+      scope: "global",
+      preferences: draftPreferredLanguage,
+      globalPreferences: draftPreferredLanguage,
+      customVariants: draftCustomLanguageVariants,
+      useGlobalByDefault: false,
+    });
+  }, [draftCustomLanguageVariants, draftPreferredLanguage]);
+
+  const openProfileLanguageVariantDialog = useCallback((profileId: string) => {
+    const targetProfile = draftAppProfiles.find((profile) => profile.id === profileId);
+    const effectivePreferences = mergeLanguageVariantPreferences(
+      draftPreferredLanguage,
+      targetProfile?.preferredLanguage ?? "",
+      draftCustomLanguageVariants
+    );
+    void showLanguageVariantPickerWindow({
+      scope: "profile",
+      profileId,
+      preferences: effectivePreferences,
+      globalPreferences: draftPreferredLanguage,
+      customVariants: draftCustomLanguageVariants,
+      useGlobalByDefault:
+        !targetProfile ||
+        targetProfile.preferredLanguage === "" ||
+        Object.keys(targetProfile.preferredLanguage).length === 0,
+    });
+  }, [draftAppProfiles, draftCustomLanguageVariants, draftPreferredLanguage]);
+
+  const handleApplyLanguageVariantSelection = useCallback(
+    async (payload: LanguageVariantPickerApplyPayload) => {
+      const nextCustomVariants = normalizeCustomLanguageVariants(payload.customVariants);
+      setCustomLanguageVariants(nextCustomVariants);
+      setDraftCustomLanguageVariants(nextCustomVariants);
+
+      if (payload.scope === "global") {
+        const normalizedPreferences = normalizePreferredLanguageSelection(
+          payload.preferences,
+          nextCustomVariants
+        );
+        setPreferredLanguage(normalizedPreferences);
+        setDraftPreferredLanguage(normalizedPreferences);
+        await emit("neuropen://settings-saved", {
+          preferredLanguage: normalizedPreferences,
+          customLanguageVariants: nextCustomVariants,
+        });
+        return;
+      }
+
+      const nextProfilePreferences: PreferredLanguage | "" =
+        payload.useGlobal
+          ? ""
+          : (() => {
+            const diff = diffLanguageVariantPreferences(
+              draftPreferredLanguage,
+              payload.preferences,
+              nextCustomVariants
+            );
+            return Object.keys(diff).length > 0 ? diff : "";
+          })();
+
+      const nextDraftProfiles = draftAppProfiles.map((profile) =>
+        profile.id === payload.profileId
+          ? {
+              ...profile,
+              preferredLanguage: nextProfilePreferences,
+            }
+          : profile
+      );
+      setDraftAppProfiles(nextDraftProfiles);
+
+      const persistedProfiles = useAppStore.getState().appProfiles;
+      const targetExistsInStore = persistedProfiles.some(
+        (profile) => profile.id === payload.profileId
+      );
+      if (!targetExistsInStore) {
+        await emit("neuropen://settings-saved", {
+          customLanguageVariants: nextCustomVariants,
+        });
+        return;
+      }
+
+      const nextPersistedProfiles = persistedProfiles.map((profile) =>
+        profile.id === payload.profileId
+          ? {
+              ...profile,
+              preferredLanguage: nextProfilePreferences,
+            }
+          : profile
+      );
+      setAppProfiles(nextPersistedProfiles);
+      await emit("neuropen://settings-saved", {
+        appProfiles: nextPersistedProfiles,
+        customLanguageVariants: nextCustomVariants,
+      });
+    },
+    [
+      draftAppProfiles,
+      draftPreferredLanguage,
+      setAppProfiles,
+      setCustomLanguageVariants,
+      setPreferredLanguage,
+    ]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlistenApply: (() => void) | null = null;
+
+    void (async () => {
+      const dispose = await listen<LanguageVariantPickerApplyPayload>(
+        "neuropen://language-variant-picker-apply",
+        (event) => {
+          void handleApplyLanguageVariantSelection(event.payload);
+        }
+      );
+
+      if (cancelled) {
+        dispose();
+        return;
+      }
+
+      unlistenApply = dispose;
+    })();
+
+    return () => {
+      cancelled = true;
+      unlistenApply?.();
+    };
+  }, [handleApplyLanguageVariantSelection]);
+
   const currentSttModelChoice = useMemo(() => {
     const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
       ?? localModels.find((model) => model.active);
@@ -1117,7 +1270,8 @@ export default function Settings() {
       draftModeCPrompt !== modeCPrompt ||
       draftModeAStreamOutput !== modeAStreamOutput ||
       draftModeBStreamOutput !== modeBStreamOutput ||
-      draftPreferredLanguage !== preferredLanguage ||
+      JSON.stringify(draftPreferredLanguage) !== JSON.stringify(preferredLanguage) ||
+      JSON.stringify(draftCustomLanguageVariants) !== JSON.stringify(customLanguageVariants) ||
       draftMicrophoneSource !== microphoneSource ||
       draftLaunchOnStartup !== launchOnStartup ||
       draftLanguage !== language ||
@@ -1181,6 +1335,8 @@ export default function Settings() {
       modeBStreamOutput,
       draftPreferredLanguage,
       preferredLanguage,
+      draftCustomLanguageVariants,
+      customLanguageVariants,
       draftMicrophoneSource,
       microphoneSource,
       draftLaunchOnStartup,
@@ -1313,7 +1469,7 @@ export default function Settings() {
                 draftLlmProvider={draftLlmProvider}
                 draftLlmModel={draftLlmModel}
                 draftLlmModelOptions={draftLlmModelOptions}
-                draftPreferredLanguage={draftPreferredLanguage}
+                languageVariantButtonLabel={languageVariantButtonLabel}
                 draftModeAPrompt={draftModeAPrompt}
                 draftModeBPrompt={draftModeBPrompt}
                 draftModeCPrompt={draftModeCPrompt}
@@ -1327,7 +1483,7 @@ export default function Settings() {
                 onLlmModelChange={setDraftLlmModel}
                 onAddLlmModelOption={handleAddLlmModelOption}
                 onDeleteLlmModelOption={handleDeleteLlmModelOption}
-                onPreferredLanguageChange={setDraftPreferredLanguage}
+                onOpenLanguageVariantPicker={openGlobalLanguageVariantDialog}
                 onModeAPromptChange={setDraftModeAPrompt}
                 onModeBPromptChange={setDraftModeBPrompt}
                 onModeCPromptChange={setDraftModeCPrompt}
@@ -1375,7 +1531,9 @@ export default function Settings() {
             {activeSection === "appProfile" && (
               <SettingsAppProfileSection
                 profiles={draftAppProfiles}
+                customLanguageVariants={draftCustomLanguageVariants}
                 onChange={setDraftAppProfiles}
+                onOpenLanguageVariantPicker={openProfileLanguageVariantDialog}
                 contextAwareTone={draftContextAwareTone}
                 onContextAwareToneChange={setDraftContextAwareTone}
                 t={t}

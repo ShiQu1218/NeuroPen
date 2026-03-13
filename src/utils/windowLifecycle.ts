@@ -5,6 +5,7 @@ export const NEUROPEN_WINDOW_LABELS = [
   "quick-action",
   "preview",
   "settings",
+  "language-variant-picker",
   "recording-indicator",
   "screenshot-overlay",
 ] as const;

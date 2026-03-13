@@ -7,6 +7,7 @@ import {
   useAppStore,
   type AppLanguage,
   type AppProfile,
+  type CustomLanguageVariant,
   type PreferredLanguage,
   type QuickActionCommand,
 } from "../store/useAppStore";
@@ -23,6 +24,7 @@ export interface PreviewSession {
   instruction: string;
   attachments: PreviewAttachment[];
   promptAppendix: string;
+  preferredLanguage: string;
   requestId: string;
   preferenceCategoryKey: string;
   preferenceCategoryLabel: string;
@@ -111,6 +113,7 @@ export function usePreviewEventSync({
         sourceMode?: PreviewSourceMode;
         startLoading?: boolean;
         promptAppendix?: string;
+        preferredLanguage?: string;
         requestId?: string;
         preferenceCategoryKey?: string;
         preferenceCategoryLabel?: string;
@@ -157,6 +160,7 @@ export function usePreviewEventSync({
             instruction: "",
             attachments: [],
             promptAppendix: event.payload.promptAppendix ?? "",
+            preferredLanguage: event.payload.preferredLanguage ?? "",
             requestId: event.payload.requestId ?? "",
             preferenceCategoryKey: event.payload.preferenceCategoryKey ?? "",
             preferenceCategoryLabel: event.payload.preferenceCategoryLabel ?? "",
@@ -172,6 +176,7 @@ export function usePreviewEventSync({
           instruction: event.payload.instruction ?? "",
           attachments: [],
           promptAppendix: event.payload.promptAppendix ?? "",
+          preferredLanguage: event.payload.preferredLanguage ?? "",
           requestId: event.payload.requestId ?? "",
           preferenceCategoryKey: event.payload.preferenceCategoryKey ?? "",
           preferenceCategoryLabel: event.payload.preferenceCategoryLabel ?? "",
@@ -193,6 +198,7 @@ export function usePreviewEventSync({
         llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
+        customLanguageVariants?: CustomLanguageVariant[];
         modeAPrompt?: string;
         modeBPrompt?: string;
         modeCPrompt?: string;
@@ -217,6 +223,9 @@ export function usePreviewEventSync({
         }
         if (event.payload.language) {
           state.setLanguage(event.payload.language);
+        }
+        if (event.payload.customLanguageVariants) {
+          state.setCustomLanguageVariants(event.payload.customLanguageVariants);
         }
         if (event.payload.preferredLanguage) {
           state.setPreferredLanguage(event.payload.preferredLanguage);
@@ -292,6 +301,7 @@ export function usePreviewEventSync({
             source: "screenshot",
           }],
           promptAppendix: "",
+          preferredLanguage: "",
           requestId: "",
           preferenceCategoryKey: "",
           preferenceCategoryLabel: "",

@@ -16,7 +16,9 @@ export type AppLanguage =
 
 export type SttEngine = "openAi" | "localWhisper" | "senseVoice" | "moonshine";
 export type SttLanguage = "auto" | "zh" | "en" | "ja" | "ko" | "de" | "fr" | "es" | "ru" | "ar";
-export type PreferredLanguage = "auto" | AppLanguage;
+export type LanguageVariantPreferences = Record<string, string>;
+export type PreferredLanguageSelection = LanguageVariantPreferences;
+export type PreferredLanguage = PreferredLanguageSelection;
 
 export type AppMode = "A" | "B1" | "B2" | "C" | null;
 export type AppProfileMode = "A" | "B1" | "B2" | "C";
@@ -33,6 +35,14 @@ export interface AppProfile {
   preferredLanguage: PreferredLanguage | "";
   outputMode: OutputMode | "";
   directPaste: boolean | null;
+}
+
+export interface CustomLanguageVariant {
+  id: string;
+  languageCode: string;
+  language: string;
+  variantLabel: string;
+  promptInstruction: string;
 }
 
 export interface QuickActionCommand {

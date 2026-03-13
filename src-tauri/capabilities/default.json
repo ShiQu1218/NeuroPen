@@ -5,6 +5,7 @@
   "windows": [
     "main",
     "settings",
+    "language-variant-picker",
     "preview",
     "quick-action",
     "recording-indicator",

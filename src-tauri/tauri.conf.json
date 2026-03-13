@@ -28,6 +28,16 @@
         "center": true
       },
       {
+        "label": "language-variant-picker",
+        "title": "語言變體",
+        "width": 820,
+        "height": 860,
+        "visible": false,
+        "center": true,
+        "resizable": false,
+        "decorations": false
+      },
+      {
         "label": "preview",
         "title": "Output Preview",
         "width": 480,

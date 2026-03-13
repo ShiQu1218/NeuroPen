@@ -12,6 +12,7 @@ import {
   resolveHistoryRequestId,
   type PreferenceFeedbackRating,
 } from "../utils/preferenceLearning";
+import { resolveLanguageVariantPromptInstruction } from "../utils/languageVariants";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 
 interface HistoryEntry {
@@ -143,6 +144,10 @@ export default function HistoryPanel() {
       sourceMode: sourceMode as "A" | "B1" | "B2" | "C",
       selectedText: entry.inputText,
       instruction: entry.instruction,
+      preferredLanguage: resolveLanguageVariantPromptInstruction(
+        state.preferredLanguage,
+        state.customLanguageVariants
+      ),
       requestId,
       preferenceCategoryKey: category.key,
       preferenceCategoryLabel: category.label,
@@ -160,7 +165,10 @@ export default function HistoryPanel() {
         outputMode: "PreviewStream",
         provider: state.llmProvider,
         model: state.llmModel,
-        preferredLanguage: state.preferredLanguage,
+        preferredLanguage: resolveLanguageVariantPromptInstruction(
+          state.preferredLanguage,
+          state.customLanguageVariants
+        ),
         promptMode,
         promptOverride,
         streamOutput: true,
@@ -215,6 +223,10 @@ export default function HistoryPanel() {
       sourceMode: "B1",
       selectedText,
       instruction: entry.instruction,
+      preferredLanguage: resolveLanguageVariantPromptInstruction(
+        state.preferredLanguage,
+        state.customLanguageVariants
+      ),
       requestId,
       preferenceCategoryKey: category.key,
       preferenceCategoryLabel: category.label,
@@ -236,7 +248,10 @@ export default function HistoryPanel() {
         outputMode: "PreviewStream",
         provider: state.llmProvider,
         model: state.llmModel,
-        preferredLanguage: state.preferredLanguage,
+        preferredLanguage: resolveLanguageVariantPromptInstruction(
+          state.preferredLanguage,
+          state.customLanguageVariants
+        ),
         promptMode: "B",
         promptOverride: composePromptOverride(state.modeBPrompt, "", learnedSummary ?? ""),
         streamOutput: state.modeBStreamOutput,

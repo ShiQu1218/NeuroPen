@@ -9,6 +9,7 @@ import {
   useAppStore,
   type AppLanguage,
   type AppProfile,
+  type CustomLanguageVariant,
   type PreferredLanguage,
   type QuickActionCommand,
 } from "../store/useAppStore";
@@ -19,6 +20,10 @@ import {
   generatePreferenceRequestId,
 } from "../utils/preferenceLearning";
 import { resolveAppProfile } from "../utils/appText";
+import {
+  mergeLanguageVariantPreferences,
+  resolveLanguageVariantPromptInstruction,
+} from "../utils/languageVariants";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
@@ -35,6 +40,7 @@ export default function QuickActionIcon() {
   const setLlmModelOptions = useAppStore((s) => s.setLlmModelOptions);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
+  const setCustomLanguageVariants = useAppStore((s) => s.setCustomLanguageVariants);
   const setModeAPrompt = useAppStore((s) => s.setModeAPrompt);
   const setModeBPrompt = useAppStore((s) => s.setModeBPrompt);
   const setModeCPrompt = useAppStore((s) => s.setModeCPrompt);
@@ -94,6 +100,7 @@ export default function QuickActionIcon() {
         llmModelOptions?: string[];
         language?: AppLanguage;
         preferredLanguage?: PreferredLanguage;
+        customLanguageVariants?: CustomLanguageVariant[];
         modeAPrompt?: string;
         modeBPrompt?: string;
         modeCPrompt?: string;
@@ -120,6 +127,9 @@ export default function QuickActionIcon() {
           }
           if (event.payload.language) {
             setLanguage(event.payload.language);
+          }
+          if (event.payload.customLanguageVariants) {
+            setCustomLanguageVariants(event.payload.customLanguageVariants);
           }
           if (event.payload.preferredLanguage) {
             setPreferredLanguage(event.payload.preferredLanguage);
@@ -169,7 +179,7 @@ export default function QuickActionIcon() {
       void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setAppProfiles, setContextAwareTone, setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferenceLearningEnabled, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+  }, [setAppProfiles, setContextAwareTone, setCustomLanguageVariants, setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferenceLearningEnabled, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
 
   useEffect(() => {
     void setWindowFocusable(false);
@@ -281,14 +291,26 @@ export default function QuickActionIcon() {
       ? buildQuickActionPreferenceCategory(command)
       : buildOtherPreferenceCategory(t("history.preferenceOther"));
     const requestId = generatePreferenceRequestId();
-    let b1PreferredLanguage: string = currentState.preferredLanguage;
+    let b1LanguagePreferences = currentState.preferredLanguage;
+    let b1PreferredLanguage = resolveLanguageVariantPromptInstruction(
+      b1LanguagePreferences,
+      currentState.customLanguageVariants
+    );
     let promptAppendix = "";
     if (currentState.contextAwareTone) {
       try {
         const windowTitle = await invoke<string>("get_foreground_window_title");
         const profileB1 = resolveAppProfile(windowTitle, currentState.appProfiles, "B1");
         if (profileB1) {
-          if (profileB1.preferredLanguage) b1PreferredLanguage = profileB1.preferredLanguage;
+          b1LanguagePreferences = mergeLanguageVariantPreferences(
+            currentState.preferredLanguage,
+            profileB1.preferredLanguage,
+            currentState.customLanguageVariants
+          );
+          b1PreferredLanguage = resolveLanguageVariantPromptInstruction(
+            b1LanguagePreferences,
+            currentState.customLanguageVariants
+          );
           promptAppendix = profileB1.promptAppendix || "";
         }
       } catch {
@@ -321,6 +343,7 @@ export default function QuickActionIcon() {
       selectedText,
       instruction,
       promptAppendix,
+      preferredLanguage: b1PreferredLanguage,
       requestId,
       preferenceCategoryKey: category.key,
       preferenceCategoryLabel: category.label,
