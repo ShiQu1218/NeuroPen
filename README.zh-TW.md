@@ -20,7 +20,7 @@
 ## Table of Contents / 目錄
 
 - [Features / 功能特色](#features--功能特色)
-- [Operating Modes / 運作模式](#operating-modes--運作模式)
+- [Workflows / 工作流](#workflows--工作流)
 - [Core Workflow Safeguards / 核心流程保護](#core-workflow-safeguards--核心流程保護)
 - [UI Modules / 介面模組](#ui-modules--介面模組)
 - [Supported Models / 支援模型](#supported-models--支援模型)
@@ -40,10 +40,10 @@
 | 領域 | 目前能力 |
 |------|----------|
 | **全域語音擷取** | 長按 `Alt + 反引號`，可在任何應用程式錄音並轉寫 |
-| **模式分流（A / B1 / B2 / C）** | 依「是否有選字」與「是否偵測喚醒詞」自動路由 |
+| **工作流分流（語音輸入 / 快捷指令 / 選取語音指令 / 助理對話）** | 依「是否有選字」與「是否偵測喚醒詞」自動路由 |
 | **劃詞快速操作** | 選字後顯示 Quick Action 浮動操作，支援可自訂預設指令 |
 | **選字語音指令** | 對選取文字口述修改需求，交由 LLM 重寫 |
-| **LLM 助理模式** | 喚醒詞問答流程，支援串流回覆 |
+| **助理對話** | 喚醒詞問答流程，支援串流回覆 |
 | **輸出策略** | 可選 `PreviewStream` 預覽視窗或直接注入到焦點輸入框 |
 | **安全注入 + 復原** | 注入前驗證焦點視窗，並支援 `Alt + Z` 一鍵復原 |
 | **STT 引擎管線** | 支援 OpenAI Whisper API 與本地 Whisper |
@@ -58,25 +58,25 @@
 
 ---
 
-## Operating Modes / 運作模式
+## Workflows / 工作流
 
-| 模式 | 觸發條件 | 輸出 |
+| 工作流 | 觸發條件 | 輸出 |
 |------|----------|------|
-| **A — 直接語音輸入** | 無選字 + `Alt + 反引號` + 無喚醒詞 | STT 文字顯示於預覽視窗或直接注入游標位置 |
-| **B1 — 劃詞快速操作** | 有選字 + 點擊 Quick Action | LLM 結果顯示於預覽視窗 |
-| **B2 — 選字語音指令** | 有選字 + `Alt + 反引號` + 口述指令 | LLM 改寫結果顯示於預覽視窗 |
-| **C — LLM 問答** | 無選字 + 轉寫中偵測到喚醒詞 | LLM 回答顯示於預覽視窗或直接注入 |
+| **語音輸入 (A)** | 無選字 + `Alt + 反引號` + 無喚醒詞 | STT 文字顯示於預覽視窗或直接注入游標位置 |
+| **快捷指令 (B1)** | 有選字 + 點擊 Quick Action | LLM 結果顯示於預覽視窗 |
+| **選取語音指令 (B2)** | 有選字 + `Alt + 反引號` + 口述指令 | LLM 改寫結果顯示於預覽視窗 |
+| **助理對話 (C)** | 無選字 + 轉寫中偵測到喚醒詞 | LLM 回答顯示於預覽視窗或直接注入 |
 
-### 模式展示 (Mode Demos)
+### 工作流展示
 
-**Mode A — 直接語音輸入**
-![Mode A 展示](./assets/demo/mode_A.jpg)
+**語音輸入 (A)**
+![語音輸入展示](./assets/demo/mode_A.jpg)
 
-**Mode B1 — 劃詞快速操作**
-![Mode B1 展示](./assets/demo/mode_B1.jpg)
+**快捷指令 (B1)**
+![快捷指令展示](./assets/demo/mode_B1.jpg)
 
-**Mode B2 — 截圖問答**
-![Mode B2 展示](./assets/demo/mode_B2.jpg)
+**選取語音指令 (B2)**
+![選取語音指令展示](./assets/demo/mode_B2.jpg)
 
 ## Core Workflow Safeguards / 核心流程保護
 
@@ -482,7 +482,7 @@ CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
 | 本地 Whisper 顯示未啟用 | 需以 `--features local-stt` 或 `--features local-stt-gpu` 重新建置 |
 | Ollama 無法連線 | 確認 Ollama 正在執行且 `localhost:11434` 可存取，模型名稱與已安裝模型一致 |
 | 取代失敗 / 焦點錯誤 | NeuroPen 僅對快捷鍵觸發時的焦點視窗注入；若焦點在處理期間改變，會取消並警告 |
-| Quick Action 圖示未出現 | 部分應用（遊戲、自繪介面）不支援 UI Automation API，改用 Mode B2 語音路徑 |
+| Quick Action 圖示未出現 | 部分應用（遊戲、自繪介面）不支援 UI Automation API，改用「選取語音指令 (B2)」路徑 |
 | 模擬輸入被封鎖 | 部分 Electron app / 遊戲封鎖 Ctrl+V 模擬，請手動貼上 |
 
 ---

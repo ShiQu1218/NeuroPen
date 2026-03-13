@@ -1,5 +1,10 @@
 export const commonMessages = {
   "zh-TW": {
+    "workflow.voiceInput": "語音輸入",
+    "workflow.selectionProcessing": "選取處理",
+    "workflow.quickAction": "快捷指令",
+    "workflow.selectionVoiceCommand": "選取語音指令",
+    "workflow.assistantChat": "助理對話",
     "quickAction.title": "快速操作",
     "quickAction.empty": "請到設定新增快捷指令",
     "quickAction.customPlaceholder": "自訂指令…",
@@ -49,6 +54,11 @@ export const commonMessages = {
     "error.translationNeedsLlmApiKey": "未設定 LLM API Key，無法使用即時翻譯"
   },
   "en-US": {
+    "workflow.voiceInput": "Voice Input",
+    "workflow.selectionProcessing": "Selection Processing",
+    "workflow.quickAction": "Quick Action",
+    "workflow.selectionVoiceCommand": "Selection Voice Command",
+    "workflow.assistantChat": "Assistant Chat",
     "quickAction.title": "Quick Actions",
     "quickAction.empty": "Add quick action commands in Settings",
     "quickAction.customPlaceholder": "Custom instruction…",

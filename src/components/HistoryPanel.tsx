@@ -14,6 +14,7 @@ import {
 } from "../utils/preferenceLearning";
 import { resolveLanguageVariantPromptInstructionForText } from "../utils/languageVariants";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
+import { APP_WORKFLOW_LABEL_KEYS } from "../utils/workflowLabels";
 
 interface HistoryEntry {
   id: string;
@@ -31,13 +32,6 @@ interface HistoryEntry {
   preferenceCategoryLabel?: string;
   quickActionCommandId?: string;
 }
-
-const MODE_LABELS: Record<string, string> = {
-  A: "Voice Input",
-  B1: "Quick Action",
-  B2: "Voice + Selection",
-  C: "LLM Query",
-};
 
 type FilterTab = "all" | "favorites";
 
@@ -388,7 +382,11 @@ export default function HistoryPanel() {
                   <span className="text-amber-500 text-[11px]">★</span>
                 )}
                 <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
-                  {MODE_LABELS[entry.mode] || entry.mode}
+                  {(() => {
+                    const workflowLabelKey =
+                      APP_WORKFLOW_LABEL_KEYS[entry.mode as keyof typeof APP_WORKFLOW_LABEL_KEYS];
+                    return workflowLabelKey ? t(workflowLabelKey) : entry.mode;
+                  })()}
                 </span>
                 <span className="flex-1 text-sm text-zinc-700 truncate">
                   {entry.instruction || entry.inputText || entry.output}

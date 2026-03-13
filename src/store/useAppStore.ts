@@ -50,14 +50,18 @@ export type { AppProfileMode } from "./appStoreTypes";
 export { DEFAULT_MODE_A_PROMPT, DEFAULT_MODE_B_PROMPT, DEFAULT_MODE_C_PROMPT } from "./appStoreTypes";
 export { normalizeLlmModelOptions } from "./appStoreDefaults";
 
-const LEGACY_MODE_B_PROMPT =
-  "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly in clean Markdown with short paragraphs and bullets only when they help. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.";
+const LEGACY_MODE_B_PROMPTS = [
+  "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly and clearly in natural text. Use short paragraphs or lists only when they genuinely help. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
+  "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly in clean Markdown with short paragraphs and bullets only when they help. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
+] as const;
 
-const LEGACY_MODE_C_PROMPT =
-  "You are handling spoken assistant queries for Mode C. Reply in clean Markdown like a polished Typeless-style response: short paragraphs, meaningful bullet lists when useful, no filler opening lines, and no unnecessary headings for simple answers. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.";
+const LEGACY_MODE_C_PROMPTS = [
+  "You are handling spoken assistant queries for Mode C. Reply directly and clearly in natural text. Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, avoid filler opening lines, and avoid unnecessary headings for simple answers. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
+  "You are handling spoken assistant queries for Mode C. Reply in clean Markdown like a polished Typeless-style response: short paragraphs, meaningful bullet lists when useful, no filler opening lines, and no unnecessary headings for simple answers. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
+] as const;
 
-const normalizePersistedPrompt = (value: unknown, legacyValue: string, nextDefault: string) =>
-  typeof value === "string" && value.trim() === legacyValue ? nextDefault : value;
+const normalizePersistedPrompt = (value: unknown, legacyValues: readonly string[], nextDefault: string) =>
+  typeof value === "string" && legacyValues.includes(value.trim()) ? nextDefault : value;
 
 const normalizePersistedAppProfiles = (
   value: unknown,
@@ -438,12 +442,12 @@ export const useAppStore = create<AppState>()(
         const persisted = (persistedState as Partial<AppState> | undefined) ?? {};
         const normalizedModeBPrompt = normalizePersistedPrompt(
           persisted.modeBPrompt,
-          LEGACY_MODE_B_PROMPT,
+          LEGACY_MODE_B_PROMPTS,
           DEFAULT_MODE_B_PROMPT,
         );
         const normalizedModeCPrompt = normalizePersistedPrompt(
           persisted.modeCPrompt,
-          LEGACY_MODE_C_PROMPT,
+          LEGACY_MODE_C_PROMPTS,
           DEFAULT_MODE_C_PROMPT,
         );
         const nextModel =

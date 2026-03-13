@@ -7,6 +7,7 @@ import type {
   OutputMode,
 } from "../../store/useAppStore";
 import { getLanguageVariantSelectionSummary } from "../../utils/languageVariants";
+import { APP_WORKFLOW_LABEL_KEYS } from "../../utils/workflowLabels";
 import SettingsToggle from "./SettingsToggle";
 
 const ALL_MODES: AppProfileMode[] = ["A", "B1", "B2", "C"];
@@ -197,7 +198,7 @@ export default function SettingsAppProfileEditorOverlay({
                             : "border border-zinc-200 bg-[#fcfbf8] text-zinc-700 hover:border-zinc-300"
                         }`}
                       >
-                        {mode}
+                        {t(APP_WORKFLOW_LABEL_KEYS[mode])}
                       </button>
                     );
                   })}

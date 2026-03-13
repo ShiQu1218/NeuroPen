@@ -41,6 +41,7 @@ import {
   normalizeCustomLanguageVariants,
   normalizePreferredLanguageSelection,
 } from "../utils/languageVariants";
+import { formatAppWorkflowLabels } from "../utils/workflowLabels";
 
 type PanelTone = "" | "success" | "error";
 
@@ -1287,7 +1288,7 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <div className="settings-chip">{profile.applyToModes.join(", ")}</div>
+                  <div className="settings-chip">{formatAppWorkflowLabels(profile.applyToModes, t)}</div>
                   <div className="settings-chip">
                     {getLanguageVariantSelectionSummary(profile.preferredLanguage, customLanguageVariants, {
                       emptyLabel: t("settings.appProfile.useGlobal"),

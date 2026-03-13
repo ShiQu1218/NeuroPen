@@ -20,7 +20,7 @@
 ## Table of Contents
 
 - [Features](#features)
-- [Operating Modes](#operating-modes)
+- [Workflows](#workflows)
 - [Core Workflow Safeguards](#core-workflow-safeguards)
 - [UI Modules](#ui-modules)
 - [Supported Models](#supported-models)
@@ -40,10 +40,10 @@
 | Area | Current capability |
 |------|--------------------|
 | **Global voice capture** | Hold `Alt + Backtick` to record and transcribe speech from any app |
-| **Mode routing (A / B1 / B2 / C)** | Routes behavior by selection state and wake word detection |
+| **Workflow routing (Voice Input / Quick Action / Selection Voice Command / Assistant Chat)** | Routes behavior by selection state and wake word detection |
 | **Selection quick actions** | Floating Quick Action icon with customizable preset commands |
 | **Voice command on selection** | Speak instructions over selected text for LLM rewriting |
-| **LLM assistant mode** | Wake-word query flow with streaming response support |
+| **Assistant chat** | Wake-word query flow with streaming response support |
 | **Output strategies** | `PreviewStream` window or direct injection into focused app |
 | **Focus-safe injection + undo** | Focus verification before paste and one-key rollback (`Alt + Z`) |
 | **STT pipeline** | OpenAI Whisper API and local Whisper engine support |
@@ -58,25 +58,25 @@
 
 ---
 
-## Operating Modes
+## Workflows
 
-| Mode | Trigger | Output |
+| Workflow | Trigger | Output |
 |------|---------|--------|
-| **A — Direct Voice Input** | No selection + `Alt + Backtick` + no wake word | STT result shown in preview window or injected at cursor |
-| **B1 — Quick Action on Selection** | Text selected + Quick Action click | LLM result in preview window |
-| **B2 — Voice Command on Selection** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite in preview window |
-| **C — LLM Query** | No selection + wake word detected in transcript | LLM answer in preview window or direct inject |
+| **Voice Input (A)** | No selection + `Alt + Backtick` + no wake word | STT result shown in preview window or injected at cursor |
+| **Quick Action (B1)** | Text selected + Quick Action click | LLM result in preview window |
+| **Selection Voice Command (B2)** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite in preview window |
+| **Assistant Chat (C)** | No selection + wake word detected in transcript | LLM answer in preview window or direct inject |
 
-### Mode Demos
+### Workflow Demos
 
-**Mode A — Direct Voice Input**
-![Mode A Demo](./assets/demo/mode_A.jpg)
+**Voice Input (A)**
+![Voice Input Demo](./assets/demo/mode_A.jpg)
 
-**Mode B1 — Quick Action on Selection**
-![Mode B1 Demo](./assets/demo/mode_B1.jpg)
+**Quick Action (B1)**
+![Quick Action Demo](./assets/demo/mode_B1.jpg)
 
-**Mode B2 — ScreenShot Q&A**
-![Mode B2 Demo](./assets/demo/mode_B2.jpg)
+**Selection Voice Command (B2)**
+![Selection Voice Command Demo](./assets/demo/mode_B2.jpg)
 
 ## Core Workflow Safeguards
 
@@ -482,7 +482,7 @@ After CI completes, a Draft Release with the installer will appear on the **Rele
 | Local Whisper shows as disabled | Rebuild with `--features local-stt` or `--features local-stt-gpu` |
 | Ollama won't connect | Ensure Ollama is running and `localhost:11434` is accessible; model name must match an installed model |
 | Replace failed / focus error | NeuroPen only injects into the window that was focused at hotkey trigger time; if focus changes during processing, it cancels and warns |
-| Quick Action icon not appearing | Some apps (games, custom-drawn UIs) don't support UI Automation API — use Mode B2 voice path instead |
+| Quick Action icon not appearing | Some apps (games, custom-drawn UIs) don't support UI Automation API — use the Selection Voice Command (B2) path instead |
 | Simulated input blocked | Some Electron apps / games block Ctrl+V simulation — paste manually |
 
 ---
