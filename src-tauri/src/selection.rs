@@ -236,6 +236,29 @@ pub fn get_cursor_position() -> (i32, i32) {
     (0, 0)
 }
 
+#[cfg(target_os = "windows")]
+fn is_cursor_over_current_process_window(x: i32, y: i32) -> bool {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, WindowFromPoint};
+
+    unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return false;
+        }
+
+        let mut owner_pid = 0u32;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut owner_pid));
+        owner_pid != 0 && owner_pid == GetCurrentProcessId()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_cursor_over_current_process_window(_x: i32, _y: i32) -> bool {
+    false
+}
+
 /// Returns true while left mouse button is pressed.
 #[cfg(target_os = "windows")]
 fn is_left_button_down() -> bool {
@@ -271,14 +294,19 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 SelectionResult::None | SelectionResult::Unavailable => (false, String::new()),
             };
             let left_down = is_left_button_down();
-            let just_released = last_left_down && !left_down;
             let (cx, cy) = get_cursor_pos();
+            let cursor_over_neuropen_window = is_cursor_over_current_process_window(cx, cy);
+            let just_released = last_left_down && !left_down && !cursor_over_neuropen_window;
 
             if left_down && !last_left_down {
-                drag_start = Some((cx, cy));
-                // User started a new click/drag — clear sticky selection
-                sticky_text = None;
-                sticky_expires_at = None;
+                if cursor_over_neuropen_window {
+                    drag_start = None;
+                } else {
+                    drag_start = Some((cx, cy));
+                    // User started a new click/drag — clear sticky selection
+                    sticky_text = None;
+                    sticky_expires_at = None;
+                }
             }
             let release_gesture = classify_release_gesture(
                 just_released,
@@ -291,6 +319,8 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 drag_start = None;
                 last_release_at = Some(std::time::Instant::now());
                 last_release_pos = Some((cx, cy));
+            } else if last_left_down && !left_down {
+                drag_start = None;
             }
 
             if matches!(release_gesture, Some(ReleaseGesture::PlainClick)) {

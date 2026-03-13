@@ -71,6 +71,7 @@ export interface ModeStartPayload {
 export function createSelectionListenerState(): SelectionListenerState {
   return {
     qaInteracting: false,
+    selectionAnchorPinUntil: 0,
     lastSelectionFingerprint: "",
     suppressedSelectionFingerprint: "",
     selectionWatchSuppressedUntil: 0,

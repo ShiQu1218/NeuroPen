@@ -13,6 +13,74 @@ interface RegisterSelectionListenersParams {
   selectionState: SelectionListenerState;
 }
 
+function normalizeSelectionText(text: string | null | undefined) {
+  return (text ?? "").trim();
+}
+
+async function isCursorInsideWindow(label: "quick-action" | "preview", x: number, y: number) {
+  const win = await WebviewWindow.getByLabel(label);
+  if (!win) {
+    return false;
+  }
+
+  const isVisible = await win.isVisible().catch(() => false);
+  if (!isVisible) {
+    return false;
+  }
+
+  const [pos, size] = await Promise.all([
+    win.outerPosition().catch(() => null),
+    win.outerSize().catch(() => null),
+  ]);
+
+  if (!pos || !size || size.width <= 0 || size.height <= 0) {
+    return false;
+  }
+
+  return (
+    x >= pos.x &&
+    x < pos.x + size.width &&
+    y >= pos.y &&
+    y < pos.y + size.height
+  );
+}
+
+async function shouldPreserveQuickActionAnchor(
+  selectionState: SelectionListenerState,
+  snapshot: SelectionSnapshot,
+) {
+  const anchorPinned = Date.now() < selectionState.selectionAnchorPinUntil;
+  const cursorInsideNeuroPenSurface = await Promise.all([
+    isCursorInsideWindow("quick-action", snapshot.cursorX, snapshot.cursorY),
+    isCursorInsideWindow("preview", snapshot.cursorX, snapshot.cursorY),
+  ]).then((results) => results.some(Boolean));
+
+  if (
+    (!selectionState.qaInteracting && !anchorPinned && !cursorInsideNeuroPenSurface) ||
+    !snapshot.hasSelection
+  ) {
+    return false;
+  }
+
+  const lastSnapshot = selectionState.lastSelectionSnapshot;
+  if (!lastSnapshot?.hasSelection) {
+    return false;
+  }
+
+  const incomingText = normalizeSelectionText(snapshot.text);
+  const previousText = normalizeSelectionText(lastSnapshot.text);
+
+  if (!incomingText || !previousText) {
+    return false;
+  }
+
+  // Clicking a quick-action button emits a fresh mouse-release selection event
+  // whose cursor coordinates point at the popup instead of the original text.
+  // Keep the last stable selection anchor so suppress/resync continues to track
+  // the selected text rather than the popup click position.
+  return incomingText === previousText;
+}
+
 export async function registerSelectionListeners({
   safeRegister,
   selectionState,
@@ -43,6 +111,7 @@ export async function registerSelectionListeners({
     const store = useAppStore.getState();
     const qaWin = await WebviewWindow.getByLabel("quick-action");
     if (!qaWin) return;
+    const previewWin = await WebviewWindow.getByLabel("preview");
 
     const now = Date.now();
     if (selectionState.suppressedSelectionFingerprint && now >= selectionState.selectionWatchSuppressedUntil) {
@@ -63,6 +132,18 @@ export async function registerSelectionListeners({
       clearQaHideTimer();
       clearQaResyncTimer();
       await hideWindowByLabel("quick-action");
+      return;
+    }
+
+    const previewVisible = previewWin
+      ? await previewWin.isVisible().catch(() => false)
+      : false;
+    if (previewVisible) {
+      clearQaHideTimer();
+      await qaWin.hide().catch(() => { });
+      if (snapshot?.hasSelection) {
+        scheduleQaResync(240);
+      }
       return;
     }
 
@@ -172,6 +253,14 @@ export async function registerSelectionListeners({
     },
   );
 
+  await safeRegister<{ cooldownMs?: number }>(
+    "neuropen://qa-pin-selection-anchor",
+    async (event) => {
+      selectionState.selectionAnchorPinUntil =
+        Date.now() + Math.max(300, event.payload.cooldownMs ?? 1200);
+    },
+  );
+
   await safeRegister<{ cooldownMs?: number }>("neuropen://qa-suppress-current-selection", async (event) => {
     selectionState.suppressedSelectionFingerprint = selectionState.lastSelectionFingerprint;
     selectionState.selectionWatchSuppressedUntil = Date.now() + Math.max(300, event.payload.cooldownMs ?? 1200);
@@ -192,7 +281,7 @@ export async function registerSelectionListeners({
     "neuropen://selection-changed",
     async (event) => {
       clearQaResyncTimer();
-      selectionState.lastSelectionSnapshot = {
+      const nextSnapshot: SelectionSnapshot = {
         hasSelection: event.payload.has_selection,
         text: event.payload.text,
         cursorX: event.payload.cursor_x,
@@ -200,6 +289,9 @@ export async function registerSelectionListeners({
         anchorX: event.payload.anchor_x,
         anchorY: event.payload.anchor_y,
       };
+      if (!(await shouldPreserveQuickActionAnchor(selectionState, nextSnapshot))) {
+        selectionState.lastSelectionSnapshot = nextSnapshot;
+      }
       await syncQuickAction(selectionState.lastSelectionSnapshot);
     },
   );

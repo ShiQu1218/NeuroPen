@@ -20,6 +20,7 @@ export interface SelectionSnapshot {
 
 export interface SelectionListenerState {
   qaInteracting: boolean;
+  selectionAnchorPinUntil: number;
   lastSelectionFingerprint: string;
   suppressedSelectionFingerprint: string;
   selectionWatchSuppressedUntil: number;

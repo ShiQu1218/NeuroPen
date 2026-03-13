@@ -70,6 +70,9 @@ export default function QuickActionIcon() {
   const setQaInteracting = useCallback(async (active: boolean) => {
     await emit("neuropen://qa-interacting", { active });
   }, []);
+  const pinSelectionAnchor = useCallback((cooldownMs = 1800) => {
+    void emit("neuropen://qa-pin-selection-anchor", { cooldownMs });
+  }, []);
 
   useEffect(() => {
     let unlistenSelection: (() => void) | null = null;
@@ -328,14 +331,16 @@ export default function QuickActionIcon() {
       preferenceCategoryLabel: category.label,
       quickActionCommandId: category.quickActionCommandId,
     });
+    const qaWindow = getCurrentWindow();
+    const [qaPos, qaSize, scaleFactor] = await Promise.all([
+      qaWindow.outerPosition(),
+      qaWindow.outerSize(),
+      qaWindow.scaleFactor(),
+    ]);
     await setWindowFocusable(false);
     await setQaInteracting(false);
-    await getCurrentWindow().hide();
+    await qaWindow.hide();
     setExpanded(false);
-
-    const qaPos = await getCurrentWindow().outerPosition();
-    const qaSize = await getCurrentWindow().outerSize();
-    const scaleFactor = await getCurrentWindow().scaleFactor();
 
     // Selection-based flows always use the preview workflow; the global
     // LLM output mode only applies to direct voice input and wake-word mode.
@@ -463,6 +468,7 @@ export default function QuickActionIcon() {
             <button
               key={command.id}
               className="w-full text-left px-3 py-1.5 rounded-xl bg-white/80 hover:bg-zinc-100 hover:text-zinc-900 border border-zinc-200/60 transition-colors"
+              onMouseDown={() => pinSelectionAnchor()}
               onClick={(e) =>
                 invokeCommand(command, { x: e.clientX, y: e.clientY })
               }
@@ -499,6 +505,7 @@ export default function QuickActionIcon() {
         <button
           className="btn-primary px-2.5 py-1.5 text-xs"
           disabled={!customInput.trim()}
+          onMouseDown={() => pinSelectionAnchor()}
           onClick={(e) => invokeCustom({ x: e.clientX, y: e.clientY })}
         >
           →
