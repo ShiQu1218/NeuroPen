@@ -428,12 +428,18 @@ export default function QuickActionIcon() {
     return (
       <div
         key={animKey}
-        className={`flex items-center justify-center w-[36px] h-[36px] bg-white/85 backdrop-blur-md border border-white/80 rounded-full shadow-[0_10px_28px_rgba(0,0,0,0.18)] cursor-pointer transition-all duration-200 ease-out animate-scaleUp ${iconVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+        className={`flex items-center justify-center w-[36px] h-[36px] cursor-pointer transition-all duration-200 ease-out animate-scaleUp ${iconVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
           }`}
         onMouseEnter={expand}
         onClick={expand}
       >
-        <span className="text-lg leading-none select-none text-zinc-700">✦</span>
+        <img
+          src="/brand-icon.svg"
+          alt=""
+          aria-hidden="true"
+          className="h-[34px] w-[34px] rounded-[9px] shadow-[0_10px_24px_rgba(0,0,0,0.18)] select-none"
+          draggable={false}
+        />
       </div>
     );
   }
