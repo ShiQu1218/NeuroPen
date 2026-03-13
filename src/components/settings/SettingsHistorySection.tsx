@@ -3,6 +3,7 @@ import { mainWindowService } from "../../services/mainWindowService";
 import HistoryPanel from "../HistoryPanel";
 import type { useI18n } from "../../i18n";
 import type { PreferenceSummaryView } from "../../utils/preferenceLearning";
+import SettingsToggle from "./SettingsToggle";
 
 interface SettingsHistorySectionProps {
   draftHistoryEnabled: boolean;
@@ -61,34 +62,26 @@ export default function SettingsHistorySection({
 
   return (
     <div className="space-y-4">
-      <div className="settings-card space-y-3">
-        <div className="flex items-center gap-3">
-          <label className="font-medium">{t("settings.history.enable")}</label>
-          <button
-            onClick={onToggleHistory}
-            className={`relative h-5 w-10 rounded-full transition-colors ${draftHistoryEnabled ? "bg-blue-500" : "bg-gray-300"}`}
-          >
-            <span
-              className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${draftHistoryEnabled ? "translate-x-5" : ""}`}
-            />
-          </button>
+      <div className="settings-card space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <label className="font-medium text-zinc-900">{t("settings.history.enable")}</label>
+          <SettingsToggle
+            checked={draftHistoryEnabled}
+            onChange={() => onToggleHistory()}
+            ariaLabel={t("settings.history.enable")}
+          />
         </div>
-        <p className="text-xs text-zinc-500">
-          {t("settings.history.hint")}
-        </p>
+        <p className="text-xs text-zinc-500">{t("settings.history.hint")}</p>
       </div>
       <div className="settings-card space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <label className="font-medium">{t("settings.preference.enable")}</label>
-            <button
-              onClick={onTogglePreferenceLearning}
-              className={`relative h-5 w-10 rounded-full transition-colors ${draftPreferenceLearningEnabled ? "bg-blue-500" : "bg-gray-300"}`}
-            >
-              <span
-                className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${draftPreferenceLearningEnabled ? "translate-x-5" : ""}`}
-              />
-            </button>
+            <label className="font-medium text-zinc-900">{t("settings.preference.enable")}</label>
+            <SettingsToggle
+              checked={draftPreferenceLearningEnabled}
+              onChange={() => onTogglePreferenceLearning()}
+              ariaLabel={t("settings.preference.enable")}
+            />
           </div>
           <button
             className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed"

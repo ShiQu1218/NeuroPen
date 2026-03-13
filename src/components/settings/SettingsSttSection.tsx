@@ -313,7 +313,7 @@ export default function SettingsSttSection({
           <p className="text-xs text-amber-700">{t("settings.stt.localNotEnabledHint")}</p>
         )}
 
-        <div className="max-h-[28rem] overflow-y-auto space-y-2 pr-1">
+        <div className="space-y-2">
           {localModelsLoading && (
             <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-xs text-zinc-500">
               {t("settings.stt.loadingModels")}

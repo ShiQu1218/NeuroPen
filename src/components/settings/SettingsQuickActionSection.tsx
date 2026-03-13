@@ -1,5 +1,6 @@
 import type { useI18n } from "../../i18n";
 import type { QuickActionCommand } from "../../store/useAppStore";
+import SettingsInfoHint from "./SettingsInfoHint";
 
 interface SettingsQuickActionSectionProps {
   commands: QuickActionCommand[];
@@ -20,10 +21,10 @@ export default function SettingsQuickActionSection({
 }: SettingsQuickActionSectionProps) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <label className="font-medium">{t("settings.quickAction.label")}</label>
-          <p className="text-xs text-gray-400">{t("settings.quickAction.hint")}</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <label className="font-medium text-zinc-900">{t("settings.quickAction.label")}</label>
+          <SettingsInfoHint text={t("settings.quickAction.hint")} />
         </div>
         <button
           onClick={onAdd}
@@ -32,9 +33,9 @@ export default function SettingsQuickActionSection({
           {t("settings.quickAction.add")}
         </button>
       </div>
-      <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+      <div className="space-y-2">
         {commands.map((command, index) => (
-          <div key={command.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+          <div key={command.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2">
             <input
               className="w-full input-field px-2 py-1 text-xs"
               value={command.label}

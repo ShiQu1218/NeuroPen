@@ -70,15 +70,6 @@ export const NAV_ITEMS: { id: SettingsSection; icon: JSX.Element }[] = [
     ),
   },
   {
-    id: "shortcuts",
-    icon: (
-      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">
-        <rect x="4" y="6" width="16" height="12" rx="2" />
-        <path d="M8 10h.01M12 10h.01M16 10h.01M8 14h8" />
-      </svg>
-    ),
-  },
-  {
     id: "stt",
     icon: (
       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8">

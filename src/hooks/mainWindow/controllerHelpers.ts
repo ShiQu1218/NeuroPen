@@ -16,7 +16,6 @@ import type { SelectionListenerState, StatusSetter, TranslateFn } from "./listen
 
 const MAIN_WINDOW_AUX_LABELS = [
   "settings",
-  "language-variant-picker",
   "preview",
   "quick-action",
   "recording-indicator",

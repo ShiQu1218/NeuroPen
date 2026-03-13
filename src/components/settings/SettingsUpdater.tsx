@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import type { useI18n } from "../../i18n";
+import SettingsInfoHint from "./SettingsInfoHint";
 
 type UpdateStatus =
   | "idle"
@@ -81,16 +82,20 @@ export default function SettingsUpdater({ t }: SettingsUpdaterProps) {
   }, [handleCheck]);
 
   return (
-    <div className="space-y-2">
-      <label className="font-medium">{t("settings.updater.title")}</label>
-      <p className="text-xs text-gray-400">
-        {t("settings.updater.currentVersion")}: v{version}
-      </p>
-
-      <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-medium text-zinc-900">{t("settings.updater.title")}</label>
+          <SettingsInfoHint text="檢查是否有新版可安裝，安裝完成後會重新啟動程式。" />
+        </div>
+        <p className="text-xs text-zinc-500">
+          {t("settings.updater.currentVersion")}: v{version}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          className="btn-secondary px-3 py-1 text-xs"
+          className="btn-secondary px-3 py-2 text-xs"
           disabled={status === "checking" || status === "downloading"}
           onClick={handleCheck}
         >
@@ -105,58 +110,61 @@ export default function SettingsUpdater({ t }: SettingsUpdaterProps) {
       </div>
 
       {status === "error" && (
-        <p className="text-xs text-red-600">
+        <p className="w-full text-xs text-red-600">
           {t("settings.updater.error", { reason: errorMsg })}
         </p>
       )}
 
       {(status === "available" || status === "downloading" || status === "ready") && (
-        <div className="rounded border border-blue-200 bg-blue-50 p-3 space-y-2">
-          <p className="text-sm font-medium text-blue-800">
-            {t("settings.updater.available", { version: newVersion })}
-          </p>
+        <div className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-blue-800">
+              {t("settings.updater.available", { version: newVersion })}
+            </p>
+            {status === "available" && (
+              <button
+                type="button"
+                className="btn-primary px-3 py-2 text-xs"
+                onClick={handleDownloadAndInstall}
+              >
+                {t("settings.updater.installAndRestart")}
+              </button>
+            )}
+          </div>
 
-          {changelog && (
-            <details className="text-xs text-gray-700">
-              <summary className="cursor-pointer font-medium">
-                {t("settings.updater.changelog")}
-              </summary>
-              <pre className="mt-1 whitespace-pre-wrap max-h-40 overflow-y-auto text-[11px]">
-                {changelog}
-              </pre>
-            </details>
-          )}
-
-          {status === "downloading" && (
-            <div className="space-y-1">
-              <p className="text-xs text-blue-700">
-                {t("settings.updater.downloading", {
-                  progress: String(progress),
-                })}
-              </p>
+          {(status === "downloading" || status === "ready") && (
+            <div className="mt-2 space-y-1">
+              {status === "downloading" && (
+                <p className="text-xs text-blue-700">
+                  {t("settings.updater.downloading", {
+                    progress: String(progress),
+                  })}
+                </p>
+              )}
               <div className="h-2 w-full rounded bg-blue-100">
                 <div
                   className="h-2 rounded bg-blue-500 transition-all"
-                  style={{ width: `${progress}%` }}
+                  style={{ width: `${status === "ready" ? 100 : progress}%` }}
                 />
               </div>
             </div>
           )}
 
-          {status === "available" && (
-            <button
-              type="button"
-              className="btn-primary px-3 py-1 text-xs"
-              onClick={handleDownloadAndInstall}
-            >
-              {t("settings.updater.installAndRestart")}
-            </button>
-          )}
-
           {status === "ready" && (
-            <p className="text-xs text-green-700">
+            <p className="mt-2 text-xs text-green-700">
               {t("settings.updater.readyToInstall")}
             </p>
+          )}
+
+          {changelog && (
+            <details className="mt-2 text-xs text-gray-700">
+              <summary className="cursor-pointer font-medium">
+                {t("settings.updater.changelog")}
+              </summary>
+              <pre className="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap text-[11px]">
+                {changelog}
+              </pre>
+            </details>
           )}
         </div>
       )}

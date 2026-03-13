@@ -3,7 +3,7 @@
     "settings.title": "NeuroPen 設定",
     "settings.subtitle": "調整語音、快捷指令與模型設定，變更後按「儲存」生效。",
     "settings.directory": "依使用情境瀏覽",
-    "settings.section.general": "使用與啟動",
+    "settings.section.general": "一般",
     "settings.section.shortcuts": "快捷鍵",
     "settings.section.stt": "語音工作流",
     "settings.section.quickAction": "快捷指令",

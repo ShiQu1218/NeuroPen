@@ -22,20 +22,13 @@
       {
         "label": "settings",
         "title": "NeuroPen 設定",
-        "width": 760,
-        "height": 640,
-        "visible": false,
-        "center": true
-      },
-      {
-        "label": "language-variant-picker",
-        "title": "語言變體",
-        "width": 820,
-        "height": 860,
+        "width": 1360,
+        "height": 920,
+        "minWidth": 1180,
+        "minHeight": 780,
         "visible": false,
         "center": true,
-        "resizable": false,
-        "decorations": false
+        "resizable": true
       },
       {
         "label": "preview",
