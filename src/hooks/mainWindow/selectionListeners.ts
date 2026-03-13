@@ -189,14 +189,15 @@ export async function registerSelectionListeners({
         }
         selectionState.suppressedSelectionFingerprint = "";
       }
+      if (currentFingerprint === selectionState.lastSelectionFingerprint) {
+        return;
+      }
       // Lock target window + cache clipboard once per unique selection.
-      if (currentFingerprint !== selectionState.lastSelectionFingerprint) {
-        try {
-          await mainWindowService.triggerHotkey();
-          selectionState.lastSelectionFingerprint = currentFingerprint;
-        } catch (err) {
-          console.warn("[App] trigger_hotkey failed:", err);
-        }
+      try {
+        await mainWindowService.triggerHotkey();
+        selectionState.lastSelectionFingerprint = currentFingerprint;
+      } catch (err) {
+        console.warn("[App] trigger_hotkey failed:", err);
       }
       await qaWin.setSize(new LogicalSize(40, 40));
       const qaSize = await qaWin.outerSize();
@@ -218,8 +219,6 @@ export async function registerSelectionListeners({
       return;
     }
 
-    selectionState.lastSelectionFingerprint = "";
-    selectionState.suppressedSelectionFingerprint = "";
     clearQaHideTimer();
     selectionState.qaHideTimer = setTimeout(() => {
       selectionState.qaHideTimer = null;
@@ -227,6 +226,9 @@ export async function registerSelectionListeners({
       void (async () => {
         const sel = await mainWindowService.getSelection().catch(() => ({ has_selection: false }));
         if (!sel.has_selection) {
+          selectionState.lastSelectionFingerprint = "";
+          selectionState.suppressedSelectionFingerprint = "";
+          useAppStore.getState().setSelectedText("");
           await qaWin.hide().catch(() => { });
         }
       })();

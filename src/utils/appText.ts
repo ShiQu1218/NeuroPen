@@ -254,8 +254,11 @@ export const buildSelectionFingerprint = (
   selectionText: string,
   anchorX?: number | null,
   anchorY?: number | null,
-) => `${selectionText || "__selection__"}::${
-  typeof anchorX === "number" && typeof anchorY === "number"
-    ? `${Math.round(anchorX)}::${Math.round(anchorY)}`
-    : "__anchor__"
-}`;
+) => {
+  void anchorX;
+  void anchorY;
+  // Selection quick-action dedupe should track the highlighted text itself.
+  // Cursor release coordinates are too unstable because clicks on preview or
+  // other UI surfaces can move the pointer while the original selection stays.
+  return (selectionText || "__selection__").trim();
+};
