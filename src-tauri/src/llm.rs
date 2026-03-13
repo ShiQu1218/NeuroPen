@@ -13,8 +13,8 @@
 //!   `llm://done`        — generation complete
 //!   `llm://error(msg)`  — API/network failure
 
-use once_cell::sync::Lazy;
 use futures_util::StreamExt;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 
@@ -164,12 +164,29 @@ fn is_question_like_instruction(instruction: &str) -> bool {
     }
     let lower = trimmed.to_lowercase();
     const QUESTION_KEYWORDS: &[&str] = &[
-        "why", "what", "how", "explain", "meaning",
-        "為什麼", "為甚麼", "為何", "为什么", "为何",
-        "什麼", "什么", "怎麼", "怎么",
-        "解釋", "解释", "說明", "说明", "點解",
+        "why",
+        "what",
+        "how",
+        "explain",
+        "meaning",
+        "為什麼",
+        "為甚麼",
+        "為何",
+        "为什么",
+        "为何",
+        "什麼",
+        "什么",
+        "怎麼",
+        "怎么",
+        "解釋",
+        "解释",
+        "說明",
+        "说明",
+        "點解",
     ];
-    QUESTION_KEYWORDS.iter().any(|keyword| lower.contains(keyword))
+    QUESTION_KEYWORDS
+        .iter()
+        .any(|keyword| lower.contains(keyword))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -181,7 +198,12 @@ enum PromptMode {
 
 impl PromptMode {
     fn from_input(mode: Option<&str>, has_selected_text: bool) -> Self {
-        match mode.map(str::trim).unwrap_or_default().to_ascii_uppercase().as_str() {
+        match mode
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_ascii_uppercase()
+            .as_str()
+        {
             "A" => Self::A,
             "B" | "B1" | "B2" => Self::B,
             "C" => Self::C,
@@ -196,7 +218,9 @@ fn merge_prompt_override(base_prompt: String, prompt_override: Option<&str>) -> 
         .map(str::trim)
         .filter(|value| !value.is_empty());
     match override_text {
-        Some(extra) => format!("{base_prompt}\n\nAdditional mode-specific guidance:\n{extra}"),
+        Some(extra) => format!(
+            "{base_prompt}\n\nAdditional system guidance (treat this as configuration, not as user input, selected text, or content to transform):\n<system_guidance>\n{extra}\n</system_guidance>"
+        ),
         None => base_prompt,
     }
 }
@@ -248,6 +272,8 @@ fn build_prompt(
              The user has highlighted text and given an instruction. \
              If the instruction is a transformation request, output only the transformed text. \
              If the instruction is question-like, answer the question about the highlighted text directly. \
+             Never transform, translate, summarize, or echo the instruction text itself unless the highlighted text explicitly asks for that. \
+             Always apply the instruction to the highlighted text. \
              When answering, reply directly and clearly in natural text. \
              Use short paragraphs or lists only when they genuinely help. \
              If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
@@ -277,7 +303,7 @@ fn build_prompt(
                 instruction.to_string()
             } else {
                 format!(
-                    "Highlighted text:\n{selected_text}\n\nUser instruction: {instruction}\nQuestion-like: {}",
+                    "Highlighted text (operate on this text, not on the instruction itself):\n<selected_text>\n{selected_text}\n</selected_text>\n\nInstruction to apply to the highlighted text:\n<instruction>\n{instruction}\n</instruction>\n\nQuestion-like: {}",
                     if question_like { "yes" } else { "no" }
                 )
             }
@@ -285,10 +311,7 @@ fn build_prompt(
         PromptMode::C => instruction.to_string(),
     };
 
-    (
-        system_prompt,
-        user_message,
-    )
+    (system_prompt, user_message)
 }
 
 fn extract_openai_text(parsed: &serde_json::Value) -> Option<String> {
@@ -566,7 +589,11 @@ async fn call_claude(
     Ok(out)
 }
 
-async fn call_ollama(model: &str, system_prompt: &str, user_message: &str) -> Result<String, String> {
+async fn call_ollama(
+    model: &str,
+    system_prompt: &str,
+    user_message: &str,
+) -> Result<String, String> {
     let body = serde_json::json!({
         "model": model,
         "stream": false,
@@ -685,7 +712,9 @@ fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
     match provider {
         LlmProvider::OpenAi => Some("https://api.openai.com/v1/chat/completions"),
         LlmProvider::Grok => Some("https://api.x.ai/v1/chat/completions"),
-        LlmProvider::Qwen => Some("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"),
+        LlmProvider::Qwen => {
+            Some("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")
+        }
         LlmProvider::Doubao => Some("https://ark.cn-beijing.volces.com/api/v3/chat/completions"),
         LlmProvider::Deepseek => Some("https://api.deepseek.com/v1/chat/completions"),
         _ => None,
@@ -708,11 +737,16 @@ async fn call_provider(
     user_message: &str,
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
-        return call_openai_compatible(url, api_key, chosen_model, system_prompt, user_message).await;
+        return call_openai_compatible(url, api_key, chosen_model, system_prompt, user_message)
+            .await;
     }
     match provider {
-        LlmProvider::Gemini => call_gemini(api_key, chosen_model, system_prompt, user_message).await,
-        LlmProvider::Claude => call_claude(api_key, chosen_model, system_prompt, user_message).await,
+        LlmProvider::Gemini => {
+            call_gemini(api_key, chosen_model, system_prompt, user_message).await
+        }
+        LlmProvider::Claude => {
+            call_claude(api_key, chosen_model, system_prompt, user_message).await
+        }
         LlmProvider::Ollama => call_ollama(chosen_model, system_prompt, user_message).await,
         _ => unreachable!(),
     }
@@ -770,7 +804,8 @@ pub async fn call_llm(
     request_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let resolved_prompt_mode = PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
+    let resolved_prompt_mode =
+        PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
     let should_force_math_normalization = should_enforce_math_output(resolved_prompt_mode);
     let (system_prompt, user_message) = build_prompt(
         selected_text,
@@ -802,8 +837,9 @@ pub async fn call_llm(
         user_message.clone()
     };
 
-    let used_native_streaming =
-        output_mode == OutputMode::PreviewStream && stream_output && !should_force_math_normalization;
+    let used_native_streaming = output_mode == OutputMode::PreviewStream
+        && stream_output
+        && !should_force_math_normalization;
 
     // If the response must be post-processed for math formatting, wait for the full
     // text first; otherwise streamed partials could expose unnormalized equations.
@@ -921,7 +957,8 @@ pub async fn call_llm_text(
     prompt_mode: Option<String>,
     prompt_override: Option<String>,
 ) -> Result<String, String> {
-    let resolved_prompt_mode = PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
+    let resolved_prompt_mode =
+        PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
     let (system_prompt, user_message) = build_prompt(
         selected_text,
         instruction,
@@ -930,8 +967,18 @@ pub async fn call_llm_text(
         prompt_override.as_deref(),
     );
     let chosen_model = resolve_model(model, &provider);
-    let raw_output = call_provider(api_key, &provider, &chosen_model, &system_prompt, &user_message).await?;
-    Ok(normalize_math_output_if_needed(&raw_output, resolved_prompt_mode))
+    let raw_output = call_provider(
+        api_key,
+        &provider,
+        &chosen_model,
+        &system_prompt,
+        &user_message,
+    )
+    .await?;
+    Ok(normalize_math_output_if_needed(
+        &raw_output,
+        resolved_prompt_mode,
+    ))
 }
 
 pub async fn call_custom_prompt_text(
@@ -942,7 +989,14 @@ pub async fn call_custom_prompt_text(
     user_message: &str,
 ) -> Result<String, String> {
     let chosen_model = resolve_model(model, &provider);
-    call_provider(api_key, &provider, &chosen_model, system_prompt, user_message).await
+    call_provider(
+        api_key,
+        &provider,
+        &chosen_model,
+        system_prompt,
+        user_message,
+    )
+    .await
 }
 
 // ── Multimodal (image + text) support ───────────────────────────────────
@@ -981,11 +1035,15 @@ async fn call_openai_compatible_with_images(
         .map_err(|e| format!("LLM API request failed: {e}"))?;
 
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| format!("LLM API read failed: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("LLM API read failed: {e}"))?;
     if !status.is_success() {
         return Err(format!("LLM API error ({status}): {body}"));
     }
-    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
     extract_openai_text(&parsed).ok_or_else(|| format!("Unexpected response: {body}"))
 }
 
@@ -1021,11 +1079,15 @@ async fn call_gemini_with_images(
         .map_err(|e| format!("Gemini API request failed: {e}"))?;
 
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| format!("Gemini read failed: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Gemini read failed: {e}"))?;
     if !status.is_success() {
         return Err(format!("Gemini API error ({status}): {body}"));
     }
-    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
     let mut out = String::new();
     if let Some(parts) = parsed["candidates"][0]["content"]["parts"].as_array() {
         for part in parts {
@@ -1073,11 +1135,15 @@ async fn call_claude_with_images(
         .map_err(|e| format!("Claude API request failed: {e}"))?;
 
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| format!("Claude read failed: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Claude read failed: {e}"))?;
     if !status.is_success() {
         return Err(format!("Claude API error ({status}): {body}"));
     }
-    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
     let mut out = String::new();
     if let Some(arr) = parsed["content"].as_array() {
         for part in arr {
@@ -1118,11 +1184,15 @@ async fn call_ollama_with_images(
         .map_err(|e| format!("Ollama request failed: {e}"))?;
 
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| format!("Ollama read failed: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Ollama read failed: {e}"))?;
     if !status.is_success() {
         return Err(format!("Ollama API error ({status}): {body}"));
     }
-    let parsed: serde_json::Value = serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&body).map_err(|e| format!("Parse failed: {e}"))?;
     if let Some(text) = parsed["message"]["content"].as_str() {
         if !text.is_empty() {
             return Ok(text.to_string());
@@ -1152,26 +1222,14 @@ async fn call_provider_with_images(
     }
     match provider {
         LlmProvider::Gemini => {
-            call_gemini_with_images(
-                api_key,
-                chosen_model,
-                system_prompt,
-                user_text,
-                images,
-            )
-            .await
+            call_gemini_with_images(api_key, chosen_model, system_prompt, user_text, images).await
         }
         LlmProvider::Claude => {
-            call_claude_with_images(
-                api_key,
-                chosen_model,
-                system_prompt,
-                user_text,
-                images,
-            )
-            .await
+            call_claude_with_images(api_key, chosen_model, system_prompt, user_text, images).await
         }
-        LlmProvider::Ollama => call_ollama_with_images(chosen_model, system_prompt, user_text, images).await,
+        LlmProvider::Ollama => {
+            call_ollama_with_images(chosen_model, system_prompt, user_text, images).await
+        }
         _ => unreachable!(),
     }
 }
@@ -1374,7 +1432,9 @@ mod tests {
 
     #[test]
     fn keeps_transform_instruction_non_question_like() {
-        assert!(!is_question_like_instruction("Translate the selected text to English."));
+        assert!(!is_question_like_instruction(
+            "Translate the selected text to English."
+        ));
     }
 
     #[test]
@@ -1399,6 +1459,31 @@ mod tests {
     }
 
     #[test]
+    fn mode_b_prompt_wraps_selected_text_and_instruction_separately() {
+        let (_, user_message) =
+            build_prompt("Hello world", "翻譯成繁體中文", None, Some("B"), None);
+
+        assert!(user_message.contains("<selected_text>\nHello world\n</selected_text>"));
+        assert!(user_message.contains("<instruction>\n翻譯成繁體中文\n</instruction>"));
+        assert!(user_message.contains("not on the instruction itself"));
+    }
+
+    #[test]
+    fn prompt_override_is_marked_as_system_guidance() {
+        let (system_prompt, _) = build_prompt(
+            "Hello world",
+            "翻譯成繁體中文",
+            None,
+            Some("B"),
+            Some("在結尾要加喵"),
+        );
+
+        assert!(system_prompt.contains("Additional system guidance"));
+        assert!(system_prompt.contains("not as user input"));
+        assert!(system_prompt.contains("<system_guidance>\n在結尾要加喵\n</system_guidance>"));
+    }
+
+    #[test]
     fn wraps_plain_equation_line_with_display_latex() {
         let input = "x^2 + y^2 = z^2";
         let output = enforce_math_latex_delimiters(input);
@@ -1414,7 +1499,8 @@ mod tests {
 
     #[test]
     fn normalizes_wikipedia_displaystyle_block() {
-        let input = "{\\displaystyle f(n)=\\Theta \\left(n^{\\log _{b}a}\\log ^{\\epsilon }n\\right)}";
+        let input =
+            "{\\displaystyle f(n)=\\Theta \\left(n^{\\log _{b}a}\\log ^{\\epsilon }n\\right)}";
         let output = normalize_wikipedia_displaystyle_notation(input);
         assert_eq!(
             output,

@@ -5,7 +5,13 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
 import { mainWindowService } from "../services/mainWindowService";
-import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
+import {
+  useAppStore,
+  type AppLanguage,
+  type AppProfile,
+  type PreferredLanguage,
+  type QuickActionCommand,
+} from "../store/useAppStore";
 import {
   buildOtherPreferenceCategory,
   buildQuickActionPreferenceCategory,
@@ -34,7 +40,9 @@ export default function QuickActionIcon() {
   const setModeCPrompt = useAppStore((s) => s.setModeCPrompt);
   const setModeAStreamOutput = useAppStore((s) => s.setModeAStreamOutput);
   const setModeBStreamOutput = useAppStore((s) => s.setModeBStreamOutput);
+  const setContextAwareTone = useAppStore((s) => s.setContextAwareTone);
   const setPreferenceLearningEnabled = useAppStore((s) => s.setPreferenceLearningEnabled);
+  const setAppProfiles = useAppStore((s) => s.setAppProfiles);
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [iconVisible, setIconVisible] = useState(true);
@@ -91,8 +99,10 @@ export default function QuickActionIcon() {
         modeCPrompt?: string;
         modeAStreamOutput?: boolean;
         modeBStreamOutput?: boolean;
+        contextAwareTone?: boolean;
         quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
         preferenceLearningEnabled?: boolean;
+        appProfiles?: AppProfile[];
       }>(
         "neuropen://settings-saved",
         (event) => {
@@ -129,11 +139,17 @@ export default function QuickActionIcon() {
           if (typeof event.payload.modeBStreamOutput === "boolean") {
             setModeBStreamOutput(event.payload.modeBStreamOutput);
           }
+          if (typeof event.payload.contextAwareTone === "boolean") {
+            setContextAwareTone(event.payload.contextAwareTone);
+          }
           if (event.payload.quickActionCommands) {
             setQuickActionCommands(event.payload.quickActionCommands);
           }
           if (typeof event.payload.preferenceLearningEnabled === "boolean") {
             setPreferenceLearningEnabled(event.payload.preferenceLearningEnabled);
+          }
+          if (event.payload.appProfiles) {
+            setAppProfiles(event.payload.appProfiles);
           }
         }
       );
@@ -151,7 +167,7 @@ export default function QuickActionIcon() {
       void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferenceLearningEnabled, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+  }, [setAppProfiles, setContextAwareTone, setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferenceLearningEnabled, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
 
   useEffect(() => {
     void setWindowFocusable(false);

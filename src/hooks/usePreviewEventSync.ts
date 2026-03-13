@@ -3,7 +3,13 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { useAppStore, type AppLanguage, type PreferredLanguage, type QuickActionCommand } from "../store/useAppStore";
+import {
+  useAppStore,
+  type AppLanguage,
+  type AppProfile,
+  type PreferredLanguage,
+  type QuickActionCommand,
+} from "../store/useAppStore";
 import type { PreviewSourceMode } from "../utils/previewWindow";
 import type { PreviewAttachment } from "../utils/previewAttachments";
 
@@ -192,11 +198,13 @@ export function usePreviewEventSync({
         modeCPrompt?: string;
         modeAStreamOutput?: boolean;
         modeBStreamOutput?: boolean;
+        contextAwareTone?: boolean;
         ttsVoice?: string;
         ttsRate?: string;
         ttsPitch?: string;
         quickActionCommands?: QuickActionCommand[];
         preferenceLearningEnabled?: boolean;
+        appProfiles?: AppProfile[];
       }>("neuropen://settings-saved", (event) => {
         if (event.payload.llmProvider) {
           state.setLlmProvider(event.payload.llmProvider);
@@ -228,6 +236,9 @@ export function usePreviewEventSync({
         if (typeof event.payload.modeBStreamOutput === "boolean") {
           state.setModeBStreamOutput(event.payload.modeBStreamOutput);
         }
+        if (typeof event.payload.contextAwareTone === "boolean") {
+          state.setContextAwareTone(event.payload.contextAwareTone);
+        }
         if (typeof event.payload.ttsVoice === "string") {
           state.setTtsVoice(event.payload.ttsVoice);
         }
@@ -242,6 +253,9 @@ export function usePreviewEventSync({
         }
         if (typeof event.payload.preferenceLearningEnabled === "boolean") {
           state.setPreferenceLearningEnabled(event.payload.preferenceLearningEnabled);
+        }
+        if (event.payload.appProfiles) {
+          state.setAppProfiles(event.payload.appProfiles);
         }
       });
 
