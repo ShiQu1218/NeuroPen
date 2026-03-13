@@ -20,6 +20,7 @@ const OUTPUT_MODE_OPTIONS: Array<{ value: OutputMode | ""; labelKey: Translation
 
 interface SettingsAppProfileEditorOverlayProps {
   profile: AppProfile;
+  globalOutputMode: OutputMode;
   customLanguageVariants: CustomLanguageVariant[];
   textDraft: { name: string };
   textFieldsDirty: boolean;
@@ -37,6 +38,7 @@ interface SettingsAppProfileEditorOverlayProps {
 
 export default function SettingsAppProfileEditorOverlay({
   profile,
+  globalOutputMode,
   customLanguageVariants,
   textDraft,
   textFieldsDirty,
@@ -52,6 +54,7 @@ export default function SettingsAppProfileEditorOverlay({
   t,
 }: SettingsAppProfileEditorOverlayProps) {
   const [keywordInput, setKeywordInput] = useState("");
+  const effectiveOutputMode = profile.outputMode || globalOutputMode;
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -264,25 +267,27 @@ export default function SettingsAppProfileEditorOverlay({
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="text-xs font-medium text-zinc-500">
-                      {t("settings.appProfile.directPaste")}
-                    </label>
-                    <select
-                      className="settings-input-compact mt-1.5"
-                      value={profile.directPaste === null ? "" : profile.directPaste ? "true" : "false"}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        onImmediateChange({
-                          directPaste: value === "" ? null : value === "true",
-                        });
-                      }}
-                    >
-                      <option value="">{t("settings.appProfile.useGlobal")}</option>
-                      <option value="true">{t("settings.appProfile.directPasteYes")}</option>
-                      <option value="false">{t("settings.appProfile.directPasteNo")}</option>
-                    </select>
-                  </div>
+                  {effectiveOutputMode === "PreviewStream" ? (
+                    <div>
+                      <label className="text-xs font-medium text-zinc-500">
+                        {t("settings.appProfile.directPaste")}
+                      </label>
+                      <select
+                        className="settings-input-compact mt-1.5"
+                        value={profile.directPaste === null ? "" : profile.directPaste ? "true" : "false"}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          onImmediateChange({
+                            directPaste: value === "" ? null : value === "true",
+                          });
+                        }}
+                      >
+                        <option value="">{t("settings.appProfile.useGlobal")}</option>
+                        <option value="true">{t("settings.appProfile.directPasteYes")}</option>
+                        <option value="false">{t("settings.appProfile.directPasteNo")}</option>
+                      </select>
+                    </div>
+                  ) : null}
                 </div>
               </section>
 

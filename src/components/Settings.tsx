@@ -1790,6 +1790,7 @@ export default function Settings() {
             {activeProfile && activeProfilePromptDraft && (
               <SettingsAppProfileEditorOverlay
                 profile={activeProfile}
+                globalOutputMode={outputMode}
                 customLanguageVariants={customLanguageVariants}
                 textDraft={activeProfileTextDraft ?? { name: activeProfile.name }}
                 textFieldsDirty={(activeProfileTextDraft?.name ?? activeProfile.name) !== activeProfile.name}

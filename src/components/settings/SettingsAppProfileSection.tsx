@@ -19,6 +19,7 @@ interface SettingsAppProfileSectionProps {
   onOpenLanguageVariantPicker: (profileId: string) => void;
   contextAwareTone: boolean;
   onContextAwareToneChange: (enabled: boolean) => void;
+  globalOutputMode: OutputMode;
   t: ReturnType<typeof useI18n>["t"];
 }
 
@@ -29,6 +30,7 @@ export default function SettingsAppProfileSection({
   onOpenLanguageVariantPicker,
   contextAwareTone,
   onContextAwareToneChange,
+  globalOutputMode,
   t,
 }: SettingsAppProfileSectionProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -396,25 +398,27 @@ export default function SettingsAppProfileSection({
                         ))}
                       </select>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-zinc-600">
-                        {t("settings.appProfile.directPaste")}
-                      </label>
-                      <select
-                        className="w-full input-field px-2 py-1 text-xs"
-                        value={profile.directPaste === null ? "" : profile.directPaste ? "true" : "false"}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          updateProfile(profile.id, {
-                            directPaste: val === "" ? null : val === "true",
-                          });
-                        }}
-                      >
-                        <option value="">{t("settings.appProfile.useGlobal")}</option>
-                        <option value="true">{t("settings.appProfile.directPasteYes")}</option>
-                        <option value="false">{t("settings.appProfile.directPasteNo")}</option>
-                      </select>
-                    </div>
+                    {(profile.outputMode || globalOutputMode) === "PreviewStream" ? (
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-zinc-600">
+                          {t("settings.appProfile.directPaste")}
+                        </label>
+                        <select
+                          className="w-full input-field px-2 py-1 text-xs"
+                          value={profile.directPaste === null ? "" : profile.directPaste ? "true" : "false"}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            updateProfile(profile.id, {
+                              directPaste: val === "" ? null : val === "true",
+                            });
+                          }}
+                        >
+                          <option value="">{t("settings.appProfile.useGlobal")}</option>
+                          <option value="true">{t("settings.appProfile.directPasteYes")}</option>
+                          <option value="false">{t("settings.appProfile.directPasteNo")}</option>
+                        </select>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Delete */}
