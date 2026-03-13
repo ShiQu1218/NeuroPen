@@ -46,6 +46,9 @@ export interface SettingsSavedPayload {
   modeCPrompt?: string;
   modeAStreamOutput?: boolean;
   modeBStreamOutput?: boolean;
+  ttsVoice?: string;
+  ttsRate?: string;
+  ttsPitch?: string;
   microphoneSource?: string;
   launchOnStartup?: boolean;
   quickActionCommands?: QuickActionCommand[];
@@ -244,6 +247,15 @@ export function applySettingsSavedPayload(
   }
   if (typeof payload.modeBStreamOutput === "boolean") {
     store.setModeBStreamOutput(payload.modeBStreamOutput);
+  }
+  if (typeof payload.ttsVoice === "string") {
+    store.setTtsVoice(payload.ttsVoice);
+  }
+  if (typeof payload.ttsRate === "string") {
+    store.setTtsRate(payload.ttsRate);
+  }
+  if (typeof payload.ttsPitch === "string") {
+    store.setTtsPitch(payload.ttsPitch);
   }
   if (typeof payload.microphoneSource === "string") {
     store.setMicrophoneSource(payload.microphoneSource);
