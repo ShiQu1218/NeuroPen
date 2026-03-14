@@ -931,6 +931,13 @@ export default function Settings() {
     await broadcastSettingsSaved({ llmProvider: value });
   }, [broadcastSettingsSaved, setLlmProvider]);
 
+  const localLlmProviderNoKeyHint =
+    llmProvider === "ollama"
+      ? t("settings.llm.ollamaNoKey")
+      : llmProvider === "llamaCpp"
+        ? t("settings.llm.llamaCppNoKey")
+        : "";
+
   const handleLlmModelChange = useCallback(async (value: string) => {
     const nextValue = value.trim();
     if (!nextValue) {
@@ -1669,6 +1676,7 @@ export default function Settings() {
                         <option value="doubao">豆包 Doubao</option>
                         <option value="deepseek">DeepSeek</option>
                         <option value="ollama">{t("settings.llm.ollamaLocal")}</option>
+                        <option value="llamaCpp">{t("settings.llm.llamaCppLocal")}</option>
                       </select>
                     </div>
                     <div className="rounded-[22px] border border-zinc-200 bg-[#fcfbf8] p-4">
@@ -1721,6 +1729,7 @@ export default function Settings() {
                         <label className="text-xs font-medium text-zinc-500">{t("settings.llm.apiKey")}</label>
                         <SettingsInfoHint text={t("settings.llm.apiKeyHint")} />
                       </div>
+                      {localLlmProviderNoKeyHint && <p className="mt-1 text-xs text-zinc-500">{localLlmProviderNoKeyHint}</p>}
                       {apiKeySet && <p className="mt-1 text-xs text-green-600">{t("settings.llm.apiKeySet")}</p>}
                       <div className="mt-2 flex gap-2">
                         <input type="password" className="settings-input-compact flex-1 font-mono" value={apiKeyInput} onChange={(event) => setApiKeyInput(event.target.value)} placeholder={apiKeySet ? "••••••••" : t("settings.llm.apiKeyPlaceholder")} />

@@ -1,5 +1,9 @@
 use crate::{llm, stt};
 
+fn llm_provider_requires_api_key(provider: &llm::LlmProvider) -> bool {
+    !matches!(provider, llm::LlmProvider::Ollama | llm::LlmProvider::LlamaCpp)
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageAttachmentInput {
@@ -24,10 +28,10 @@ pub async fn call_llm(
     prompt_override: Option<String>,
     request_id: Option<String>,
 ) -> Result<(), String> {
-    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
-        String::new()
-    } else {
+    let api_key = if llm_provider_requires_api_key(&provider) {
         stt::get_api_key()?
+    } else {
+        String::new()
     };
     llm::call_llm(
         &api_key,
@@ -57,10 +61,10 @@ pub async fn call_llm_text(
     prompt_mode: Option<String>,
     prompt_override: Option<String>,
 ) -> Result<String, String> {
-    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
-        String::new()
-    } else {
+    let api_key = if llm_provider_requires_api_key(&provider) {
         stt::get_api_key()?
+    } else {
+        String::new()
     };
     llm::call_llm_text(
         &api_key,
@@ -90,10 +94,10 @@ pub async fn call_llm_with_image(
     prompt_override: Option<String>,
     request_id: Option<String>,
 ) -> Result<(), String> {
-    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
-        String::new()
-    } else {
+    let api_key = if llm_provider_requires_api_key(&provider) {
         stt::get_api_key()?
+    } else {
+        String::new()
     };
     llm::call_llm_with_image(
         &api_key,
@@ -127,10 +131,10 @@ pub async fn call_llm_with_images(
     prompt_override: Option<String>,
     request_id: Option<String>,
 ) -> Result<(), String> {
-    let api_key = if matches!(&provider, llm::LlmProvider::Ollama) {
-        String::new()
-    } else {
+    let api_key = if llm_provider_requires_api_key(&provider) {
         stt::get_api_key()?
+    } else {
+        String::new()
     };
     // Borrow the decoded payload fields so the shared LLM layer can accept the
     // same `&[(&str, &str)]` shape from single-image and multi-image callers.

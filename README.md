@@ -57,7 +57,7 @@
 | **Focus-safe injection + undo** | Focus verification before paste and one-key rollback (`Alt + Z`) |
 | **STT pipeline** | OpenAI Whisper API plus local Whisper, SenseVoice, and Moonshine models |
 | **Local STT model management** | Install/select/delete local STT models with download progress and cancellation |
-| **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, and Ollama |
+| **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, Ollama, and llama.cpp server |
 | **Screenshot-to-LLM workflow** | `Alt + S` region capture and multimodal prompt flow in preview window |
 | **TTS playback** | Built-in read-aloud via Piper TTS with install/select/delete, manual model path, speed, and speaker id |
 | **History controls** | Searchable local history (up to 200 entries) |
@@ -126,6 +126,29 @@ If focus changes during processing, injection is cancelled and clipboard is rest
 | Doubao | Cloud | ByteDance Doubao |
 | DeepSeek | Cloud | DeepSeek series |
 | Ollama | Local | Self-hosted, default `http://127.0.0.1:11434` |
+| llama.cpp | Local | OpenAI-compatible local server, default `http://127.0.0.1:8080/v1/chat/completions` |
+
+### llama.cpp Setup
+
+NeuroPen can connect to a local `llama.cpp` server through its OpenAI-compatible API.
+
+1. Install a Windows CUDA build of `llama.cpp` and start `llama-server`
+2. Load a GGUF model on port `8080`
+3. In NeuroPen Settings -> `LLM`, choose `llama.cpp (Local)`
+4. Set the model field to the model alias currently loaded by `llama-server`
+
+Example:
+
+```powershell
+cd C:\llama.cpp
+.\llama-server.exe -m "C:\path\to\model.gguf" --port 8080 -ngl 99
+```
+
+Notes:
+
+- NeuroPen expects the server at `http://127.0.0.1:8080/v1/chat/completions` by default
+- `llama.cpp` does not require an API key in NeuroPen
+- If you start `llama-server` with `-hf ...`, the downloaded GGUF model is typically cached under `%LOCALAPPDATA%\llama.cpp`
 
 ### STT Engines
 
@@ -540,6 +563,7 @@ After CI completes, a Draft Release with the installer will appear on the **Rele
 | UI unchanged after update | Make sure you're running `src-tauri/target/release/neuropen.exe`, or reinstall via the NSIS package |
 | Local Whisper shows as disabled | Rebuild with `--features local-stt` or `--features local-stt-gpu` |
 | Ollama won't connect | Ensure Ollama is running and `localhost:11434` is accessible; model name must match an installed model |
+| llama.cpp won't connect | Ensure `llama-server` is running and `localhost:8080/v1/chat/completions` is reachable; model name must match the loaded server model alias |
 | Replace failed / focus error | NeuroPen only injects into the window that was focused at hotkey trigger time; if focus changes during processing, it cancels and warns |
 | Quick Action icon not appearing | Some apps (games, custom-drawn UIs) don't support UI Automation API — use the Selection Voice Command (B2) path instead |
 | Simulated input blocked | Some Electron apps / games block Ctrl+V simulation — paste manually |

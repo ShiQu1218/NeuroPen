@@ -57,7 +57,7 @@
 | **安全注入 + 復原** | 注入前驗證焦點視窗，並支援 `Alt + Z` 一鍵復原 |
 | **STT 引擎管線** | 支援 OpenAI Whisper API，以及本地 Whisper、SenseVoice、Moonshine |
 | **本地 STT 模型管理** | 支援本地 STT 模型安裝/切換/刪除、下載進度與取消 |
-| **多 LLM 提供商** | OpenAI、Gemini、Claude、Grok、Qwen、豆包、DeepSeek、Ollama |
+| **多 LLM 提供商** | OpenAI、Gemini、Claude、Grok、Qwen、豆包、DeepSeek、Ollama、llama.cpp server |
 | **截圖多模態流程** | `Alt + S` 區域截圖後可直接進入 LLM 圖像問答流程 |
 | **TTS 朗讀** | 內建 Piper TTS，支援安裝/切換/刪除、模型路徑 / 語速 / speaker id 設定 |
 | **歷史紀錄控制** | 本地歷史紀錄（最多 200 筆） |
@@ -126,6 +126,29 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 | 豆包 (Doubao) | Cloud | 字節跳動豆包 |
 | DeepSeek | Cloud | DeepSeek 系列 |
 | Ollama | Local | 本地執行，預設 `http://127.0.0.1:11434` |
+| llama.cpp | Local | OpenAI-compatible 本地 server，預設 `http://127.0.0.1:8080/v1/chat/completions` |
+
+### llama.cpp 設定方式
+
+NeuroPen 可以透過 `llama.cpp` 的 OpenAI-compatible API 連到本地 `llama-server`。
+
+1. 安裝 Windows CUDA 版 `llama.cpp` 並啟動 `llama-server`
+2. 用 port `8080` 載入一個 GGUF 模型
+3. 在 NeuroPen 的 Settings -> `LLM` 裡選 `llama.cpp (Local)`
+4. `Model` 欄位填入目前 `llama-server` 載入的 model alias
+
+範例：
+
+```powershell
+cd C:\llama.cpp
+.\llama-server.exe -m "C:\path\to\model.gguf" --port 8080 -ngl 99
+```
+
+補充：
+
+- NeuroPen 預設會連 `http://127.0.0.1:8080/v1/chat/completions`
+- `llama.cpp` 在 NeuroPen 中不需要 API key
+- 如果你用 `-hf ...` 啟動 `llama-server` 下載模型，GGUF 通常會快取在 `%LOCALAPPDATA%\llama.cpp`
 
 ### STT Engines
 
@@ -540,6 +563,7 @@ CI 完成後會在 **Releases** 頁面建立包含安裝檔的 Draft Release。
 | 更新後 UI 沒變 | 確認執行的是 `src-tauri/target/release/neuropen.exe`，或重新安裝 NSIS 包覆蓋舊版 |
 | 本地 Whisper 顯示未啟用 | 需以 `--features local-stt` 或 `--features local-stt-gpu` 重新建置 |
 | Ollama 無法連線 | 確認 Ollama 正在執行且 `localhost:11434` 可存取，模型名稱與已安裝模型一致 |
+| llama.cpp 無法連線 | 確認 `llama-server` 正在執行且 `localhost:8080/v1/chat/completions` 可連線，模型名稱需與 server 載入的 model alias 一致 |
 | 取代失敗 / 焦點錯誤 | NeuroPen 僅對快捷鍵觸發時的焦點視窗注入；若焦點在處理期間改變，會取消並警告 |
 | Quick Action 圖示未出現 | 部分應用（遊戲、自繪介面）不支援 UI Automation API，改用「選取語音指令 (B2)」路徑 |
 | 模擬輸入被封鎖 | 部分 Electron app / 遊戲封鎖 Ctrl+V 模擬，請手動貼上 |

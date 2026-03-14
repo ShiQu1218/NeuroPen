@@ -6,6 +6,7 @@
 //! - Claude
 //! - Grok
 //! - Ollama (local)
+//! - llama.cpp server (local, OpenAI-compatible)
 //!
 //! Emits:
 //!   `llm://token(text)` — output chunk (true stream when provider supports it)
@@ -49,6 +50,7 @@ pub enum LlmProvider {
     Doubao,
     Deepseek,
     Ollama,
+    LlamaCpp,
 }
 
 #[derive(Serialize, Clone)]
@@ -124,6 +126,19 @@ fn default_model(provider: &LlmProvider) -> &'static str {
         LlmProvider::Doubao => "doubao-seed-1-6-250615",
         LlmProvider::Deepseek => "deepseek-chat",
         LlmProvider::Ollama => "llama3.2",
+        LlmProvider::LlamaCpp => "Llama-3.2-3B-Instruct-Q4_K_M",
+    }
+}
+
+fn with_optional_bearer_auth(
+    request: reqwest::RequestBuilder,
+    api_key: &str,
+) -> reqwest::RequestBuilder {
+    let trimmed = api_key.trim();
+    if trimmed.is_empty() {
+        request
+    } else {
+        request.header("Authorization", format!("Bearer {trimmed}"))
     }
 }
 
@@ -356,9 +371,7 @@ async fn call_openai_compatible(
         ]
     });
 
-    let resp = HTTP_CLIENT
-        .post(base_url)
-        .header("Authorization", format!("Bearer {api_key}"))
+    let resp = with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
@@ -447,9 +460,7 @@ async fn call_openai_compatible_streaming(
         ]
     });
 
-    let resp = HTTP_CLIENT
-        .post(base_url)
-        .header("Authorization", format!("Bearer {api_key}"))
+    let resp = with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
@@ -725,6 +736,7 @@ fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
         }
         LlmProvider::Doubao => Some("https://ark.cn-beijing.volces.com/api/v3/chat/completions"),
         LlmProvider::Deepseek => Some("https://api.deepseek.com/v1/chat/completions"),
+        LlmProvider::LlamaCpp => Some("http://127.0.0.1:8080/v1/chat/completions"),
         _ => None,
     }
 }
@@ -1033,9 +1045,7 @@ async fn call_openai_compatible_with_images(
         ]
     });
 
-    let resp = HTTP_CLIENT
-        .post(base_url)
-        .header("Authorization", format!("Bearer {api_key}"))
+    let resp = with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key)
         .header("Content-Type", "application/json")
         .json(&body)
         .send()

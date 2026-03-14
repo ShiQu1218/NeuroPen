@@ -193,7 +193,7 @@ export function usePreviewEventSync({
       });
 
       await register<{
-        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
+        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "llamaCpp" | "qwen" | "doubao" | "deepseek";
         llmModel?: string;
         llmModelOptions?: string[];
         language?: AppLanguage;

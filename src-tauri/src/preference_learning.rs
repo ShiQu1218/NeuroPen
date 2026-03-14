@@ -395,7 +395,10 @@ fn normalize_summary(summary: &str) -> String {
 }
 
 async fn analyze_snapshot(snapshot: &AnalysisSnapshot) -> Result<String, String> {
-    let api_key = if matches!(snapshot.analysis_provider, LlmProvider::Ollama) {
+    let api_key = if matches!(
+        snapshot.analysis_provider,
+        LlmProvider::Ollama | LlmProvider::LlamaCpp
+    ) {
         String::new()
     } else {
         stt::get_api_key()?

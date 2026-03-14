@@ -1,5 +1,14 @@
 export type OutputMode = "DirectInject" | "PreviewStream";
-export type LlmProvider = "openAi" | "gemini" | "claude" | "grok" | "ollama" | "qwen" | "doubao" | "deepseek";
+export type LlmProvider =
+  | "openAi"
+  | "gemini"
+  | "claude"
+  | "grok"
+  | "ollama"
+  | "llamaCpp"
+  | "qwen"
+  | "doubao"
+  | "deepseek";
 export type SttOutputStrategy = "raw" | "llmRefine";
 export type PunctuationMode = "off" | "balanced" | "aggressive";
 export type AppLanguage =
