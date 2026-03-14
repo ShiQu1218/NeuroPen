@@ -29,7 +29,7 @@ const OTHER_CATEGORY_KEY = "other";
 const PREFERENCE_PROMPT_PREFIX =
   "Learned user output preferences for this category:\n";
 
-export function hashPreferenceInstruction(value: string): string {
+function hashPreferenceInstruction(value: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);

@@ -1,6 +1,6 @@
 import { availableMonitors } from "@tauri-apps/api/window";
 
-export const clampNumber = (value: number, min: number, max: number) =>
+const clampNumber = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 export const clampToMonitorBounds = async (

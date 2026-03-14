@@ -17,20 +17,6 @@ export const resolveAppProfile = (
   );
 };
 
-export const inferAppToneHint = (windowTitle: string) => {
-  const lower = windowTitle.toLowerCase();
-  if (/(word|excel|powerpoint|notion|docs|outlook|gmail|mail\.google)/.test(lower)) {
-    return "Use formal and concise business writing style.";
-  }
-  if (/(discord|slack|line|wechat|telegram)/.test(lower)) {
-    return "Use casual chat-friendly style.";
-  }
-  if (/(code|visual studio|github|terminal|powershell)/.test(lower)) {
-    return "Keep technical terms and code symbols unchanged.";
-  }
-  return "Keep neutral and clear style.";
-};
-
 export const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
   const base = text.trim();
   if (!base || mode === "off") return base;

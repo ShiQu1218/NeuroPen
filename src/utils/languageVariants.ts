@@ -17,7 +17,7 @@ export interface LanguageVariantGroup {
   variants: LanguageVariantDefinition[];
 }
 
-export const AUTO_LANGUAGE_VARIANT = "auto";
+const AUTO_LANGUAGE_VARIANT = "auto";
 
 const BUILTIN_LANGUAGE_VARIANTS: LanguageVariantDefinition[] = [
   {
@@ -233,7 +233,7 @@ const BUILTIN_DEFAULT_VARIANT_IDS: Record<string, string> = {
   ru: "ru-ru",
 };
 
-export const DEFAULT_LANGUAGE_VARIANT_PREFERENCES: PreferredLanguage = Object.freeze(
+const DEFAULT_LANGUAGE_VARIANT_PREFERENCES: PreferredLanguage = Object.freeze(
   BUILTIN_LANGUAGE_ORDER.reduce<PreferredLanguage>((accumulator, languageCode) => {
     accumulator[languageCode] = BUILTIN_DEFAULT_VARIANT_IDS[languageCode];
     return accumulator;
@@ -405,10 +405,6 @@ const normalizePreferencesObject = (
 export const createCustomLanguageVariantId = () =>
   `custom-language-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export const getBuiltinLanguageVariants = () => BUILTIN_LANGUAGE_VARIANTS;
-
-export const getBuiltinLanguageCodes = () => BUILTIN_LANGUAGE_ORDER.slice();
-
 export const getDefaultLanguageVariantPreferences = () => ({
   ...DEFAULT_LANGUAGE_VARIANT_PREFERENCES,
 });
@@ -504,14 +500,10 @@ export const diffLanguageVariantPreferences = (
   return diff;
 };
 
-export const isLanguageVariantPreferencesEmpty = (
-  preferences: PreferredLanguage | ""
-) => !preferences || Object.keys(preferences).length === 0;
-
-export const getAllLanguageVariants = (customVariants: CustomLanguageVariant[]) =>
+const getAllLanguageVariants = (customVariants: CustomLanguageVariant[]) =>
   getAllVariantMaps(customVariants).allVariants;
 
-export const findLanguageVariant = (
+const findLanguageVariant = (
   selection: string,
   customVariants: CustomLanguageVariant[]
 ): LanguageVariantDefinition | null =>
@@ -532,7 +524,7 @@ const getIntlDisplayName = (
   }
 };
 
-export const getLanguageDisplayLabel = (
+const getLanguageDisplayLabel = (
   languageCode: string,
   fallbackLanguage: string,
   uiLocale?: string
@@ -642,7 +634,7 @@ export const getLanguageVariantGroups = (
   });
 };
 
-export const buildLanguageVariantPreferencePrompt = (
+const buildLanguageVariantPreferencePrompt = (
   preferences: PreferredLanguage,
   customVariants: CustomLanguageVariant[]
 ) => {
@@ -717,7 +709,7 @@ const ARABIC_SCRIPT_RE = /[\u0600-\u06ff]/;
 const CYRILLIC_SCRIPT_RE = /[\u0400-\u04ff]/;
 const HAN_SCRIPT_RE = /[\u3400-\u9fff]/;
 
-export const inferLanguageCodeFromText = (
+const inferLanguageCodeFromText = (
   text: string,
   explicitLanguageHint = ""
 ) => {

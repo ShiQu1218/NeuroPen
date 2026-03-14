@@ -1,6 +1,6 @@
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-export const NEUROPEN_WINDOW_LABELS = [
+const NEUROPEN_WINDOW_LABELS = [
   "main",
   "quick-action",
   "preview",

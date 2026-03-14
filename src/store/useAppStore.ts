@@ -47,7 +47,6 @@ export type {
   TranslationTarget,
 } from "./appStoreTypes";
 export type { AppProfileMode } from "./appStoreTypes";
-export { DEFAULT_MODE_A_PROMPT, DEFAULT_MODE_B_PROMPT, DEFAULT_MODE_C_PROMPT } from "./appStoreTypes";
 export { normalizeLlmModelOptions } from "./appStoreDefaults";
 
 const LEGACY_MODE_B_PROMPTS = [
