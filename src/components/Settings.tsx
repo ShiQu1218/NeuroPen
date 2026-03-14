@@ -936,6 +936,8 @@ export default function Settings() {
       ? t("settings.llm.ollamaNoKey")
       : llmProvider === "llamaCpp"
         ? t("settings.llm.llamaCppNoKey")
+        : llmProvider === "lmStudio"
+          ? t("settings.llm.lmStudioNoKey")
         : "";
 
   const handleLlmModelChange = useCallback(async (value: string) => {
@@ -1677,6 +1679,7 @@ export default function Settings() {
                         <option value="deepseek">DeepSeek</option>
                         <option value="ollama">{t("settings.llm.ollamaLocal")}</option>
                         <option value="llamaCpp">{t("settings.llm.llamaCppLocal")}</option>
+                        <option value="lmStudio">{t("settings.llm.lmStudioLocal")}</option>
                       </select>
                     </div>
                     <div className="rounded-[22px] border border-zinc-200 bg-[#fcfbf8] p-4">

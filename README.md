@@ -57,7 +57,7 @@
 | **Focus-safe injection + undo** | Focus verification before paste and one-key rollback (`Alt + Z`) |
 | **STT pipeline** | OpenAI Whisper API plus local Whisper, SenseVoice, and Moonshine models |
 | **Local STT model management** | Install/select/delete local STT models with download progress and cancellation |
-| **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, Ollama, and llama.cpp server |
+| **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, Ollama, llama.cpp server, and LM Studio |
 | **Screenshot-to-LLM workflow** | `Alt + S` region capture and multimodal prompt flow in preview window |
 | **TTS playback** | Built-in read-aloud via Piper TTS with install/select/delete, manual model path, speed, and speaker id |
 | **History controls** | Searchable local history (up to 200 entries) |
@@ -127,6 +127,7 @@ If focus changes during processing, injection is cancelled and clipboard is rest
 | DeepSeek | Cloud | DeepSeek series |
 | Ollama | Local | Self-hosted, default `http://127.0.0.1:11434` |
 | llama.cpp | Local | OpenAI-compatible local server, default `http://127.0.0.1:8080/v1/chat/completions` |
+| LM Studio | Local | OpenAI-compatible local server, default `http://127.0.0.1:1234/v1/chat/completions` |
 
 ### llama.cpp Setup
 
@@ -149,6 +150,29 @@ Notes:
 - NeuroPen expects the server at `http://127.0.0.1:8080/v1/chat/completions` by default
 - `llama.cpp` does not require an API key in NeuroPen
 - If you start `llama-server` with `-hf ...`, the downloaded GGUF model is typically cached under `%LOCALAPPDATA%\llama.cpp`
+
+### LM Studio Setup
+
+NeuroPen can also connect to the local LM Studio server through its OpenAI-compatible API.
+
+1. Open LM Studio and click `Load Model` for the model you want to serve
+2. After the model finishes loading, open the `Developer` tab and turn on the local server
+3. Keep the server port on `1234`, because NeuroPen currently expects `http://127.0.0.1:1234/v1/chat/completions`
+4. Verify the server is up by opening `http://127.0.0.1:1234/v1/models` in a browser or by running:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:1234/v1/models
+```
+
+5. In NeuroPen Settings -> `LLM`, choose `LM Studio (Local)`
+6. Set the NeuroPen `Model` field to the `id` returned by `/v1/models`
+
+Notes:
+
+- NeuroPen expects LM Studio at `http://127.0.0.1:1234/v1/chat/completions` by default
+- LM Studio does not require an API key in NeuroPen unless you enabled local server auth
+- If you enable LM Studio auth, NeuroPen will send the saved API key as a bearer token
+- If `Invoke-RestMethod` says the connection was refused, the LM Studio local server is not running yet even if the model is already loaded
 
 ### STT Engines
 
@@ -564,6 +588,7 @@ After CI completes, a Draft Release with the installer will appear on the **Rele
 | Local Whisper shows as disabled | Rebuild with `--features local-stt` or `--features local-stt-gpu` |
 | Ollama won't connect | Ensure Ollama is running and `localhost:11434` is accessible; model name must match an installed model |
 | llama.cpp won't connect | Ensure `llama-server` is running and `localhost:8080/v1/chat/completions` is reachable; model name must match the loaded server model alias |
+| LM Studio won't connect | Ensure the LM Studio local server is enabled and `localhost:1234/v1/chat/completions` is reachable; model name must match the served model id |
 | Replace failed / focus error | NeuroPen only injects into the window that was focused at hotkey trigger time; if focus changes during processing, it cancels and warns |
 | Quick Action icon not appearing | Some apps (games, custom-drawn UIs) don't support UI Automation API — use the Selection Voice Command (B2) path instead |
 | Simulated input blocked | Some Electron apps / games block Ctrl+V simulation — paste manually |

@@ -88,4 +88,5 @@ export const DEFAULT_LLM_MODEL_OPTIONS = [
   "qwen-plus",
   "llama3.2",
   "Llama-3.2-3B-Instruct-Q4_K_M",
+  "local-model",
 ];

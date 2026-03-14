@@ -6,6 +6,7 @@ export type LlmProvider =
   | "grok"
   | "ollama"
   | "llamaCpp"
+  | "lmStudio"
   | "qwen"
   | "doubao"
   | "deepseek";

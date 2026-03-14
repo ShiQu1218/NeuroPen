@@ -7,6 +7,7 @@
 //! - Grok
 //! - Ollama (local)
 //! - llama.cpp server (local, OpenAI-compatible)
+//! - LM Studio server (local, OpenAI-compatible)
 //!
 //! Emits:
 //!   `llm://token(text)` — output chunk (true stream when provider supports it)
@@ -51,6 +52,7 @@ pub enum LlmProvider {
     Deepseek,
     Ollama,
     LlamaCpp,
+    LmStudio,
 }
 
 #[derive(Serialize, Clone)]
@@ -127,6 +129,7 @@ fn default_model(provider: &LlmProvider) -> &'static str {
         LlmProvider::Deepseek => "deepseek-chat",
         LlmProvider::Ollama => "llama3.2",
         LlmProvider::LlamaCpp => "Llama-3.2-3B-Instruct-Q4_K_M",
+        LlmProvider::LmStudio => "local-model",
     }
 }
 
@@ -737,6 +740,7 @@ fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
         LlmProvider::Doubao => Some("https://ark.cn-beijing.volces.com/api/v3/chat/completions"),
         LlmProvider::Deepseek => Some("https://api.deepseek.com/v1/chat/completions"),
         LlmProvider::LlamaCpp => Some("http://127.0.0.1:8080/v1/chat/completions"),
+        LlmProvider::LmStudio => Some("http://127.0.0.1:1234/v1/chat/completions"),
         _ => None,
     }
 }

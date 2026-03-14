@@ -1,7 +1,17 @@
 use crate::{llm, stt};
 
-fn llm_provider_requires_api_key(provider: &llm::LlmProvider) -> bool {
-    !matches!(provider, llm::LlmProvider::Ollama | llm::LlmProvider::LlamaCpp)
+fn llm_api_key_for_provider(provider: &llm::LlmProvider) -> Result<String, String> {
+    if matches!(
+        provider,
+        llm::LlmProvider::Ollama | llm::LlmProvider::LlamaCpp | llm::LlmProvider::LmStudio
+    ) {
+        if stt::has_api_key() {
+            return Ok(stt::get_api_key().unwrap_or_default());
+        }
+        return Ok(String::new());
+    }
+
+    stt::get_api_key()
 }
 
 #[derive(serde::Deserialize)]
@@ -28,11 +38,7 @@ pub async fn call_llm(
     prompt_override: Option<String>,
     request_id: Option<String>,
 ) -> Result<(), String> {
-    let api_key = if llm_provider_requires_api_key(&provider) {
-        stt::get_api_key()?
-    } else {
-        String::new()
-    };
+    let api_key = llm_api_key_for_provider(&provider)?;
     llm::call_llm(
         &api_key,
         &selected_text,
@@ -61,11 +67,7 @@ pub async fn call_llm_text(
     prompt_mode: Option<String>,
     prompt_override: Option<String>,
 ) -> Result<String, String> {
-    let api_key = if llm_provider_requires_api_key(&provider) {
-        stt::get_api_key()?
-    } else {
-        String::new()
-    };
+    let api_key = llm_api_key_for_provider(&provider)?;
     llm::call_llm_text(
         &api_key,
         &selected_text,
@@ -94,11 +96,7 @@ pub async fn call_llm_with_image(
     prompt_override: Option<String>,
     request_id: Option<String>,
 ) -> Result<(), String> {
-    let api_key = if llm_provider_requires_api_key(&provider) {
-        stt::get_api_key()?
-    } else {
-        String::new()
-    };
+    let api_key = llm_api_key_for_provider(&provider)?;
     llm::call_llm_with_image(
         &api_key,
         &image_base64,
@@ -131,11 +129,7 @@ pub async fn call_llm_with_images(
     prompt_override: Option<String>,
     request_id: Option<String>,
 ) -> Result<(), String> {
-    let api_key = if llm_provider_requires_api_key(&provider) {
-        stt::get_api_key()?
-    } else {
-        String::new()
-    };
+    let api_key = llm_api_key_for_provider(&provider)?;
     // Borrow the decoded payload fields so the shared LLM layer can accept the
     // same `&[(&str, &str)]` shape from single-image and multi-image callers.
     llm::call_llm_with_images(
