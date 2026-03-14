@@ -19,6 +19,10 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
+<p align="center">
+  <img src="./assets/demo/mode_B1.gif" alt="NeuroPen quick action demo" width="920" />
+</p>
+
 ---
 
 ## Table of Contents
@@ -78,10 +82,10 @@
 ![Voice Input Demo](./assets/demo/mode_A.jpg)
 
 **Quick Action (B1)**
-![Quick Action Demo](./assets/demo/mode_B1.jpg)
+![Quick Action Demo](./assets/demo/mode_B1.gif)
 
 **Selection Voice Command (B2)**
-![Selection Voice Command Demo](./assets/demo/mode_B2.jpg)
+![Selection Voice Command Demo](./assets/demo/mode_B2.gif)
 
 ## Core Workflow Safeguards
 

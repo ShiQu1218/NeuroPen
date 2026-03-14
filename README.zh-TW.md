@@ -19,6 +19,10 @@
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 </p>
 
+<p align="center">
+  <img src="./assets/demo/mode_B1.gif" alt="NeuroPen 快捷指令展示" width="920" />
+</p>
+
 ---
 
 ## Table of Contents / 目錄
@@ -78,10 +82,10 @@
 ![語音輸入展示](./assets/demo/mode_A.jpg)
 
 **快捷指令 (B1)**
-![快捷指令展示](./assets/demo/mode_B1.jpg)
+![快捷指令展示](./assets/demo/mode_B1.gif)
 
 **選取語音指令 (B2)**
-![選取語音指令展示](./assets/demo/mode_B2.jpg)
+![選取語音指令展示](./assets/demo/mode_B2.gif)
 
 ## Core Workflow Safeguards / 核心流程保護
 
