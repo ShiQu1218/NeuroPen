@@ -424,11 +424,18 @@ export default function Settings() {
   }, [appProfiles]);
 
   useEffect(() => {
-    setSttTextDrafts({
+    setSttTextDrafts((prev) => ({
+      ...prev,
       wakeWord,
+    }));
+  }, [wakeWord]);
+
+  useEffect(() => {
+    setSttTextDrafts((prev) => ({
+      ...prev,
       vocabularyTerms: vocabularyTerms.join("\n"),
-    });
-  }, [vocabularyTerms, wakeWord]);
+    }));
+  }, [vocabularyTerms]);
 
   useEffect(() => {
     setLlmModelDraft(llmModel);
