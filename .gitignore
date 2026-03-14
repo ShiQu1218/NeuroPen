@@ -36,6 +36,11 @@ env/
 !CLAUDE.md
 !README.md
 !README.zh-TW.md
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!CHANGELOG.md
+!ROADMAP.md
+!.github/PULL_REQUEST_TEMPLATE.md
 
 # Application specific
 .claude/

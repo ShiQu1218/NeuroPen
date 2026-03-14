@@ -32,6 +32,7 @@
 - [Getting Started (Developers)](#getting-started-developers)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
+- [Community & Roadmap](#community--roadmap)
 - [CI/CD & Release](#cicd--release)
 - [Troubleshooting](#troubleshooting)
 - [Security & Privacy](#security--privacy)
@@ -457,7 +458,8 @@ NeuroPen/
 │
 ├── public/                               # Static assets
 ├── .github/workflows/
-│   └── release.yml                       # CI/CD: auto-build on tag push
+│   ├── validate.yml                      # CI validation on push and pull request
+│   └── release.yml                       # Draft release build on tag push
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -475,6 +477,20 @@ NeuroPen/
 | **Quick Actions** | Add, edit, delete Quick Action commands |
 | **LLM** | Output mode (streaming preview / direct injection), Provider, saved model list, Model, preferred output language, API Key, multimodal toggle |
 | **App Profiles** | Keyword-based per-app profiles (e.g. Notion, VS Code, LINE): tone hint, prompt appendix, language override, output mode override, direct paste — ordered by priority, first match wins |
+
+---
+
+## Community & Roadmap
+
+- Start with [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup, OpenSpec workflow, and validation expectations.
+- Project conduct expectations live in [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md).
+- Current public priorities live in [ROADMAP.md](./ROADMAP.md).
+- Ongoing release notes now start in [CHANGELOG.md](./CHANGELOG.md).
+- GitHub issue and PR flows are guided by the repository templates under [`.github/ISSUE_TEMPLATE`](./.github/ISSUE_TEMPLATE) and [`.github/PULL_REQUEST_TEMPLATE.md`](./.github/PULL_REQUEST_TEMPLATE.md).
+
+NeuroPen is currently maintained as an actively iterated Windows-first project. Small, focused pull requests are preferred. For larger behavior changes or architectural work, open an issue first so the affected OpenSpec capability and review scope are clear.
+
+Maintainers aim to triage new issues and pull requests within about one week when the project is actively monitored, but response time is not guaranteed.
 
 ---
 

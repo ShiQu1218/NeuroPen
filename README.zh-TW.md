@@ -32,6 +32,7 @@
 - [Getting Started (Developers) / 開發者指南](#getting-started-developers--開發者指南)
 - [Project Structure / 專案結構](#project-structure--專案結構)
 - [Configuration / 設定說明](#configuration--設定說明)
+- [Community & Roadmap / 社群與路線圖](#community--roadmap--社群與路線圖)
 - [CI/CD & Release / 自動化發佈](#cicd--release--自動化發佈)
 - [Troubleshooting / 疑難排解](#troubleshooting--疑難排解)
 - [Security & Privacy / 安全與隱私](#security--privacy--安全與隱私)
@@ -457,7 +458,8 @@ NeuroPen/
 │
 ├── public/                               # Static assets
 ├── .github/workflows/
-│   └── release.yml                       # CI/CD: auto-build on tag push
+│   ├── validate.yml                      # PR / push 自動驗證
+│   └── release.yml                       # tag push 後建立 Draft Release
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -475,6 +477,20 @@ NeuroPen/
 | **快捷指令 (Quick Actions)** | 新增、編輯、刪除 Quick Action 指令 |
 | **LLM** | 輸出模式（預覽串流 / 直接注入）、Provider、常用模型清單、Model、輸出偏好語言、API Key、多模態開關 |
 | **應用程式設定檔 (App Profiles)** | 依關鍵字匹配應用程式（如 Notion、VS Code、LINE）：語調提示、額外提示詞、語言覆蓋、輸出模式覆蓋、直接貼上 — 優先順序由上而下，首配對勝出 |
+
+---
+
+## Community & Roadmap / 社群與路線圖
+
+- 先看 [CONTRIBUTING.md](./CONTRIBUTING.md)，裡面有本機開發、OpenSpec 流程與驗證要求。
+- 社群互動規範放在 [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)。
+- 目前公開的優先方向整理在 [ROADMAP.md](./ROADMAP.md)。
+- 後續版本與文件更新會記錄在 [CHANGELOG.md](./CHANGELOG.md)。
+- GitHub issue / PR 流程由 [`.github/ISSUE_TEMPLATE`](./.github/ISSUE_TEMPLATE) 與 [`.github/PULL_REQUEST_TEMPLATE.md`](./.github/PULL_REQUEST_TEMPLATE.md) 引導。
+
+NeuroPen 目前仍是持續迭代中的 Windows-first 專案。建議先從小而明確的 PR 開始；若是較大的行為變更或架構調整，先開 issue 對齊 OpenSpec capability 與 review 範圍。
+
+維護者目標是在專案活躍監看期間，約一週內完成新 issue / PR 的初步分流，但不保證固定回覆時間。
 
 ---
 
