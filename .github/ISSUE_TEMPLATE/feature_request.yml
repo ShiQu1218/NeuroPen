@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose a focused improvement for NeuroPen
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep requests focused. If the idea changes runtime behavior, describe which OpenSpec capability would be affected.
+  - type: input
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user or developer problem are you trying to solve?
+      placeholder: It is hard to understand which workflows are safe to modify without touching Rust and React together.
+    validations:
+      required: true
+  - type: dropdown
+    id: capability
+    attributes:
+      label: Related capability
+      options:
+        - application-shell
+        - history-and-privacy
+        - llm-preview-and-screenshot
+        - local-models-and-tts
+        - selection-and-injection
+        - settings-and-profiles
+        - voice-routing
+        - documentation or contributor workflow
+        - not sure
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful version of the change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include any rejected approaches or tradeoffs.
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: Call out what should stay out of this request.

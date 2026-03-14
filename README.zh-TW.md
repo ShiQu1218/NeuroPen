@@ -32,6 +32,7 @@
 - [Getting Started (Developers) / 開發者指南](#getting-started-developers--開發者指南)
 - [Project Structure / 專案結構](#project-structure--專案結構)
 - [Configuration / 設定說明](#configuration--設定說明)
+- [Community & Roadmap / 社群與路線圖](#community--roadmap--社群與路線圖)
 - [CI/CD & Release / 自動化發佈](#cicd--release--自動化發佈)
 - [Troubleshooting / 疑難排解](#troubleshooting--疑難排解)
 - [Security & Privacy / 安全與隱私](#security--privacy--安全與隱私)
@@ -50,11 +51,11 @@
 | **助理對話** | 喚醒詞問答流程，支援串流回覆 |
 | **輸出策略** | 可選 `PreviewStream` 預覽視窗或直接注入到焦點輸入框 |
 | **安全注入 + 復原** | 注入前驗證焦點視窗，並支援 `Alt + Z` 一鍵復原 |
-| **STT 引擎管線** | 支援 OpenAI Whisper API 與本地 Whisper |
-| **本地 STT 模型管理** | 支援 Whisper 模型安裝/切換/刪除、下載進度與取消 |
+| **STT 引擎管線** | 支援 OpenAI Whisper API，以及本地 Whisper、SenseVoice、Moonshine |
+| **本地 STT 模型管理** | 支援本地 STT 模型安裝/切換/刪除、下載進度與取消 |
 | **多 LLM 提供商** | OpenAI、Gemini、Claude、Grok、Qwen、豆包、DeepSeek、Ollama |
 | **截圖多模態流程** | `Alt + S` 區域截圖後可直接進入 LLM 圖像問答流程 |
-| **TTS 朗讀** | 內建 Piper TTS，支援模型路徑 / 語速 / speaker id 設定 |
+| **TTS 朗讀** | 內建 Piper TTS，支援安裝/切換/刪除、模型路徑 / 語速 / speaker id 設定 |
 | **歷史紀錄控制** | 本地歷史紀錄（最多 200 筆） |
 | **應用程式設定檔** | 依前景應用程式自動套用語調、提示詞、語言、輸出模式與直接貼上設定 — 關鍵字首配對勝出 |
 | **操作設定** | 開機啟動、麥克風來源、快捷鍵、語言偏好等 |
@@ -128,6 +129,8 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 |--------|------|-------|
 | OpenAI Whisper API | Cloud | 需要 API Key |
 | Local Whisper | Local | 透過 whisper-rs / whisper.cpp，支援 CPU 與 GPU (Vulkan) |
+| SenseVoice | Local | 本地 STT，多語辨識，支援 zh/en/ja/ko/yue |
+| Moonshine | Local | 輕量英文本地 STT，偏重速度 |
 
 ### Local Whisper Models
 
@@ -138,11 +141,43 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 | Whisper Large | ~2.9 GB | Slow | Best |
 | Whisper Turbo | ~1.5 GB | Fast | Better |
 
+### 其他本地 STT 模型
+
+| 模型 | 引擎 | 語言涵蓋 | 安裝形式 | 說明 |
+|------|------|----------|----------|------|
+| SenseVoice Small | SenseVoice | 中文、英文、日文、韓文、粵語 | 多檔 bundle | 非 Whisper 路線的多語本地辨識選項 |
+| Moonshine Base | Moonshine | 英文 | 多檔 bundle | 速度快、體積輕量 |
+| Moonshine Tiny | Moonshine | 英文 | 多檔 bundle | 最小的本地 STT 選項，偏向速度優先 |
+
+本地 STT 補充：
+
+- NeuroPen 的 STT 模型管理器支援安裝、取消下載、刪除與切換本地模型。
+- STT 模型下拉選單只會顯示已安裝的本地模型。
+- STT 語言選項支援 `auto`、`en`、`zh`、`ja`、`ko`、`de`、`fr`、`es`、`ru`、`ar`，但實際可用語言仍取決於你選的模型。
+
 ### TTS
 
 | Engine | Notes |
 |--------|-------|
 | Piper TTS | 本地播放，支援模型路徑、語速與 speaker id 設定 |
+
+### 內建 Piper 聲音
+
+| 聲音 | 語言 | 品質 | Speakers | 說明 |
+|------|------|------|----------|------|
+| Huayan | zh-CN | medium | 1 | 繁中與簡中的預設中文女聲 |
+| Lessac | en-US | medium | 1 | 自然語氣的英文助理聲音 |
+| Thorsten | de-DE | medium | 1 | 德文男聲 |
+| Siwis | fr-FR | medium | 1 | 法文單說話人聲音 |
+| Sharvard | es-ES | medium | 2 | 可用 Speaker ID 切換的西文雙說話人聲音 |
+| Irina | ru-RU | medium | 1 | 俄文單說話人聲音 |
+| Kareem | ar-SA | medium | 1 | 阿拉伯文單說話人聲音 |
+
+Piper TTS 補充：
+
+- 內建 TTS 模型管理器支援安裝、取消下載、刪除與設為目前使用中。
+- 仍可手動填入自訂 `.onnx` 模型路徑。
+- Speaker ID 主要用在像 Sharvard 這類多說話人模型。
 
 ---
 
@@ -178,8 +213,9 @@ NeuroPen 的注入流程採用固定保護機制，避免誤貼到錯誤視窗�
 1. 右鍵點擊系統匣圖示 → **設定**
 2. **一般**：設定顯示語言、全域快捷鍵、喚醒詞
 3. **LLM**：選擇 Provider、管理常用模型清單、設定輸出偏好語言、輸入 API Key（如 OpenAI）
-4. **語音與 STT**：選擇 STT 引擎（雲端 or 本地），安裝本地模型（可選）
-5. 點「儲存」，即可開始使用
+4. **語音與 STT**：選擇 STT 模型、設定麥克風來源，並可安裝或切換本地 STT 模型
+5. **TTS**：可選擇安裝 Piper 聲音、設為目前使用中，或保留手動 `.onnx` 路徑
+6. 點「儲存」，即可開始使用
 
 ### Quick Usage / 快速上手
 
@@ -422,7 +458,8 @@ NeuroPen/
 │
 ├── public/                               # Static assets
 ├── .github/workflows/
-│   └── release.yml                       # CI/CD: auto-build on tag push
+│   ├── validate.yml                      # PR / push 自動驗證
+│   └── release.yml                       # tag push 後建立 Draft Release
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -440,6 +477,20 @@ NeuroPen/
 | **快捷指令 (Quick Actions)** | 新增、編輯、刪除 Quick Action 指令 |
 | **LLM** | 輸出模式（預覽串流 / 直接注入）、Provider、常用模型清單、Model、輸出偏好語言、API Key、多模態開關 |
 | **應用程式設定檔 (App Profiles)** | 依關鍵字匹配應用程式（如 Notion、VS Code、LINE）：語調提示、額外提示詞、語言覆蓋、輸出模式覆蓋、直接貼上 — 優先順序由上而下，首配對勝出 |
+
+---
+
+## Community & Roadmap / 社群與路線圖
+
+- 先看 [CONTRIBUTING.md](./CONTRIBUTING.md)，裡面有本機開發、OpenSpec 流程與驗證要求。
+- 社群互動規範放在 [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)。
+- 目前公開的優先方向整理在 [ROADMAP.md](./ROADMAP.md)。
+- 後續版本與文件更新會記錄在 [CHANGELOG.md](./CHANGELOG.md)。
+- GitHub issue / PR 流程由 [`.github/ISSUE_TEMPLATE`](./.github/ISSUE_TEMPLATE) 與 [`.github/PULL_REQUEST_TEMPLATE.md`](./.github/PULL_REQUEST_TEMPLATE.md) 引導。
+
+NeuroPen 目前仍是持續迭代中的 Windows-first 專案。建議先從小而明確的 PR 開始；若是較大的行為變更或架構調整，先開 issue 對齊 OpenSpec capability 與 review 範圍。
+
+維護者目標是在專案活躍監看期間，約一週內完成新 issue / PR 的初步分流，但不保證固定回覆時間。
 
 ---
 

@@ -32,6 +32,7 @@
 - [Getting Started (Developers)](#getting-started-developers)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
+- [Community & Roadmap](#community--roadmap)
 - [CI/CD & Release](#cicd--release)
 - [Troubleshooting](#troubleshooting)
 - [Security & Privacy](#security--privacy)
@@ -50,11 +51,11 @@
 | **Assistant chat** | Wake-word query flow with streaming response support |
 | **Output strategies** | `PreviewStream` window or direct injection into focused app |
 | **Focus-safe injection + undo** | Focus verification before paste and one-key rollback (`Alt + Z`) |
-| **STT pipeline** | OpenAI Whisper API and local Whisper engine support |
-| **Local STT model management** | Install/select/delete Whisper models with download progress and cancellation |
+| **STT pipeline** | OpenAI Whisper API plus local Whisper, SenseVoice, and Moonshine models |
+| **Local STT model management** | Install/select/delete local STT models with download progress and cancellation |
 | **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, and Ollama |
 | **Screenshot-to-LLM workflow** | `Alt + S` region capture and multimodal prompt flow in preview window |
-| **TTS playback** | Built-in read-aloud via Piper TTS with configurable model/speed/speaker |
+| **TTS playback** | Built-in read-aloud via Piper TTS with install/select/delete, manual model path, speed, and speaker id |
 | **History controls** | Searchable local history (up to 200 entries) |
 | **App Profiles** | Per-app automatic tone, prompt, language, output mode, and direct-paste tuning — keyword-based, first-match-wins priority |
 | **Operational settings** | Startup launch toggle, microphone selection, hotkey customization, language settings |
@@ -128,6 +129,8 @@ If focus changes during processing, injection is cancelled and clipboard is rest
 |--------|------|-------|
 | OpenAI Whisper API | Cloud | Requires API Key |
 | Local Whisper | Local | Via whisper-rs / whisper.cpp, supports CPU and GPU (Vulkan) |
+| SenseVoice | Local | Bundled local STT option for zh/en/ja/ko/yue speech recognition |
+| Moonshine | Local | Lightweight English local STT models optimized for speed |
 
 ### Local Whisper Models
 
@@ -138,11 +141,43 @@ If focus changes during processing, injection is cancelled and clipboard is rest
 | Whisper Large | ~2.9 GB | Slow | Best |
 | Whisper Turbo | ~1.5 GB | Fast | Better |
 
+### Additional Local STT Models
+
+| Model | Engine | Language coverage | Packaging | Notes |
+|-------|--------|-------------------|-----------|-------|
+| SenseVoice Small | SenseVoice | Chinese, English, Japanese, Korean, Cantonese | Multi-file bundle | Strong multilingual local option outside Whisper |
+| Moonshine Base | Moonshine | English | Multi-file bundle | Fast and lightweight |
+| Moonshine Tiny | Moonshine | English | Multi-file bundle | Smallest local STT option, favors speed over accuracy |
+
+Local STT notes:
+
+- NeuroPen's STT model manager can install, cancel, delete, and switch among local models.
+- Only installed local models appear in the STT model dropdown.
+- STT language selection supports `auto`, `en`, `zh`, `ja`, `ko`, `de`, `fr`, `es`, `ru`, and `ar`; effective language coverage still depends on the selected local model.
+
 ### TTS
 
 | Engine | Notes |
 |--------|-------|
 | Piper TTS | Local playback with configurable model path, speed, and speaker id |
+
+### Built-in Piper Voices
+
+| Voice | Language | Quality | Speakers | Notes |
+|-------|----------|---------|----------|-------|
+| Huayan | zh-CN | medium | 1 | Default Chinese voice for Traditional and Simplified Chinese |
+| Lessac | en-US | medium | 1 | Natural English assistant voice |
+| Thorsten | de-DE | medium | 1 | German male voice |
+| Siwis | fr-FR | medium | 1 | French single-speaker voice |
+| Sharvard | es-ES | medium | 2 | Spanish voice with speaker switching via Speaker ID |
+| Irina | ru-RU | medium | 1 | Russian single-speaker voice |
+| Kareem | ar-SA | medium | 1 | Arabic single-speaker voice |
+
+Piper TTS notes:
+
+- The built-in TTS model manager supports install, cancel, delete, and "Set Active" switching.
+- Manual model path remains available for custom `.onnx` voices.
+- Speaker ID is mainly used for multi-speaker voices such as Sharvard.
 
 ---
 
@@ -178,8 +213,9 @@ Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration �
 1. Right-click the system tray icon -> **Settings**
 2. **General**: Set display language, global hotkey, wake word
 3. **LLM**: Choose a provider, manage saved model list, set preferred output language, enter your API Key (e.g., OpenAI)
-4. **Voice & STT**: Choose STT engine (cloud or local), install a local model (optional)
-5. Click "Save" and you're ready to go
+4. **Voice & STT**: Choose the STT model, select microphone source, and optionally install or switch a local STT model
+5. **TTS**: Optionally install a Piper voice, set it active, or keep a manual `.onnx` path
+6. Click "Save" and you're ready to go
 
 ### Quick Usage
 
@@ -422,7 +458,8 @@ NeuroPen/
 │
 ├── public/                               # Static assets
 ├── .github/workflows/
-│   └── release.yml                       # CI/CD: auto-build on tag push
+│   ├── validate.yml                      # CI validation on push and pull request
+│   └── release.yml                       # Draft release build on tag push
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -440,6 +477,20 @@ NeuroPen/
 | **Quick Actions** | Add, edit, delete Quick Action commands |
 | **LLM** | Output mode (streaming preview / direct injection), Provider, saved model list, Model, preferred output language, API Key, multimodal toggle |
 | **App Profiles** | Keyword-based per-app profiles (e.g. Notion, VS Code, LINE): tone hint, prompt appendix, language override, output mode override, direct paste — ordered by priority, first match wins |
+
+---
+
+## Community & Roadmap
+
+- Start with [CONTRIBUTING.md](./CONTRIBUTING.md) for local setup, OpenSpec workflow, and validation expectations.
+- Project conduct expectations live in [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md).
+- Current public priorities live in [ROADMAP.md](./ROADMAP.md).
+- Ongoing release notes now start in [CHANGELOG.md](./CHANGELOG.md).
+- GitHub issue and PR flows are guided by the repository templates under [`.github/ISSUE_TEMPLATE`](./.github/ISSUE_TEMPLATE) and [`.github/PULL_REQUEST_TEMPLATE.md`](./.github/PULL_REQUEST_TEMPLATE.md).
+
+NeuroPen is currently maintained as an actively iterated Windows-first project. Small, focused pull requests are preferred. For larger behavior changes or architectural work, open an issue first so the affected OpenSpec capability and review scope are clear.
+
+Maintainers aim to triage new issues and pull requests within about one week when the project is actively monitored, but response time is not guaranteed.
 
 ---
 
