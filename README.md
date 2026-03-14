@@ -1,5 +1,9 @@
 > English | **[繁體中文](./README.zh-TW.md)**
 
+<p align="center">
+  <img src="./public/brand-icon.svg" alt="NeuroPen icon" width="160" />
+</p>
+
 <h1 align="center">NeuroPen</h1>
 
 <p align="center">

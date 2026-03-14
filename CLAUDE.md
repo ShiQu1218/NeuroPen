@@ -83,3 +83,7 @@ All three modes, Output Preview Window, Whisper STT with streaming, OpenAI LLM, 
 ## v2.0 Planned (out of scope now)
 
 Local offline LLM, professional vocabulary import, app context awareness (auto-adjust LLM tone by foreground app), habit auto-memory, custom Quick Action presets, keyboard typing prediction, TTS narration, multi-STT model switching.
+
+## Note
+
+Codex will review your code again.
