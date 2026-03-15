@@ -273,6 +273,22 @@ export async function registerSelectionListeners({
   });
 
   await safeRegister<{
+    quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
+  }>(
+    "neuropen://settings-saved",
+    async (event) => {
+      if (!event.payload.quickActionCommands) {
+        return;
+      }
+      clearQaHideTimer();
+      clearQaResyncTimer();
+      selectionState.lastSelectionFingerprint = "";
+      selectionState.suppressedSelectionFingerprint = "";
+      selectionState.selectionWatchSuppressedUntil = 0;
+    },
+  );
+
+  await safeRegister<{
     has_selection: boolean;
     text: string | null;
     cursor_x: number;

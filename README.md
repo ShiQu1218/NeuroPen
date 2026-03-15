@@ -7,8 +7,8 @@
 <h1 align="center">NeuroPen</h1>
 
 <p align="center">
-  <strong>Windows Desktop AI Voice Assistant</strong><br/>
-  Voice input, translate, summarize, rewrite, and ask AI — in any app, with a single hotkey. No window switching needed.
+  <strong>Voice-first AI for any Windows app</strong><br/>
+  Hold one hotkey to dictate, rewrite selected text, or ask about a screenshot without breaking focus or switching windows.
 </p>
 
 <p align="center">
@@ -27,6 +27,8 @@
 
 ## Table of Contents
 
+- [Why NeuroPen](#why-neuropen)
+- [Common Use Cases](#common-use-cases)
 - [Features](#features)
 - [Workflows](#workflows)
 - [Core Workflow Safeguards](#core-workflow-safeguards)
@@ -44,71 +46,93 @@
 
 ---
 
+## Why NeuroPen
+
+Most AI tools start by asking you to open a tab, paste text, and manage context manually. NeuroPen is built for the opposite workflow: stay inside the app you are already using, trigger AI with a hotkey, and keep moving.
+
+| What usually slows people down | What NeuroPen changes |
+|------|--------------------|
+| Switching between your editor, browser, chat app, and AI tab | Works in any focused Windows app with a global hotkey |
+| Copying text out, prompting, then pasting it back | Can rewrite selected text or inject output back into the original target |
+| Losing momentum on short writing tasks | Handles quick dictation, translation, summarizing, polishing, and follow-up questions from one flow |
+| Worrying about pasting into the wrong place | Verifies target focus before injection and restores the clipboard after the workflow |
+
+---
+
+## Common Use Cases
+
+| Use case | How it feels |
+|------|--------------|
+| **Dictate anywhere** | Hold `Alt + Backtick`, speak in Notion, Word, chat apps, or browser inputs, then release to transcribe |
+| **Rewrite selected text** | Highlight a paragraph and run a Quick Action or speak an instruction like "make this more concise" |
+| **Translate without tab switching** | Select text in any app and convert it to your target language from the floating action surface |
+| **Ask about what is on screen** | Press `Alt + S`, capture a region, and send the screenshot into a multimodal preview session |
+| **Keep app-specific behavior** | Use App Profiles so different apps can get different tone, language, output mode, and direct-paste behavior |
+
+---
+
 ## Features
 
-| Area | Current capability |
-|------|--------------------|
-| **Global voice capture** | Hold `Alt + Backtick` to record and transcribe speech from any app |
-| **Workflow routing (Voice Input / Quick Action / Selection Voice Command / Assistant Chat)** | Routes behavior by selection state and wake word detection |
-| **Selection quick actions** | Floating Quick Action icon with customizable preset commands |
-| **Voice command on selection** | Speak instructions over selected text for LLM rewriting |
-| **Assistant chat** | Wake-word query flow with streaming response support |
-| **Output strategies** | `PreviewStream` window or direct injection into focused app |
-| **Focus-safe injection + undo** | Focus verification before paste and one-key rollback (`Alt + Z`) |
-| **STT pipeline** | OpenAI Whisper API plus local Whisper, SenseVoice, and Moonshine models |
-| **Local STT model management** | Install/select/delete local STT models with download progress and cancellation |
-| **Multi-provider LLM** | OpenAI, Gemini, Claude, Grok, Qwen, Doubao, DeepSeek, Ollama, llama.cpp server, and LM Studio |
-| **Screenshot-to-LLM workflow** | `Alt + S` region capture and multimodal prompt flow in preview window |
-| **TTS playback** | Built-in read-aloud via Piper TTS with install/select/delete, manual model path, speed, and speaker id |
-| **History controls** | Searchable local history (up to 200 entries) |
-| **App Profiles** | Per-app automatic tone, prompt, language, output mode, and direct-paste tuning — keyword-based, first-match-wins priority |
-| **Operational settings** | Startup launch toggle, microphone selection, hotkey customization, language settings |
-| **System tray operation** | Background tray app with quick access to settings and exit |
+| Capability | Why it matters |
+|------|----------------|
+| **Global voice capture** | Start speaking from any app with `Alt + Backtick` instead of opening a separate AI window |
+| **Selection-aware routing** | NeuroPen detects whether you are dictating, transforming selected text, or asking the assistant |
+| **Quick Action surface** | Selected text gets a floating action entry point with customizable preset commands |
+| **Selection Voice Command** | Speak an instruction over highlighted text for rewriting, translating, summarizing, or polishing |
+| **Assistant chat** | Wake-word detection turns free speech into an assistant request with streaming responses |
+| **Preview-first or direct injection** | Review output in `PreviewStream` or send it straight back into the focused target app |
+| **Focus-safe injection + undo** | Verifies focus before paste and supports one-step rollback with `Alt + Z` |
+| **Screenshot-to-LLM** | `Alt + S` captures a region and opens a multimodal prompt flow in the preview window |
+| **Cloud and local models** | Supports OpenAI Whisper API plus local Whisper, SenseVoice, Moonshine, Ollama, llama.cpp, and LM Studio |
+| **Model management** | Install, switch, cancel, and delete supported local STT and Piper TTS models inside the app |
+| **App Profiles** | Apply per-app tone, prompt appendix, language variant, output mode, and direct-paste defaults |
+| **History and tray workflow** | Keep a local history, launch from tray, and stay available in the background |
 
 ---
 
 ## Workflows
 
-| Workflow | Trigger | Output |
-|------|---------|--------|
-| **Voice Input (A)** | No selection + `Alt + Backtick` + no wake word | STT result shown in preview window or injected at cursor |
-| **Quick Action (B1)** | Text selected + Quick Action click | LLM result in preview window |
-| **Selection Voice Command (B2)** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite in preview window |
-| **Assistant Chat (C)** | No selection + wake word detected in transcript | LLM answer in preview window or direct inject |
+| Workflow | Trigger | What you get |
+|------|---------|---------------|
+| **Voice Input** | No selection + `Alt + Backtick` + no wake word | Speech-to-text result, optionally refined or translated, then shown in preview or injected at the cursor |
+| **Quick Action** | Text selected + Quick Action click | A fast selected-text transformation in the preview window |
+| **Selection Voice Command** | Text selected + `Alt + Backtick` + spoken instruction | LLM rewrite of the selected text based on your spoken instruction |
+| **Assistant Chat** | No selection + wake word detected in transcript | Assistant response in preview or direct injection, depending on settings |
+| **Screenshot Prompt** | `Alt + S` + captured region + prompt | A multimodal preview session that uses the captured image as context |
 
 ### Workflow Demos
 
-**Voice Input (A)**
+**Voice Input: speak and keep typing**
 ![Voice Input Demo](./assets/demo/mode_A.jpg)
 
-**Quick Action (B1)**
+**Quick Action: transform selected text without copy/paste**
 ![Quick Action Demo](./assets/demo/mode_B1.gif)
 
-**Selection Voice Command (B2)**
+**Selection Voice Command: talk over selected content**
 ![Selection Voice Command Demo](./assets/demo/mode_B2.gif)
 
 ## Core Workflow Safeguards
 
-NeuroPen uses a strict injection sequence to reduce unintended edits:
+NeuroPen is designed for "works in any app" workflows, so output safety matters as much as model quality. Before text goes back into another application, the app uses a strict injection sequence:
 
 1. Lock foreground window and cache clipboard.
 2. Process STT/LLM request.
 3. Verify target focus is unchanged.
 4. Inject result and restore clipboard.
 
-If focus changes during processing, injection is cancelled and clipboard is restored.
+If focus changes during processing, injection is cancelled and the clipboard is restored instead of risking edits in the wrong place.
 
 ---
 
 ## UI Modules
 
-- **Settings Window**: General, Voice & STT, Quick Actions, LLM, TTS, History, and App Profiles sections with persisted preferences.
-- **Quick Action Icon**: Floating menu on selected text with user-editable preset commands and custom instruction input.
-- **Output Preview Window**: Streaming markdown output with LaTeX formula rendering, follow-up prompts, copy/replace controls, and screenshot attachment preview.
-- **Recording Indicator**: Lightweight overlay for recording state and elapsed time.
-- **History Panel**: Search, copy, and delete prior outputs (local storage).
-- **Screenshot Overlay**: Region selector used by screenshot-to-LLM workflows.
-- **App Profiles**: Card-based per-app configuration with keyword matching, tone hints, prompt appendix, language/output-mode overrides, and direct-paste option. Profiles are ordered by priority — the first matching profile wins.
+- **Settings Window**: Configure STT, LLM, TTS, quick actions, hotkeys, history, and per-app defaults.
+- **Quick Action Icon**: Floating selected-text surface for one-click presets and custom instructions.
+- **Output Preview Window**: Streaming output with follow-up prompts, copy/replace controls, and screenshot attachment preview.
+- **Recording Indicator**: Lightweight overlay that confirms recording state and elapsed time.
+- **History Panel**: Search, copy, and delete prior local outputs.
+- **Screenshot Overlay**: Region capture surface for screenshot-backed prompting.
+- **App Profiles**: Priority-ordered rules that adapt tone, prompt appendix, language, and output behavior by app.
 
 ---
 
