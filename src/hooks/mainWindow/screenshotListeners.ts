@@ -127,7 +127,11 @@ export async function registerScreenshotListeners({
         setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
         return;
       }
-      if (store.llmProvider !== "ollama") {
+      if (
+        store.llmProvider !== "ollama" &&
+        store.llmProvider !== "llamaCpp" &&
+        store.llmProvider !== "lmStudio"
+      ) {
         const hasLlmKey = await mainWindowService.hasLlmApiKey().catch(() => false);
         if (!hasLlmKey) {
           setSttError(t("error.llmApiKeyRequired"));

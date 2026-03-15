@@ -86,7 +86,10 @@ export async function registerSttFinalRouter({
           store.translationTarget &&
           store.translationTarget !== "off" &&
           !store.incognito;
-        const llmNeedsApiKey = store.llmProvider !== "ollama";
+        const llmNeedsApiKey =
+          store.llmProvider !== "ollama" &&
+          store.llmProvider !== "llamaCpp" &&
+          store.llmProvider !== "lmStudio";
         let llmReady = true;
         if (llmNeedsApiKey && (shouldRefine || shouldTranslate)) {
           llmReady = await mainWindowService.hasLlmApiKey().catch(() => false);
