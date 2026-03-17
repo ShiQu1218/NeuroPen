@@ -192,12 +192,12 @@ export async function registerSelectionListeners({
       if (currentFingerprint === selectionState.lastSelectionFingerprint) {
         return;
       }
-      // Lock target window + cache clipboard once per unique selection.
+      // Lock target window (without touching clipboard) once per unique selection.
       try {
-        await mainWindowService.triggerHotkey();
+        await mainWindowService.lockWindow();
         selectionState.lastSelectionFingerprint = currentFingerprint;
       } catch (err) {
-        console.warn("[App] trigger_hotkey failed:", err);
+        console.warn("[App] lock_window failed:", err);
       }
       await qaWin.setSize(new LogicalSize(40, 40));
       const qaSize = await qaWin.outerSize();

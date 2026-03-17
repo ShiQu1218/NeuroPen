@@ -7,39 +7,6 @@
 //!
 //! Uses IUIAutomation via the `windows` crate.
 
-#[cfg(target_os = "windows")]
-fn capture_selection_snapshot_via_clipboard() -> Option<String> {
-    use crate::{clipboard, injection};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let _op = clipboard::acquire_op_lock().ok()?;
-    let original_clipboard = clipboard::read_clipboard().unwrap_or_default();
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    let sentinel = format!(
-        "__NEUROPEN_SELECTION_SNAPSHOT_{}_{}__",
-        std::process::id(),
-        nonce
-    );
-
-    if clipboard::write_clipboard(&sentinel).is_err() {
-        return None;
-    }
-    let copy_result = injection::simulate_ctrl_c();
-    let clipboard_text = clipboard::read_clipboard().ok();
-    let _ = clipboard::write_clipboard(&original_clipboard);
-
-    if copy_result.is_err() {
-        return None;
-    }
-
-    match clipboard_text {
-        Some(text) if !text.trim().is_empty() && text != sentinel => Some(text),
-        _ => None,
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReleaseGesture {
@@ -51,9 +18,7 @@ enum ReleaseGesture {
 const DRAG_DISTANCE_THRESHOLD_PX: i32 = 3;
 const DOUBLE_CLICK_WINDOW_MS: u64 = 450;
 const DOUBLE_CLICK_POSITION_TOLERANCE_PX: i32 = 4;
-const STICKY_SELECTION_TTL_MS: u64 = 1500;
 const POLL_INTERVAL_MS: u64 = 25;
-const DOUBLE_CLICK_FALLBACK_MAX_LEN: usize = 120;
 
 fn classify_release_gesture(
     just_released: bool,
@@ -94,23 +59,6 @@ fn classify_release_gesture(
     }
 }
 
-fn is_valid_fallback_snapshot(snapshot: &str, gesture: ReleaseGesture) -> bool {
-    let trimmed = snapshot.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-
-    // Double-click fallback is primarily for word selection in UIA-unavailable
-    // surfaces. Reject long/multiline captures to avoid treating "copy current
-    // paragraph/line" behaviors as a real selection.
-    if gesture == ReleaseGesture::DoubleClick
-        && (trimmed.len() > DOUBLE_CLICK_FALLBACK_MAX_LEN || trimmed.contains('\n'))
-    {
-        return false;
-    }
-
-    true
-}
 
 /// Result of a selection poll attempt.
 #[derive(Debug, Clone)]
@@ -280,10 +228,6 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         let mut drag_start: Option<(i32, i32)> = None;
         let mut last_release_at: Option<std::time::Instant> = None;
         let mut last_release_pos: Option<(i32, i32)> = None;
-        // Sticky selection: when clipboard fallback succeeds, remember the
-        // selection so it persists across polls until the user clicks again.
-        let mut sticky_text: Option<String> = None;
-        let mut sticky_expires_at: Option<std::time::Instant> = None;
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
@@ -303,9 +247,6 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                     drag_start = None;
                 } else {
                     drag_start = Some((cx, cy));
-                    // User started a new click/drag — clear sticky selection
-                    sticky_text = None;
-                    sticky_expires_at = None;
                 }
             }
             let release_gesture = classify_release_gesture(
@@ -323,57 +264,11 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
                 drag_start = None;
             }
 
-            if matches!(release_gesture, Some(ReleaseGesture::PlainClick)) {
-                sticky_text = None;
-                sticky_expires_at = None;
-            }
-            if let Some(expire_at) = sticky_expires_at {
-                if std::time::Instant::now() >= expire_at {
-                    sticky_text = None;
-                    sticky_expires_at = None;
-                }
-            }
             // Only surface selection after mouse release so icon appears post-selection.
-            let mut has_selection = raw_has_selection && !left_down;
-            let mut text = if has_selection {
-                raw_text
-            } else {
-                String::new()
-            };
+            let has_selection = raw_has_selection && !left_down;
+            let text = if has_selection { raw_text } else { String::new() };
 
-            // If UIA did not return a selection, capture immediately after
-            // mouse release while it is still active, then restore clipboard.
-            // This keeps Quick Action responsive without reading stale clipboard
-            // contents later after the user clicks the popup.
-            if just_released
-                && matches!(
-                    release_gesture,
-                    Some(ReleaseGesture::DragSelect) | Some(ReleaseGesture::DoubleClick)
-                )
-                && !has_selection
-            {
-                if let Some(snapshot) = capture_selection_snapshot_via_clipboard() {
-                    let gesture = release_gesture.unwrap_or(ReleaseGesture::PlainClick);
-                    if is_valid_fallback_snapshot(&snapshot, gesture) {
-                        has_selection = true;
-                        text = snapshot.clone();
-                        sticky_text = Some(snapshot);
-                        sticky_expires_at = Some(
-                            std::time::Instant::now()
-                                + std::time::Duration::from_millis(STICKY_SELECTION_TTL_MS),
-                        );
-                    } else {
-                        sticky_text = None;
-                        sticky_expires_at = None;
-                    }
-                }
-            }
-
-            // If no UIA selection but we have a sticky fallback selection, keep it.
-            if !has_selection && !left_down && sticky_text.is_some() {
-                has_selection = true;
-                text = sticky_text.clone().unwrap();
-            }
+            let _ = release_gesture; // used for gesture classification only
 
             let selection_changed =
                 has_selection != last_emitted_selection || text != last_emitted_text;
@@ -457,28 +352,4 @@ mod tests {
         assert_eq!(gesture, Some(ReleaseGesture::DoubleClick));
     }
 
-    #[test]
-    fn fallback_snapshot_rejects_long_double_click_text() {
-        let snapshot = "x".repeat(DOUBLE_CLICK_FALLBACK_MAX_LEN + 1);
-        assert!(!is_valid_fallback_snapshot(
-            &snapshot,
-            ReleaseGesture::DoubleClick
-        ));
-    }
-
-    #[test]
-    fn fallback_snapshot_rejects_multiline_double_click_text() {
-        assert!(!is_valid_fallback_snapshot(
-            "first line\nsecond line",
-            ReleaseGesture::DoubleClick
-        ));
-    }
-
-    #[test]
-    fn fallback_snapshot_accepts_drag_multiline_text() {
-        assert!(is_valid_fallback_snapshot(
-            "first line\nsecond line",
-            ReleaseGesture::DragSelect
-        ));
-    }
 }

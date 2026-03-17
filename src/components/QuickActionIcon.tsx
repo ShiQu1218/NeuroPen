@@ -283,12 +283,10 @@ export default function QuickActionIcon() {
     }
 
     if (!selectedText) {
-      await invoke("restore_clipboard");
       await setQaInteracting(false);
       return;
     }
 
-    await invoke("restore_clipboard");
     await emit("neuropen://qa-suppress-current-selection", { cooldownMs: 1600 });
     const category = command
       ? buildQuickActionPreferenceCategory(command)

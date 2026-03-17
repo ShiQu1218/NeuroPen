@@ -147,6 +147,15 @@ fn trigger_hotkey() -> Result<FocusInfo, String> {
     Ok(FocusInfo { hwnd })
 }
 
+/// Lock the current foreground window WITHOUT touching the clipboard.
+/// Used by the QA selection flow where clipboard caching is not needed.
+#[tauri::command]
+fn lock_window() -> FocusInfo {
+    window_focus::lock_foreground_window();
+    let hwnd = window_focus::get_locked_hwnd();
+    FocusInfo { hwnd }
+}
+
 /// Read current text selection via UI Automation.
 #[tauri::command]
 fn get_selection() -> SelectionInfo {
@@ -495,6 +504,7 @@ pub fn run() {
         .plugin(hotkey::build_plugin())
         .invoke_handler(tauri::generate_handler![
             trigger_hotkey,
+            lock_window,
             get_selection,
             read_selection_clipboard,
             inject_text,

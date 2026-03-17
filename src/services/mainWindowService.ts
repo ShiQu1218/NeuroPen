@@ -156,6 +156,7 @@ export const mainWindowService = {
   stopRecording: (engine: string, modelPath: string, sttLanguage: string) =>
     invoke<void>("stop_recording", { engine, modelPath, sttLanguage }),
   triggerHotkey: () => invoke<void>("trigger_hotkey"),
+  lockWindow: () => invoke<{ hwnd: number }>("lock_window"),
   hasSttApiKey: () => invoke<boolean>("has_stt_api_key"),
   startRecording: () => invoke<void>("start_recording"),
   startStreamingStt: (engine: string, modelPath: string) =>

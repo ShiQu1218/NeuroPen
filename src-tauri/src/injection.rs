@@ -179,14 +179,6 @@ pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
     Ok(())
 }
 
-/// Simulate Ctrl+C keystroke via Win32 SendInput, then wait 150ms (backward compat).
-#[cfg(target_os = "windows")]
-pub fn simulate_ctrl_c() -> Result<(), InjectionError> {
-    simulate_ctrl_c_raw()?;
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    Ok(())
-}
-
 #[cfg(not(target_os = "windows"))]
 fn simulate_ctrl_v() -> Result<(), InjectionError> {
     Ok(())
@@ -194,11 +186,6 @@ fn simulate_ctrl_v() -> Result<(), InjectionError> {
 
 #[cfg(not(target_os = "windows"))]
 pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
-    Ok(())
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn simulate_ctrl_c() -> Result<(), InjectionError> {
     Ok(())
 }
 
