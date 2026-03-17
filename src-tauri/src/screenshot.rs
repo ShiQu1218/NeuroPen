@@ -98,7 +98,8 @@ mod windows_capture {
             let crop_w = rect_width(&intersection_rect)?;
             let crop_h = rect_height(&intersection_rect)?;
             let (rgba_pixels, _, _) =
-                capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h)?;
+                capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h)
+                    .or_else(|_| capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h))?;
             let destination_x = u32::try_from(intersection_rect.left - x)
                 .map_err(|_| "Screenshot destination origin is outside the supported range.".to_string())?;
             let destination_y = u32::try_from(intersection_rect.top - y)
@@ -126,7 +127,8 @@ mod windows_capture {
         crop_h: u32,
     ) -> Result<ScreenshotResult, String> {
         let (rgba_pixels, width, height) =
-            capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h)?;
+            capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h)
+                .or_else(|_| capture_monitor_region_rgba(hmonitor, crop_x, crop_y, crop_w, crop_h))?;
         encode_png(rgba_pixels, width, height)
     }
 
@@ -202,7 +204,7 @@ mod windows_capture {
             .map_err(|e| format!("Failed to start monitor capture: {e}"))?;
 
         let (rgba_pixels, width, height) = receiver
-            .recv_timeout(Duration::from_millis(750))
+            .recv_timeout(Duration::from_millis(2000))
             .map_err(|_| "Timed out while waiting for the monitor frame.".to_string())??;
 
         session.Close().ok();

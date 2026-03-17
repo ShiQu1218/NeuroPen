@@ -110,9 +110,9 @@ fn simulate_ctrl_v() -> Result<(), InjectionError> {
     Ok(())
 }
 
-/// Simulate Ctrl+C keystroke via Win32 SendInput.
+/// Send the Ctrl+C key sequence without any sleep. Used by selection.rs.
 #[cfg(target_os = "windows")]
-pub fn simulate_ctrl_c() -> Result<(), InjectionError> {
+pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
         VIRTUAL_KEY,
@@ -172,18 +172,28 @@ pub fn simulate_ctrl_c() -> Result<(), InjectionError> {
         },
     ];
 
-    let sent = unsafe {
-        SendInput(&inputs, std::mem::size_of::<INPUT>() as i32)
-    };
+    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
     if sent != inputs.len() as u32 {
         return Err(InjectionError::Blocked);
     }
+    Ok(())
+}
+
+/// Simulate Ctrl+C keystroke via Win32 SendInput, then wait 150ms (backward compat).
+#[cfg(target_os = "windows")]
+pub fn simulate_ctrl_c() -> Result<(), InjectionError> {
+    simulate_ctrl_c_raw()?;
     std::thread::sleep(std::time::Duration::from_millis(150));
     Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
 fn simulate_ctrl_v() -> Result<(), InjectionError> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
     Ok(())
 }
 
@@ -229,6 +239,8 @@ pub fn inject_text_with_undo(text: &str, record_for_undo: bool) -> Result<(), In
 
 /// Reads selected text from the target window by simulating Ctrl+C.
 /// Assumes clipboard has already been cached.
+/// Polls up to 500ms (every 25ms) for the clipboard to change from the sentinel
+/// instead of using a fixed 150ms sleep.
 pub fn read_selection_via_clipboard() -> Result<String, InjectionError> {
     let _op = clipboard::acquire_op_lock().map_err(InjectionError::ClipboardError)?;
     let now = SystemTime::now()
@@ -237,8 +249,24 @@ pub fn read_selection_via_clipboard() -> Result<String, InjectionError> {
         .unwrap_or_default();
     let sentinel = format!("__NEUROPEN_SELECTION_SENTINEL_{}_{}__", std::process::id(), now);
     clipboard::write_clipboard(&sentinel).map_err(InjectionError::ClipboardError)?;
-    simulate_ctrl_c()?;
-    let text = clipboard::read_clipboard().map_err(InjectionError::ClipboardError)?;
+    simulate_ctrl_c_raw()?;
+
+    // Poll until the clipboard content differs from the sentinel or 500ms elapses.
+    const POLL_INTERVAL_MS: u64 = 25;
+    const MAX_WAIT_MS: u64 = 500;
+    let mut elapsed_ms: u64 = 0;
+    let text = loop {
+        std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
+        elapsed_ms += POLL_INTERVAL_MS;
+        let current = clipboard::read_clipboard().map_err(InjectionError::ClipboardError)?;
+        if current != sentinel {
+            break current;
+        }
+        if elapsed_ms >= MAX_WAIT_MS {
+            break current;
+        }
+    };
+
     if text.trim().is_empty() || text == sentinel {
         return Err(InjectionError::ClipboardError(
             "Cannot safely read the current selection from clipboard".to_string(),

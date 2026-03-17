@@ -84,6 +84,15 @@ All three modes, Output Preview Window, Whisper STT with streaming, OpenAI LLM, 
 
 Local offline LLM, professional vocabulary import, app context awareness (auto-adjust LLM tone by foreground app), habit auto-memory, custom Quick Action presets, keyboard typing prediction, TTS narration, multi-STT model switching.
 
+## OpenSpec Workflow
+
+OpenSpec 是本專案行為的 source of truth。
+
+1. 開始前先讀 `openspec/config.yaml`，再從 `openspec/specs/` 底下尋找相關 spec。
+2. 如果 `openspec/` 目錄不存在，建立它。
+3. 如果這次修改會改變行為，**先更新相關 spec，再改程式碼**。
+4. 完成後說明哪些 requirement 被影響，並驗證修改結果。
+
 ## Note
 
 Codex will review your code again.
