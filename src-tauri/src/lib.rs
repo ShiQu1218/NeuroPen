@@ -15,12 +15,16 @@ mod tts_models;
 mod undo;
 mod window_focus;
 
+use commands::attachment_commands::{
+    load_attachment, load_attachments_from_paths, pick_attachments,
+};
 use commands::history_commands::{
     history_clear, history_delete, history_list, history_save, history_search,
     history_toggle_favorite,
 };
-use commands::attachment_commands::{load_attachment, load_attachments_from_paths, pick_attachments};
-use commands::llm_commands::{call_llm, call_llm_text, call_llm_with_image, call_llm_with_images, clear_conversation};
+use commands::llm_commands::{
+    call_llm, call_llm_text, call_llm_with_image, call_llm_with_images, clear_conversation,
+};
 use commands::media_commands::{
     take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop,
 };
@@ -436,8 +440,42 @@ fn show_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<
     let win = app
         .get_webview_window("settings")
         .ok_or_else(|| "settings window not found".to_string())?;
+    if win.is_minimized().map_err(|e| e.to_string())? {
+        win.unminimize().map_err(|e| e.to_string())?;
+    }
+    win.set_skip_taskbar(false).map_err(|e| e.to_string())?;
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            // Hidden windows can miss their first shell/taskbar activation pass on Windows.
+            std::thread::sleep(std::time::Duration::from_millis(75));
+
+            let app_for_lookup = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                if let Some(win) = app_for_lookup.get_webview_window("settings") {
+                    let _ = win.set_skip_taskbar(false);
+                    if matches!(win.is_minimized(), Ok(true)) {
+                        let _ = win.unminimize();
+                    }
+                    let _ = win.show();
+
+                    if matches!(win.is_focused(), Ok(false)) {
+                        let _ = win.set_focus();
+                        if matches!(win.is_focused(), Ok(false)) {
+                            let _ = win.request_user_attention(Some(
+                                tauri::UserAttentionType::Informational,
+                            ));
+                        }
+                    }
+                }
+            });
+        });
+    }
+
     Ok(())
 }
 
