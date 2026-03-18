@@ -286,7 +286,8 @@ fn build_prompt(
              Preserve the original language unless the instruction explicitly requests translation. \
              If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when the transcript text uses another script or locale. \
              Follow the mode-specific formatting guidance carefully, keep the meaning intact, and do not add commentary or preamble. \
-             If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
+             If mathematical expressions are present, render them in valid KaTeX-compatible LaTeX. \
+             Use inline $...$ by default, and do not use display math unless the user explicitly requests it. \
              Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
         PromptMode::B => format!(
@@ -298,18 +299,20 @@ fn build_prompt(
              Always apply the instruction to the highlighted text. \
              When answering, reply directly and clearly in natural text. \
              Use short paragraphs or lists only when they genuinely help. \
-             If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
+             If mathematical expressions are present, render them in valid KaTeX-compatible LaTeX. \
+             Use inline $...$ by default, and do not use display math unless the user explicitly requests it. \
              Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
         PromptMode::C => format!(
             "You are handling spoken assistant queries for Mode C. \
-             Reply directly and clearly in natural text. \
-             Unless the user explicitly requests translation, answer in the same language as the user's request. \
-             If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when the transcript or quoted content uses another script or locale. \
-             Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, and avoid filler opening lines. \
-             Avoid unnecessary headings for simple answers, but structure longer answers clearly when needed. \
-             If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
-             Never leave equations as plain text without LaTeX delimiters.{language_hint}"
+            Reply directly and clearly in natural text. \
+            Unless the user explicitly requests translation, answer in the same language as the user's request. \
+            If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when the transcript or quoted content uses another script or locale. \
+            Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, and avoid filler opening lines. \
+            Avoid unnecessary headings for simple answers, but structure longer answers clearly when needed. \
+            If mathematical expressions are present, render them in valid KaTeX-compatible LaTeX. \
+            Use inline $...$ by default, and do not use display math unless the user explicitly requests it. \
+            Never leave equations as plain text without LaTeX delimiters.{language_hint}"
         ),
     };
     let system_prompt = merge_prompt_override(system_prompt, prompt_override);
@@ -1684,6 +1687,15 @@ mod tests {
     }
 
     #[test]
+    fn mode_b_prompt_prefers_inline_math_by_default() {
+        let (system_prompt, _) =
+            build_prompt("x^2 + y^2 = z^2", "解釋這個式子", None, Some("B"), None);
+
+        assert!(system_prompt.contains("Use inline $...$ by default"));
+        assert!(!system_prompt.contains("block $$...$$"));
+    }
+
+    #[test]
     fn mode_a_prompt_prioritizes_language_variant_over_transcript_script() {
         let (system_prompt, _) = build_prompt(
             "请帮我整理这段逐字稿",
@@ -1738,10 +1750,10 @@ mod tests {
     }
 
     #[test]
-    fn wraps_plain_equation_line_with_display_latex() {
+    fn wraps_plain_equation_line_with_inline_latex() {
         let input = "x^2 + y^2 = z^2";
         let output = enforce_math_latex_delimiters(input);
-        assert_eq!(output, "$$x^2 + y^2 = z^2$$");
+        assert_eq!(output, "$x^2 + y^2 = z^2$");
     }
 
     #[test]
@@ -1758,7 +1770,7 @@ mod tests {
         let output = normalize_wikipedia_displaystyle_notation(input);
         assert_eq!(
             output,
-            "$$f(n)=\\Theta \\left(n^{\\log _{b}a}\\log ^{\\epsilon }n\\right)$$"
+            "$f(n)=\\Theta \\left(n^{\\log _{b}a}\\log ^{\\epsilon }n\\right)$"
         );
     }
 

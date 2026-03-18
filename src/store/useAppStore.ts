@@ -51,11 +51,17 @@ export type { AppProfileMode } from "./appStoreTypes";
 export { normalizeLlmModelOptions } from "./appStoreDefaults";
 
 const LEGACY_MODE_B_PROMPTS = [
+  "You are handling selected-text commands for Selection Processing. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly and clearly in natural text. Use short paragraphs or lists only when they genuinely help. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
   "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly and clearly in natural text. Use short paragraphs or lists only when they genuinely help. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
   "You are handling selected-text commands for Mode B. If the instruction is a transformation request, output only the transformed text. If the instruction is asking about the selected text, answer directly in clean Markdown with short paragraphs and bullets only when they help. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
 ] as const;
 
+const LEGACY_MODE_A_PROMPTS = [
+  "Rewrite the transcript into a clean final text. Preserve the original meaning and order, improve readability, and use natural paragraphs only when they help. Avoid over-formatting, avoid unnecessary headings, and output only the final text. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
+] as const;
+
 const LEGACY_MODE_C_PROMPTS = [
+  "You are handling spoken assistant queries for Assistant Chat. Reply directly and clearly in natural text. Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, avoid filler opening lines, and avoid unnecessary headings for simple answers. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
   "You are handling spoken assistant queries for Mode C. Reply directly and clearly in natural text. Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, avoid filler opening lines, and avoid unnecessary headings for simple answers. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
   "You are handling spoken assistant queries for Mode C. Reply in clean Markdown like a polished Typeless-style response: short paragraphs, meaningful bullet lists when useful, no filler opening lines, and no unnecessary headings for simple answers. If mathematical expressions are present, format them with LaTeX delimiters: inline `$...$`, block `$$...$$`. Never leave equations as plain text without LaTeX delimiters.",
 ] as const;
@@ -443,6 +449,11 @@ export const useAppStore = create<AppState>()(
       name: "neuropen-settings",
       merge: (persistedState, currentState) => {
         const persisted = (persistedState as Partial<AppState> | undefined) ?? {};
+        const normalizedModeAPrompt = normalizePersistedPrompt(
+          persisted.modeAPrompt,
+          LEGACY_MODE_A_PROMPTS,
+          DEFAULT_MODE_A_PROMPT,
+        );
         const normalizedModeBPrompt = normalizePersistedPrompt(
           persisted.modeBPrompt,
           LEGACY_MODE_B_PROMPTS,
@@ -469,6 +480,7 @@ export const useAppStore = create<AppState>()(
             persisted.preferredLanguage,
             normalizedCustomVariants
           ),
+          modeAPrompt: typeof normalizedModeAPrompt === "string" ? normalizedModeAPrompt : currentState.modeAPrompt,
           modeBPrompt: typeof normalizedModeBPrompt === "string" ? normalizedModeBPrompt : currentState.modeBPrompt,
           modeCPrompt: typeof normalizedModeCPrompt === "string" ? normalizedModeCPrompt : currentState.modeCPrompt,
           llmProvider: nextProvider,

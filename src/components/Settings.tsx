@@ -49,6 +49,11 @@ import {
   normalizePreferredLanguageSelection,
 } from "../utils/languageVariants";
 import { formatAppWorkflowLabels } from "../utils/workflowLabels";
+import {
+  DEFAULT_MODE_A_PROMPT,
+  DEFAULT_MODE_B_PROMPT,
+  DEFAULT_MODE_C_PROMPT,
+} from "../store/appStoreTypes";
 
 type PanelTone = "" | "success" | "error";
 
@@ -79,6 +84,33 @@ interface TtsTextDrafts {
 
 const EMPTY_PANEL_MESSAGE: PanelMessage = { tone: "", message: "" };
 const EMPTY_BUSY_MESSAGE = { type: "" as const, message: "" };
+const DEFAULT_MODE_PROMPTS = {
+  modeAPrompt: DEFAULT_MODE_A_PROMPT,
+  modeBPrompt: DEFAULT_MODE_B_PROMPT,
+  modeCPrompt: DEFAULT_MODE_C_PROMPT,
+} as const;
+type ModePromptDraftKey = keyof typeof DEFAULT_MODE_PROMPTS;
+const MODE_PROMPT_FIELDS: ReadonlyArray<{
+  key: ModePromptDraftKey;
+  labelKey: TranslationKey;
+  placeholderKey: TranslationKey;
+}> = [
+  {
+    key: "modeAPrompt",
+    labelKey: "settings.llm.modeAPrompt",
+    placeholderKey: "settings.llm.modeAPromptPlaceholder",
+  },
+  {
+    key: "modeBPrompt",
+    labelKey: "settings.llm.modeBPrompt",
+    placeholderKey: "settings.llm.modeBPromptPlaceholder",
+  },
+  {
+    key: "modeCPrompt",
+    labelKey: "settings.llm.modeCPrompt",
+    placeholderKey: "settings.llm.modeCPromptPlaceholder",
+  },
+];
 
 const normalizeRuntimeModelCatalog = (models: string[]) =>
   Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
@@ -1291,6 +1323,19 @@ export default function Settings() {
     setPanelMessage("llm", "success", t("settings.status.modePromptSaved"));
   }, [broadcastSettingsSaved, promptDrafts, setModeAPrompt, setModeBPrompt, setModeCPrompt, setPanelMessage, t]);
 
+  const handleResetModePromptDraft = useCallback((key: ModePromptDraftKey) => {
+    setPromptDrafts((prev) => {
+      const nextValue = DEFAULT_MODE_PROMPTS[key];
+      if (prev[key] === nextValue) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [key]: nextValue,
+      };
+    });
+  }, []);
+
   const updateProfiles = useCallback(async (
     nextProfiles: AppProfile[],
     options?: { message?: string; includeCustomVariants?: CustomLanguageVariant[] },
@@ -1865,14 +1910,27 @@ export default function Settings() {
                   <button type="button" onClick={() => void handleSaveModePrompts()} disabled={!llmPromptDirty} className="btn-primary px-4 py-2 text-sm disabled:opacity-40">{t("settings.save")}</button>
                 </div>
                 <div className="mt-3 grid gap-3 xl:grid-cols-3">
-                  {[
-                    ["modeAPrompt", t("settings.llm.modeAPrompt"), t("settings.llm.modeAPromptPlaceholder")],
-                    ["modeBPrompt", t("settings.llm.modeBPrompt"), t("settings.llm.modeBPromptPlaceholder")],
-                    ["modeCPrompt", t("settings.llm.modeCPrompt"), t("settings.llm.modeCPromptPlaceholder")],
-                  ].map(([key, label, placeholder]) => (
-                    <div key={String(key)} className="rounded-[22px] border border-zinc-200 bg-[#fcfbf8] p-4">
-                      <label className="text-xs font-medium text-zinc-500">{label}</label>
-                      <textarea className="input-field mt-1.5 min-h-[180px] w-full px-3 py-2 text-sm leading-6" value={promptDrafts[key as keyof typeof promptDrafts]} onChange={(event) => setPromptDrafts((prev) => ({ ...prev, [key]: event.target.value }))} placeholder={String(placeholder)} />
+                  {MODE_PROMPT_FIELDS.map(({ key, labelKey, placeholderKey }) => (
+                    <div key={key} className="rounded-[22px] border border-zinc-200 bg-[#fcfbf8] p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <label className="text-xs font-medium text-zinc-500">{t(labelKey)}</label>
+                        <button
+                          type="button"
+                          onClick={() => handleResetModePromptDraft(key)}
+                          disabled={promptDrafts[key] === DEFAULT_MODE_PROMPTS[key]}
+                          className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
+                        >
+                          {t("settings.appProfile.resetDefaults")}
+                        </button>
+                      </div>
+                      <textarea
+                        className="input-field mt-1.5 min-h-[180px] w-full px-3 py-2 text-sm leading-6"
+                        value={promptDrafts[key]}
+                        onChange={(event) =>
+                          setPromptDrafts((prev) => ({ ...prev, [key]: event.target.value }))
+                        }
+                        placeholder={t(placeholderKey)}
+                      />
                     </div>
                   ))}
                 </div>

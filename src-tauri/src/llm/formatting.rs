@@ -76,17 +76,9 @@ fn normalize_wikipedia_displaystyle_line(line: &str) -> (String, bool) {
                 cursor = end_exclusive;
                 continue;
             }
-            let suffix = &line[end_exclusive..];
-            let standalone = output.trim().is_empty() && suffix.trim().is_empty();
-            if standalone {
-                output.push_str("$$");
-                output.push_str(inner.trim());
-                output.push_str("$$");
-            } else {
-                output.push('$');
-                output.push_str(inner.trim());
-                output.push('$');
-            }
+            output.push('$');
+            output.push_str(inner.trim());
+            output.push('$');
             changed = true;
             cursor = end_exclusive;
         } else {
@@ -264,7 +256,7 @@ pub(crate) fn enforce_math_latex_delimiters(output: &str) -> String {
         let trimmed_content = content.trim();
         if looks_math_equation_line(trimmed_content) {
             changed = true;
-            lines.push(format!("{prefix}$${trimmed_content}$$"));
+            lines.push(format!("{prefix}${trimmed_content}$"));
             continue;
         }
 
