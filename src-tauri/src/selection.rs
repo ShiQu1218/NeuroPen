@@ -19,6 +19,22 @@ const DRAG_DISTANCE_THRESHOLD_PX: i32 = 3;
 const DOUBLE_CLICK_WINDOW_MS: u64 = 450;
 const DOUBLE_CLICK_POSITION_TOLERANCE_PX: i32 = 4;
 const POLL_INTERVAL_MS: u64 = 25;
+const UIA_SELECTION_SEARCH_DEPTH: usize = 16;
+
+fn combine_selection_fragments<'a>(fragments: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let combined = fragments.into_iter().fold(String::new(), |mut acc, fragment| {
+        if !fragment.is_empty() {
+            acc.push_str(fragment);
+        }
+        acc
+    });
+
+    if combined.trim().is_empty() {
+        None
+    } else {
+        Some(combined)
+    }
+}
 
 fn classify_release_gesture(
     just_released: bool,
@@ -76,9 +92,119 @@ pub enum SelectionResult {
 /// Never panics; always returns a `SelectionResult`.
 #[cfg(target_os = "windows")]
 pub fn get_selected_text() -> SelectionResult {
+    use windows::Win32::Foundation::POINT;
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
     use windows::Win32::UI::Accessibility::*;
     use windows::core::Interface;
+
+    unsafe fn selection_from_text_range_array(
+        selection: &IUIAutomationTextRangeArray,
+    ) -> SelectionResult {
+        let count = match selection.Length() {
+            Ok(n) => n,
+            Err(_) => return SelectionResult::None,
+        };
+
+        if count == 0 {
+            return SelectionResult::None;
+        }
+
+        let mut fragments = Vec::new();
+        for index in 0..count {
+            let range: IUIAutomationTextRange = match selection.GetElement(index) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let fragment = match range.GetText(-1) {
+                Ok(t) => t.to_string(),
+                Err(_) => continue,
+            };
+            if fragment.is_empty() {
+                continue;
+            }
+            fragments.push(fragment);
+        }
+
+        match combine_selection_fragments(fragments.iter().map(String::as_str)) {
+            Some(text) => SelectionResult::Selected(text),
+            None => SelectionResult::None,
+        }
+    }
+
+    unsafe fn selection_from_pattern(pattern: &windows::core::IUnknown) -> SelectionResult {
+        if let Ok(text_pattern) = pattern.cast::<IUIAutomationTextPattern>() {
+            return match text_pattern.GetSelection() {
+                Ok(selection) => selection_from_text_range_array(&selection),
+                Err(_) => SelectionResult::None,
+            };
+        }
+
+        if let Ok(text_pattern2) = pattern.cast::<IUIAutomationTextPattern2>() {
+            let base_pattern: IUIAutomationTextPattern = match text_pattern2.cast() {
+                Ok(pattern) => pattern,
+                Err(_) => return SelectionResult::Unavailable,
+            };
+            return match base_pattern.GetSelection() {
+                Ok(selection) => selection_from_text_range_array(&selection),
+                Err(_) => SelectionResult::None,
+            };
+        }
+
+        SelectionResult::Unavailable
+    }
+
+    unsafe fn selection_from_element(element: &IUIAutomationElement) -> SelectionResult {
+        for pattern_id in [UIA_TextPatternId, UIA_TextPattern2Id] {
+            let pattern = match element.GetCurrentPattern(pattern_id) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            let result = selection_from_pattern(&pattern);
+            if !matches!(result, SelectionResult::Unavailable) {
+                return result;
+            }
+        }
+
+        SelectionResult::Unavailable
+    }
+
+    unsafe fn selection_from_element_chain(
+        automation: &IUIAutomation,
+        start: &IUIAutomationElement,
+    ) -> SelectionResult {
+        let walker = match automation.RawViewWalker() {
+            Ok(w) => w,
+            Err(_) => return SelectionResult::Unavailable,
+        };
+
+        let mut current = Some(start.clone());
+        let mut depth = 0usize;
+        let mut saw_text_container = false;
+
+        while let Some(element) = current {
+            match selection_from_element(&element) {
+                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
+                SelectionResult::None => saw_text_container = true,
+                SelectionResult::Unavailable => {}
+            }
+
+            depth += 1;
+            if depth >= UIA_SELECTION_SEARCH_DEPTH {
+                break;
+            }
+
+            current = match walker.GetParentElement(&element) {
+                Ok(parent) => Some(parent),
+                Err(_) => None,
+            };
+        }
+
+        if saw_text_container {
+            SelectionResult::None
+        } else {
+            SelectionResult::Unavailable
+        }
+    }
 
     unsafe {
         // Create the UI Automation COM object
@@ -89,55 +215,32 @@ pub fn get_selected_text() -> SelectionResult {
             Err(_) => return SelectionResult::Unavailable,
         };
 
-        // Get the focused element
-        let focused: IUIAutomationElement = match automation.GetFocusedElement() {
-            Ok(el) => el,
-            Err(_) => return SelectionResult::Unavailable,
-        };
+        let mut saw_text_container = false;
 
-        // Try to get the Text pattern from the element
-        let pattern_id = UIA_TextPatternId;
-        let pattern: windows::core::IUnknown = match focused.GetCurrentPattern(pattern_id) {
-            Ok(p) => p,
-            Err(_) => return SelectionResult::Unavailable,
-        };
-
-        let text_pattern: IUIAutomationTextPattern = match pattern.cast() {
-            Ok(tp) => tp,
-            Err(_) => return SelectionResult::Unavailable,
-        };
-
-        // Get the selected text ranges
-        let selection: IUIAutomationTextRangeArray = match text_pattern.GetSelection() {
-            Ok(s) => s,
-            Err(_) => return SelectionResult::Unavailable,
-        };
-
-        let count = match selection.Length() {
-            Ok(n) => n,
-            Err(_) => return SelectionResult::None,
-        };
-
-        if count == 0 {
-            return SelectionResult::None;
+        if let Ok(focused) = automation.GetFocusedElement() {
+            match selection_from_element_chain(&automation, &focused) {
+                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
+                SelectionResult::None => saw_text_container = true,
+                SelectionResult::Unavailable => {}
+            }
         }
 
-        // Read the first selection range
-        let range: IUIAutomationTextRange = match selection.GetElement(0) {
-            Ok(r) => r,
-            Err(_) => return SelectionResult::None,
-        };
+        let (cursor_x, cursor_y) = get_cursor_pos();
+        if let Ok(hovered) = automation.ElementFromPoint(POINT {
+            x: cursor_x,
+            y: cursor_y,
+        }) {
+            match selection_from_element_chain(&automation, &hovered) {
+                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
+                SelectionResult::None => saw_text_container = true,
+                SelectionResult::Unavailable => {}
+            }
+        }
 
-        let bstr = match range.GetText(-1) {
-            Ok(t) => t,
-            Err(_) => return SelectionResult::None,
-        };
-        let text = bstr.to_string();
-
-        if text.is_empty() {
+        if saw_text_container {
             SelectionResult::None
         } else {
-            SelectionResult::Selected(text)
+            SelectionResult::Unavailable
         }
     }
 }
@@ -311,6 +414,12 @@ pub fn start_selection_watcher(_app: tauri::AppHandle) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selection_result_keeps_non_empty_later_fragments() {
+        let combined = combine_selection_fragments(["", "selected text", ""]);
+        assert_eq!(combined.as_deref(), Some("selected text"));
+    }
 
     #[test]
     fn classify_release_gesture_detects_drag() {
