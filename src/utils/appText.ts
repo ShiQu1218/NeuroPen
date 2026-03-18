@@ -33,6 +33,39 @@ const SENTENCE_BOUNDARY_RE = /([.!?;。！？؛；]+)\s*/g;
 const CLAUSE_BOUNDARY_RE = /([,;:，、：؛；])\s*/g;
 const LIST_PREFIX_RE = /^(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+)/;
 
+/**
+ * Apply a regex replacement only to text segments that lie **outside** of
+ * `$…$` and `$$…$$` math spans.  Math spans are returned unchanged.
+ *
+ * This prevents text-formatting heuristics (list-prefix insertion, sentence
+ * breaking, etc.) from corrupting LaTeX expressions that happen to contain
+ * characters like `- `, `!`, or `;`.
+ */
+const replaceOutsideMath = (
+  text: string,
+  pattern: RegExp,
+  replacement: string,
+): string => {
+  const mathRe = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g;
+  const parts: string[] = [];
+  let cursor = 0;
+  let m: RegExpExecArray | null;
+
+  while ((m = mathRe.exec(text)) !== null) {
+    if (m.index > cursor) {
+      parts.push(text.slice(cursor, m.index).replace(pattern, replacement));
+    }
+    parts.push(m[0]); // math span — unchanged
+    cursor = m.index + m[0].length;
+  }
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor).replace(pattern, replacement));
+  }
+
+  return parts.join("");
+};
+
 const buildParagraphs = (
   parts: string[],
   options: { maxParts: number; maxChars: number }
@@ -91,9 +124,8 @@ export const formatModeAText = (text: string) => {
     .replace(/\n[ \t]+/g, "\n")
     .replace(/[ \t]{2,}/g, " ");
 
-  result = result
-    .replace(/([^\n])((?:\(?\d{1,3}[.)]\s+))/g, "$1\n$2")
-    .replace(/([^\n])((?:[-*+•]\s+))/g, "$1\n$2");
+  result = replaceOutsideMath(result, /([^\n])((?:\(?\d{1,3}[.)]\s+))/g, "$1\n$2");
+  result = replaceOutsideMath(result, /([^\n])((?:[-*+•]\s+))/g, "$1\n$2");
 
   const sentenceParts = result
     .replace(SENTENCE_BOUNDARY_RE, "$1\n")
@@ -217,19 +249,100 @@ export const looksLikeMathMarkdown = (text: string) =>
     text,
   );
 
+/**
+ * Normalise math blocks for remark-math compatibility.  Two problems are addressed:
+ *
+ * 1. **Single-line `$$…$$` display math.**
+ *    `remark-math` (via `micromark-extension-math`) treats `$$` at line start as the
+ *    opening fence of a display-math block and expects the closing `$$` on a *separate*
+ *    line.  When an LLM produces `$$formula$$` on one line — especially indented inside
+ *    list items — the parser sees the first `$$` as opening a block, keeps consuming
+ *    subsequent content as raw math text, and breaks numbered-list markers.
+ *
+ * 2. **Standalone `$…$` on its own line.**
+ *    When consecutive lines each contain a single `$…$` block, markdown collapses
+ *    them into one paragraph (single newlines become spaces).  Adjacent inline-math
+ *    blocks inside the same paragraph can cause remark-math to fail on the second
+ *    block onward.  Promoting standalone `$…$` to display math (`$$`) avoids the
+ *    collapse and gives proper block-level rendering.
+ *
+ * In both cases the output is multi-line `$$\ncontent\n$$` with preserved indentation
+ * and surrounding blank lines for clean block separation.  Code-fenced regions are
+ * left untouched.
+ */
+export const normalizeMathBlocks = (text: string): string => {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let inCodeFence = false;
+  const result: string[] = [];
+
+  const pushDisplayBlock = (indent: string, content: string) => {
+    // Blank line before the block when the preceding line is non-blank.
+    if (result.length > 0 && result[result.length - 1].trim() !== "") {
+      result.push("");
+    }
+    result.push(`${indent}$$`);
+    result.push(`${indent}${content}`);
+    result.push(`${indent}$$`);
+    result.push(""); // blank line after
+  };
+
+  for (const line of lines) {
+    if (line.trimStart().startsWith("```")) {
+      inCodeFence = !inCodeFence;
+      result.push(line);
+      continue;
+    }
+    if (inCodeFence) {
+      result.push(line);
+      continue;
+    }
+
+    // Case 1: Single-line $$...$$ display math → multi-line format.
+    // The non-greedy `.+?` avoids false matches on lines like `$$a$$ text $$b$$`.
+    const matchDouble = line.match(/^([ \t]*)\$\$(.+?)\$\$[ \t]*$/);
+    if (matchDouble) {
+      pushDisplayBlock(matchDouble[1], matchDouble[2].trim());
+      continue;
+    }
+
+    // Case 2: Standalone $...$ inline math (sole content on the line) → promote to
+    // display math.  `[^$]+` ensures we only match a single $…$ pair and avoids
+    // matching `$$` or lines with multiple inline-math blocks.
+    const matchSingle = line.match(/^([ \t]*)\$([^$]+)\$[ \t]*$/);
+    if (matchSingle) {
+      pushDisplayBlock(matchSingle[1], matchSingle[2].trim());
+      continue;
+    }
+
+    result.push(line);
+  }
+
+  return result.join("\n").replace(/\n{3,}/g, "\n\n");
+};
+
 export const normalizePreviewMarkdown = (text: string) => {
   const normalized = text.replace(/\r\n?/g, "\n").trim();
   if (!normalized) return "";
 
-  let result = normalized
-    .replace(/([^\n])((?:\(?\d{1,3}[.)]\s+))/g, "$1\n\n$2")
-    .replace(/([^\n])((?:[-*+•]\s+))/g, "$1\n\n$2")
-    .replace(/\n{3,}/g, "\n\n");
+  // Use replaceOutsideMath so that list-prefix heuristics never insert line
+  // breaks inside $…$ or $$…$$ math spans (e.g. `- ` as subtraction, `1.` as
+  // a decimal, etc.).
+  let result = replaceOutsideMath(
+    normalized,
+    /([^\n])((?:\(?\d{1,3}[.)]\s+))/g,
+    "$1\n\n$2",
+  );
+  result = replaceOutsideMath(
+    result,
+    /([^\n])((?:[-*+•]\s+))/g,
+    "$1\n\n$2",
+  );
+  result = result.replace(/\n{3,}/g, "\n\n");
 
   if (!looksLikeMarkdown(result)) {
     const sentenceBreakCount = (result.match(/[.!?;。！？；]/g) ?? []).length;
     if (!result.includes("\n\n") && sentenceBreakCount >= 2) {
-      result = result.replace(/([.!?;。！？；])\s*/g, "$1\n\n");
+      result = replaceOutsideMath(result, /([.!?;。！？；])\s*/g, "$1\n\n");
     }
   }
 

@@ -7,6 +7,7 @@ import {
   looksLikeGfmMarkdown,
   looksLikeMarkdown,
   looksLikeMathMarkdown,
+  normalizeMathBlocks,
   normalizePreviewMarkdown,
   normalizeStructuredText,
 } from "../../utils/appText";
@@ -132,7 +133,7 @@ export default function PreviewWindowBody({
       : attachments.length > 0
         ? t("preview.askAboutAttachment")
         : t("preview.refinementPlaceholder");
-  const renderedOutput =
+  const rawOutput =
     isModeALlmPreview
       ? normalizeStructuredText(llmOutput)
       : isModeAPreview
@@ -140,7 +141,12 @@ export default function PreviewWindowBody({
       : isModeCPreview
         ? normalizePreviewMarkdown(llmOutput)
         : llmOutput;
-  const usesMathMarkdown = looksLikeMathMarkdown(renderedOutput);
+  // When the output contains math markdown, normalise single-line $$...$$ blocks into
+  // multi-line format so that remark-math can parse them correctly.  Without this,
+  // indented $$formula$$ (e.g. inside list items) causes remark-math to consume
+  // subsequent list markers as raw math text, hiding numbered lists and breaking LaTeX.
+  const usesMathMarkdown = looksLikeMathMarkdown(rawOutput);
+  const renderedOutput = usesMathMarkdown ? normalizeMathBlocks(rawOutput) : rawOutput;
   const usesGfmMarkdown = looksLikeGfmMarkdown(renderedOutput);
   const usesMarkdown = usesMathMarkdown || looksLikeMarkdown(renderedOutput);
 
