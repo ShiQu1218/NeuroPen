@@ -327,6 +327,10 @@ export const normalizePreviewMarkdown = (text: string) => {
   // Use replaceOutsideMath so that list-prefix heuristics never insert line
   // breaks inside $…$ or $$…$$ math spans (e.g. `- ` as subtraction, `1.` as
   // a decimal, etc.).
+
+  // --- Inline list-prefix separation ---
+  // When a list prefix immediately follows text on the same line (no newline),
+  // insert a blank line so markdown sees a proper block boundary.
   let result = replaceOutsideMath(
     normalized,
     /([^\n])((?:\(?\d{1,3}[.)]\s+))/g,
@@ -337,6 +341,33 @@ export const normalizePreviewMarkdown = (text: string) => {
     /([^\n])((?:[-*+•]\s+))/g,
     "$1\n\n$2",
   );
+
+  // --- Single-newline list-prefix separation ---
+  // When a list item follows non-list text with only a single newline,
+  // markdown treats it as a lazy continuation line (CommonMark §5.4) instead
+  // of a new list block.  Upgrade the single newline to a blank line so the
+  // parser sees a proper paragraph → list transition.
+  result = replaceOutsideMath(
+    result,
+    /([^\n])\n(\(?\d{1,3}[.)]\s+)/g,
+    "$1\n\n$2",
+  );
+  result = replaceOutsideMath(
+    result,
+    /([^\n])\n([-*+•]\s+)/g,
+    "$1\n\n$2",
+  );
+
+  // --- Post-list paragraph separation ---
+  // When non-list text follows the last list item with only a single newline,
+  // insert a blank line so markdown ends the list before the next paragraph.
+  // Matches: end-of-list-item-line \n non-list-non-blank-text.
+  result = replaceOutsideMath(
+    result,
+    /(\n(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+)[^\n]+)\n(?!\n)(?!\(?\d{1,3}[.)]\s)(?![-*+•]\s)(?!#{1,6}\s)(?!```)/g,
+    "$1\n\n",
+  );
+
   result = result.replace(/\n{3,}/g, "\n\n");
 
   if (!looksLikeMarkdown(result)) {

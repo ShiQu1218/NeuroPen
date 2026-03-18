@@ -121,9 +121,6 @@ export default function PreviewWindowBody({
   } | null>(null);
   const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
   const isModeALlmPreview = isModeAPreview && !!previewSession?.instruction.trim();
-  const isModeCPreview =
-    (previewSession?.type === "text" && previewSession.sourceMode === "C") ||
-    previewSession?.type === "screenshot";
   const hasImageAttachment = attachments.some((attachment) => attachment.kind === "image");
   const refinementPlaceholder =
     hasImageAttachment
@@ -133,14 +130,17 @@ export default function PreviewWindowBody({
       : attachments.length > 0
         ? t("preview.askAboutAttachment")
         : t("preview.refinementPlaceholder");
+  // Mode A (voice input without instruction) → formatModeAText
+  // Mode A with LLM instruction → normalizeStructuredText
+  // Mode B (selection processing) → normalizePreviewMarkdown (ensures proper
+  //   paragraph/list separation and math-safe formatting for LLM output)
+  // Mode C (assistant chat) / screenshot → normalizePreviewMarkdown
   const rawOutput =
     isModeALlmPreview
       ? normalizeStructuredText(llmOutput)
       : isModeAPreview
       ? formatModeAText(llmOutput)
-      : isModeCPreview
-        ? normalizePreviewMarkdown(llmOutput)
-        : llmOutput;
+      : normalizePreviewMarkdown(llmOutput);
   // When the output contains math markdown, normalise single-line $$...$$ blocks into
   // multi-line format so that remark-math can parse them correctly.  Without this,
   // indented $$formula$$ (e.g. inside list items) causes remark-math to consume

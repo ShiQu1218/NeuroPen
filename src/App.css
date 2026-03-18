@@ -234,6 +234,15 @@ body {
   margin: 0.45em 0;
 }
 
+/* Tailwind Preflight resets list-style to none — restore it for markdown output. */
+.preview-markdown ul {
+  list-style-type: disc;
+}
+
+.preview-markdown ol {
+  list-style-type: decimal;
+}
+
 .preview-markdown li {
   margin: 0.22em 0;
 }
