@@ -9,10 +9,16 @@ import {
   type AppLanguage,
   type AppProfile,
   type CustomLanguageVariant,
+  type LlmProvider,
   type PreferredLanguage,
   type QuickActionCommand,
   type TranslationTarget,
 } from "../store/useAppStore";
+import {
+  getDefaultLlmModel,
+  getDefaultLlmModelOptions,
+  isLocalRuntimeLlmProvider,
+} from "../store/appStoreDefaults";
 import SettingsHistorySection from "./settings/SettingsHistorySection";
 import SettingsQuickActionSection from "./settings/SettingsQuickActionSection";
 import SettingsShortcutsSection from "./settings/SettingsShortcutsSection";
@@ -73,6 +79,9 @@ interface TtsTextDrafts {
 
 const EMPTY_PANEL_MESSAGE: PanelMessage = { tone: "", message: "" };
 const EMPTY_BUSY_MESSAGE = { type: "" as const, message: "" };
+
+const normalizeRuntimeModelCatalog = (models: string[]) =>
+  Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
 
 const SECTION_LABEL_KEYS: Record<SettingsSection, TranslationKey> = {
   general: "settings.section.general",
@@ -229,6 +238,7 @@ export default function Settings() {
     wakeWord,
     vocabularyTerms: vocabularyTerms.join("\n"),
   });
+  const [llmModelsLoading, setLlmModelsLoading] = useState(false);
   const [llmModelDraft, setLlmModelDraft] = useState(llmModel);
   const [quickActionDraftCommands, setQuickActionDraftCommands] = useState<QuickActionCommand[]>(quickActionCommands);
   const [ttsTextDrafts, setTtsTextDrafts] = useState<TtsTextDrafts>({
@@ -239,6 +249,7 @@ export default function Settings() {
   const [activeProfileOverlayId, setActiveProfileOverlayId] = useState<string | null>(null);
   const [languageVariantOverlay, setLanguageVariantOverlay] = useState<{ scope: "global" | "profile"; profileId?: string } | null>(null);
 
+  const initialLocalLlmCatalogSyncedRef = useRef(false);
   const statusTimersRef = useRef<Record<string, ReturnType<typeof setTimeout> | undefined>>({});
   const sectionMeta = useMemo(
     () =>
@@ -266,6 +277,61 @@ export default function Settings() {
   const broadcastSettingsSaved = useCallback(async (payload: Record<string, unknown>) => {
     await emit("neuropen://settings-saved", payload);
   }, []);
+
+  const applyResolvedLlmProviderState = useCallback(async (
+    provider: LlmProvider,
+    nextModel: string,
+    nextOptions: string[],
+  ) => {
+    setLlmProvider(provider);
+    setLlmModel(nextModel);
+    setLlmModelOptions(nextOptions);
+    setLlmModelDraft(nextModel);
+    await broadcastSettingsSaved({
+      llmProvider: provider,
+      llmModel: nextModel,
+      llmModelOptions: nextOptions,
+    });
+  }, [broadcastSettingsSaved, setLlmModel, setLlmModelOptions, setLlmProvider]);
+
+  const resolveProviderModelState = useCallback(async (
+    provider: LlmProvider,
+    preferredModel?: string,
+  ) => {
+    if (isLocalRuntimeLlmProvider(provider)) {
+      const fallbackModel = getDefaultLlmModel(provider);
+      const fallbackOptions = normalizeRuntimeModelCatalog([fallbackModel]);
+      setLlmModelsLoading(true);
+      try {
+        const discoveredModels = normalizeRuntimeModelCatalog(
+          await settingsService.listAvailableLlmModels(provider)
+        );
+        const nextOptions = discoveredModels.length > 0 ? discoveredModels : fallbackOptions;
+        const trimmedPreferredModel = preferredModel?.trim() ?? "";
+        const nextModel =
+          trimmedPreferredModel && nextOptions.includes(trimmedPreferredModel)
+            ? trimmedPreferredModel
+            : nextOptions[0] ?? fallbackModel;
+        return { nextModel, nextOptions };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        setPanelMessage("llm", "error", reason || t("settings.saveError"));
+        return {
+          nextModel: fallbackModel,
+          nextOptions: fallbackOptions,
+        };
+      } finally {
+        setLlmModelsLoading(false);
+      }
+    }
+
+    const nextModel = preferredModel?.trim() || getDefaultLlmModel(provider);
+    const nextOptions = normalizeLlmModelOptions(
+      getDefaultLlmModelOptions(provider),
+      nextModel,
+    );
+    return { nextModel, nextOptions };
+  }, [setPanelMessage, t]);
 
   const formatBytes = useCallback((bytes?: number) => {
     if (!bytes || bytes <= 0) {
@@ -311,6 +377,7 @@ export default function Settings() {
     promptDrafts.modeAPrompt !== modeAPrompt ||
     promptDrafts.modeBPrompt !== modeBPrompt ||
     promptDrafts.modeCPrompt !== modeCPrompt;
+  const localLlmProviderSelected = isLocalRuntimeLlmProvider(llmProvider);
 
   const wakeWordDirty = sttTextDrafts.wakeWord !== wakeWord;
   const vocabularyDirty = sttTextDrafts.vocabularyTerms !== vocabularyTerms.join("\n");
@@ -440,6 +507,36 @@ export default function Settings() {
   useEffect(() => {
     setLlmModelDraft(llmModel);
   }, [llmModel]);
+
+  useEffect(() => {
+    if (initialLocalLlmCatalogSyncedRef.current) {
+      return;
+    }
+    initialLocalLlmCatalogSyncedRef.current = true;
+    if (!isLocalRuntimeLlmProvider(llmProvider)) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const { nextModel, nextOptions } = await resolveProviderModelState(llmProvider, llmModel);
+      if (cancelled) {
+        return;
+      }
+      if (
+        nextModel === llmModel &&
+        nextOptions.length === llmModelOptions.length &&
+        nextOptions.every((modelOption, index) => modelOption === llmModelOptions[index])
+      ) {
+        return;
+      }
+      await applyResolvedLlmProviderState(llmProvider, nextModel, nextOptions);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyResolvedLlmProviderState, llmModel, llmModelOptions, llmProvider, resolveProviderModelState]);
 
   useEffect(() => {
     setQuickActionDraftCommands(quickActionCommands);
@@ -927,9 +1024,9 @@ export default function Settings() {
   }, [setPanelMessage, sttTextDrafts.vocabularyTerms, t]);
 
   const handleLlmProviderChange = useCallback(async (value: typeof llmProvider) => {
-    setLlmProvider(value);
-    await broadcastSettingsSaved({ llmProvider: value });
-  }, [broadcastSettingsSaved, setLlmProvider]);
+    const { nextModel, nextOptions } = await resolveProviderModelState(value);
+    await applyResolvedLlmProviderState(value, nextModel, nextOptions);
+  }, [applyResolvedLlmProviderState, resolveProviderModelState]);
 
   const localLlmProviderNoKeyHint =
     llmProvider === "ollama"
@@ -951,6 +1048,9 @@ export default function Settings() {
   }, [broadcastSettingsSaved, llmModelOptions, setLlmModel]);
 
   const handleAddLlmModelOption = useCallback(async () => {
+    if (localLlmProviderSelected) {
+      return;
+    }
     const nextValue = llmModelDraft.trim();
     if (!nextValue) {
       return;
@@ -961,9 +1061,12 @@ export default function Settings() {
     setLlmModelDraft(nextValue);
     await broadcastSettingsSaved({ llmModelOptions: nextOptions, llmModel: nextValue });
     setPanelMessage("llm", "success", t("settings.saveApplied"));
-  }, [broadcastSettingsSaved, llmModelDraft, llmModelOptions, setLlmModel, setLlmModelOptions, setPanelMessage, t]);
+  }, [broadcastSettingsSaved, llmModelDraft, llmModelOptions, localLlmProviderSelected, setLlmModel, setLlmModelOptions, setPanelMessage, t]);
 
   const handleDeleteLlmModelOption = useCallback(async (modelToDelete: string) => {
+    if (localLlmProviderSelected) {
+      return;
+    }
     const remainingModels = llmModelOptions.filter((model) => model !== modelToDelete);
     const fallbackModel = remainingModels[0] ?? llmModel;
     const nextOptions = normalizeLlmModelOptions(remainingModels, fallbackModel);
@@ -976,7 +1079,7 @@ export default function Settings() {
       llmModel: llmModel === modelToDelete ? fallbackModel.trim() || llmModel : llmModel,
       llmModelOptions: nextOptions,
     });
-  }, [broadcastSettingsSaved, llmModel, llmModelOptions, setLlmModel, setLlmModelDraft, setLlmModelOptions]);
+  }, [broadcastSettingsSaved, llmModel, llmModelOptions, localLlmProviderSelected, setLlmModel, setLlmModelDraft, setLlmModelOptions]);
 
   const handleOutputModeChange = useCallback(async (value: typeof outputMode) => {
     setOutputMode(value);
@@ -1687,31 +1790,40 @@ export default function Settings() {
                         <label className="text-xs font-medium text-zinc-500">{t("settings.llm.model")}</label>
                         <SettingsInfoHint text={t("settings.llm.modelHint")} />
                       </div>
-                      <select className="settings-input-compact mt-1.5 font-mono" value={llmModel} onChange={(event) => void handleLlmModelChange(event.target.value)}>
+                      <select
+                        className="settings-input-compact mt-1.5 font-mono"
+                        value={llmModel}
+                        onChange={(event) => void handleLlmModelChange(event.target.value)}
+                        disabled={llmModelsLoading}
+                      >
                         {llmModelOptions.map((model) => (
                           <option key={model} value={model}>{model}</option>
                         ))}
                       </select>
-                      <input
-                        className="settings-input-compact mt-2 font-mono"
-                        value={llmModelDraft}
-                        onChange={(event) => setLlmModelDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && llmModelDraftDirty) {
-                            event.preventDefault();
-                            void handleAddLlmModelOption();
-                          }
-                        }}
-                        placeholder="gpt-4o-mini / qwen-plus / deepseek-chat"
-                      />
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <button type="button" onClick={() => void handleAddLlmModelOption()} disabled={!llmModelDraftDirty} className="btn-secondary px-3 py-2 text-xs disabled:opacity-40">{t("settings.llm.modelAdd")}</button>
-                        {llmModelOptions.map((model) => (
-                          <button key={model} type="button" onClick={() => void handleDeleteLlmModelOption(model)} className="rounded-full bg-white px-2.5 py-1 text-[11px] text-zinc-700 hover:bg-red-100 hover:text-red-700">
-                            {model} ×
-                          </button>
-                        ))}
-                      </div>
+                      {!localLlmProviderSelected && (
+                        <>
+                          <input
+                            className="settings-input-compact mt-2 font-mono"
+                            value={llmModelDraft}
+                            onChange={(event) => setLlmModelDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" && llmModelDraftDirty) {
+                                event.preventDefault();
+                                void handleAddLlmModelOption();
+                              }
+                            }}
+                            placeholder="gpt-4o-mini / qwen-plus / deepseek-chat"
+                          />
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <button type="button" onClick={() => void handleAddLlmModelOption()} disabled={!llmModelDraftDirty} className="btn-secondary px-3 py-2 text-xs disabled:opacity-40">{t("settings.llm.modelAdd")}</button>
+                            {llmModelOptions.map((model) => (
+                              <button key={model} type="button" onClick={() => void handleDeleteLlmModelOption(model)} className="rounded-full bg-white px-2.5 py-1 text-[11px] text-zinc-700 hover:bg-red-100 hover:text-red-700">
+                                {model} ×
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="space-y-3">

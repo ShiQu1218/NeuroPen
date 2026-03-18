@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { LocalSttModel, LocalTtsModel, RegisteredHotkeys } from "../components/settings/settingsShared";
-import type { SttLanguage } from "../store/useAppStore";
+import type { LlmProvider, SttLanguage } from "../store/useAppStore";
 
 export interface SttCapabilities {
   openAiAvailable: boolean;
@@ -40,6 +40,7 @@ const SETTINGS_COMMANDS = {
   cancelLocalTtsDownload: "cancel_local_tts_download",
   deleteLocalTtsModel: "delete_local_tts_model",
   selectLocalTtsModel: "select_local_tts_model",
+  listAvailableLlmModels: "list_available_llm_models",
 } as const;
 
 export const settingsService = {
@@ -74,4 +75,6 @@ export const settingsService = {
   cancelLocalTtsDownload: () => invoke<void>(SETTINGS_COMMANDS.cancelLocalTtsDownload),
   deleteLocalTtsModel: (modelId: string) => invoke<void>(SETTINGS_COMMANDS.deleteLocalTtsModel, { modelId }),
   selectLocalTtsModel: (modelId: string) => invoke<string>(SETTINGS_COMMANDS.selectLocalTtsModel, { modelId }),
+  listAvailableLlmModels: (provider: LlmProvider) =>
+    invoke<string[]>(SETTINGS_COMMANDS.listAvailableLlmModels, { provider }),
 };

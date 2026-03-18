@@ -158,6 +158,12 @@ pub async fn call_llm_with_images(
 }
 
 #[tauri::command]
+pub async fn list_available_llm_models(provider: llm::LlmProvider) -> Result<Vec<String>, String> {
+    let api_key = llm_api_key_for_provider(&provider)?;
+    llm::list_available_models(&provider, &api_key).await
+}
+
+#[tauri::command]
 pub fn clear_conversation() {
     llm::clear_conversation();
 }

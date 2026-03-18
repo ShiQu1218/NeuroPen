@@ -1,4 +1,4 @@
-import type { AppProfile, QuickActionCommand } from "./appStoreTypes";
+import type { AppProfile, LlmProvider, QuickActionCommand } from "./appStoreTypes";
 
 export const normalizeLlmModelOptions = (models: string[], activeModel?: string) =>
   Array.from(
@@ -79,14 +79,26 @@ export const DEFAULT_APP_PROFILES: AppProfile[] = [
   },
 ];
 
-export const DEFAULT_LLM_MODEL_OPTIONS = [
-  "gpt-4o-mini",
-  "gpt-4.1-mini",
-  "claude-3-5-sonnet-latest",
-  "gemini-2.5-flash",
-  "deepseek-chat",
-  "qwen-plus",
-  "llama3.2",
-  "Llama-3.2-3B-Instruct-Q4_K_M",
-  "local-model",
-];
+export const DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER: Record<LlmProvider, string[]> = {
+  openAi: ["gpt-4o-mini", "gpt-4.1-mini"],
+  gemini: ["gemini-2.5-flash"],
+  claude: ["claude-3-5-sonnet-latest"],
+  grok: ["grok-2-latest"],
+  qwen: ["qwen-plus"],
+  doubao: ["doubao-seed-1-6-250615"],
+  deepseek: ["deepseek-chat"],
+  ollama: ["llama3.2"],
+  llamaCpp: ["Llama-3.2-3B-Instruct-Q4_K_M"],
+  lmStudio: ["local-model"],
+};
+
+export const getDefaultLlmModelOptions = (provider: LlmProvider) =>
+  [...(DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER[provider] ?? DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER.openAi)];
+
+export const getDefaultLlmModel = (provider: LlmProvider) =>
+  getDefaultLlmModelOptions(provider)[0] ?? "gpt-4o-mini";
+
+export const isLocalRuntimeLlmProvider = (provider: LlmProvider) =>
+  provider === "ollama" || provider === "llamaCpp" || provider === "lmStudio";
+
+export const DEFAULT_LLM_MODEL_OPTIONS = getDefaultLlmModelOptions("openAi");

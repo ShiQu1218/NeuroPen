@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   DEFAULT_APP_PROFILES,
-  DEFAULT_LLM_MODEL_OPTIONS,
+  getDefaultLlmModel,
+  getDefaultLlmModelOptions,
   DEFAULT_QUICK_ACTION_COMMANDS,
   normalizeLlmModelOptions,
 } from "./appStoreDefaults";
@@ -265,8 +266,11 @@ export const useAppStore = create<AppState>()(
       sttModelPath: "",
       outputMode: "PreviewStream",
       llmProvider: "openAi",
-      llmModel: "gpt-4o-mini",
-      llmModelOptions: normalizeLlmModelOptions(DEFAULT_LLM_MODEL_OPTIONS, "gpt-4o-mini"),
+      llmModel: getDefaultLlmModel("openAi"),
+      llmModelOptions: normalizeLlmModelOptions(
+        getDefaultLlmModelOptions("openAi"),
+        getDefaultLlmModel("openAi")
+      ),
       incognito: false,
       sttEnabled: true,
       selectionEnabled: true,
@@ -449,10 +453,14 @@ export const useAppStore = create<AppState>()(
           LEGACY_MODE_C_PROMPTS,
           DEFAULT_MODE_C_PROMPT,
         );
+        const nextProvider =
+          typeof persisted.llmProvider === "string"
+            ? persisted.llmProvider
+            : currentState.llmProvider;
         const nextModel =
           typeof persisted.llmModel === "string" && persisted.llmModel.trim()
             ? persisted.llmModel.trim()
-            : currentState.llmModel;
+            : getDefaultLlmModel(nextProvider);
         const normalizedCustomVariants = normalizeCustomLanguageVariants(persisted.customLanguageVariants);
         return {
           ...currentState,
@@ -463,9 +471,12 @@ export const useAppStore = create<AppState>()(
           ),
           modeBPrompt: typeof normalizedModeBPrompt === "string" ? normalizedModeBPrompt : currentState.modeBPrompt,
           modeCPrompt: typeof normalizedModeCPrompt === "string" ? normalizedModeCPrompt : currentState.modeCPrompt,
+          llmProvider: nextProvider,
           llmModel: nextModel,
           llmModelOptions: normalizeLlmModelOptions(
-            Array.isArray(persisted.llmModelOptions) ? persisted.llmModelOptions : currentState.llmModelOptions,
+            Array.isArray(persisted.llmModelOptions)
+              ? persisted.llmModelOptions
+              : getDefaultLlmModelOptions(nextProvider),
             nextModel,
           ),
           preferenceLearningEnabled:

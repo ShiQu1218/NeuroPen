@@ -745,12 +745,171 @@ fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
     }
 }
 
+fn openai_compatible_models_url(provider: &LlmProvider) -> Option<&'static str> {
+    match provider {
+        LlmProvider::LlamaCpp => Some("http://127.0.0.1:8080/v1/models"),
+        LlmProvider::LmStudio => Some("http://127.0.0.1:1234/v1/models"),
+        _ => None,
+    }
+}
+
 fn resolve_model(model: &str, provider: &LlmProvider) -> String {
     if model.trim().is_empty() {
         default_model(provider).to_string()
     } else {
         model.trim().to_string()
     }
+}
+
+fn provider_display_name(provider: &LlmProvider) -> &'static str {
+    match provider {
+        LlmProvider::OpenAi => "OpenAI",
+        LlmProvider::Gemini => "Gemini",
+        LlmProvider::Claude => "Claude",
+        LlmProvider::Grok => "Grok",
+        LlmProvider::Qwen => "Qwen",
+        LlmProvider::Doubao => "Doubao",
+        LlmProvider::Deepseek => "DeepSeek",
+        LlmProvider::Ollama => "Ollama",
+        LlmProvider::LlamaCpp => "llama.cpp",
+        LlmProvider::LmStudio => "LM Studio",
+    }
+}
+
+fn uses_runtime_model_catalog(provider: &LlmProvider) -> bool {
+    matches!(
+        provider,
+        LlmProvider::Ollama | LlmProvider::LlamaCpp | LlmProvider::LmStudio
+    )
+}
+
+fn normalize_runtime_model_catalog(models: Vec<String>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for model in models {
+        let trimmed = model.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if normalized.iter().any(|existing| existing == trimmed) {
+            continue;
+        }
+        normalized.push(trimmed.to_string());
+    }
+    normalized
+}
+
+fn parse_openai_compatible_model_ids(body: &str) -> Result<Vec<String>, String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("Model catalog parse failed: {e}"))?;
+    let models = parsed["data"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry["id"].as_str().map(|id| id.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(normalize_runtime_model_catalog(models))
+}
+
+fn parse_ollama_model_names(body: &str) -> Result<Vec<String>, String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("Model catalog parse failed: {e}"))?;
+    let models = parsed["models"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry["name"].as_str().map(|name| name.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Ok(normalize_runtime_model_catalog(models))
+}
+
+async fn list_openai_compatible_models(models_url: &str, api_key: &str) -> Result<Vec<String>, String> {
+    let resp = with_optional_bearer_auth(HTTP_CLIENT.get(models_url), api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Model catalog request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Model catalog read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Model catalog error ({status}): {body}"));
+    }
+
+    parse_openai_compatible_model_ids(&body)
+}
+
+async fn list_ollama_models() -> Result<Vec<String>, String> {
+    let resp = HTTP_CLIENT
+        .get("http://127.0.0.1:11434/api/tags")
+        .send()
+        .await
+        .map_err(|e| format!("Model catalog request failed: {e}"))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Model catalog read failed: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("Model catalog error ({status}): {body}"));
+    }
+
+    parse_ollama_model_names(&body)
+}
+
+pub async fn list_available_models(
+    provider: &LlmProvider,
+    api_key: &str,
+) -> Result<Vec<String>, String> {
+    match provider {
+        LlmProvider::Ollama => list_ollama_models().await,
+        LlmProvider::LlamaCpp | LlmProvider::LmStudio => {
+            let models_url = openai_compatible_models_url(provider)
+                .ok_or_else(|| format!("{} does not expose a model catalog URL.", provider_display_name(provider)))?;
+            list_openai_compatible_models(models_url, api_key).await
+        }
+        _ => Err(format!(
+            "Model discovery is only supported for local providers, but {} was requested.",
+            provider_display_name(provider)
+        )),
+    }
+}
+
+async fn resolve_request_model(
+    api_key: &str,
+    model: &str,
+    provider: &LlmProvider,
+) -> Result<String, String> {
+    let chosen_model = resolve_model(model, provider);
+    if !uses_runtime_model_catalog(provider) {
+        return Ok(chosen_model);
+    }
+
+    let available_models = list_available_models(provider, api_key).await?;
+    if available_models.is_empty() {
+        return Err(format!(
+            "No models are currently available in {}.",
+            provider_display_name(provider)
+        ));
+    }
+
+    if available_models.iter().any(|available| available == &chosen_model) {
+        return Ok(chosen_model);
+    }
+
+    Err(format!(
+        "Selected model '{chosen_model}' is not currently available in {}. Available models: {}",
+        provider_display_name(provider),
+        available_models.join(", ")
+    ))
 }
 
 async fn call_provider(
@@ -838,7 +997,7 @@ pub async fn call_llm(
         prompt_mode.as_deref(),
         prompt_override.as_deref(),
     );
-    let chosen_model = resolve_model(model, &provider);
+    let chosen_model = resolve_request_model(api_key, model, &provider).await?;
 
     // Preview conversations are multi-turn. Prefix prior turns only for preview
     // requests so direct-inject flows stay single-shot and deterministic.
@@ -990,7 +1149,7 @@ pub async fn call_llm_text(
         prompt_mode.as_deref(),
         prompt_override.as_deref(),
     );
-    let chosen_model = resolve_model(model, &provider);
+    let chosen_model = resolve_request_model(api_key, model, &provider).await?;
     let raw_output = call_provider(
         api_key,
         &provider,
@@ -1012,7 +1171,7 @@ pub async fn call_custom_prompt_text(
     system_prompt: &str,
     user_message: &str,
 ) -> Result<String, String> {
-    let chosen_model = resolve_model(model, &provider);
+    let chosen_model = resolve_request_model(api_key, model, &provider).await?;
     call_provider(
         api_key,
         &provider,
@@ -1332,7 +1491,7 @@ pub async fn call_llm_with_images(
     } else {
         merge_prompt_override(base_prompt, prompt_override.as_deref())
     };
-    let chosen_model = resolve_model(model, &provider);
+    let chosen_model = resolve_request_model(api_key, model, &provider).await?;
 
     // Multimodal requests currently normalize after the provider returns, so all
     // image answers stream from the finalized text rather than provider-native chunks.
@@ -1556,6 +1715,26 @@ mod tests {
         ));
         assert!(system_prompt.contains("Traditional Chinese as commonly written in Taiwan"));
         assert_eq!(user_message, "请解释这段内容");
+    }
+
+    #[test]
+    fn parses_openai_compatible_model_catalog() {
+        let parsed = parse_openai_compatible_model_ids(
+            r#"{"data":[{"id":"model-a"},{"id":"model-b"},{"id":"model-a"}]}"#,
+        )
+        .expect("expected model ids");
+
+        assert_eq!(parsed, vec!["model-a".to_string(), "model-b".to_string()]);
+    }
+
+    #[test]
+    fn parses_ollama_model_catalog() {
+        let parsed = parse_ollama_model_names(
+            r#"{"models":[{"name":"llama3.2"},{"name":"qwen2.5:7b"},{"name":"llama3.2"}]}"#,
+        )
+        .expect("expected model names");
+
+        assert_eq!(parsed, vec!["llama3.2".to_string(), "qwen2.5:7b".to_string()]);
     }
 
     #[test]
