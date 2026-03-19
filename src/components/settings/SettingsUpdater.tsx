@@ -85,13 +85,13 @@ export default function SettingsUpdater({ t, layout = "content" }: SettingsUpdat
   const isRailLayout = layout === "rail";
 
   return (
-    <div className={`flex flex-wrap gap-3 ${isRailLayout ? "rounded-[22px] border border-zinc-200 bg-white/80 p-3" : "items-center"}`}>
+    <div className={`flex flex-wrap gap-3 ${isRailLayout ? "rounded-[22px] border border-zinc-200 bg-white/80 p-3 dark:border-zinc-700 dark:bg-zinc-900/70" : "items-center"}`}>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-zinc-900">{t("settings.updater.title")}</label>
+          <label className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t("settings.updater.title")}</label>
           <SettingsInfoHint text={t("settings.updater.hint")} />
         </div>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
           {t("settings.updater.currentVersion")}: v{version}
         </p>
       </div>
@@ -113,15 +113,15 @@ export default function SettingsUpdater({ t, layout = "content" }: SettingsUpdat
       </div>
 
       {status === "error" && (
-        <p className="w-full text-xs text-red-600">
+        <p className="w-full text-xs text-red-600 dark:text-red-300">
           {t("settings.updater.error", { reason: errorMsg })}
         </p>
       )}
 
       {(status === "available" || status === "downloading" || status === "ready") && (
-        <div className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2.5">
+        <div className="w-full rounded-2xl border border-blue-200 bg-blue-50 px-3 py-2.5 dark:border-blue-900/70 dark:bg-blue-950/40">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium text-blue-800">
+            <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
               {t("settings.updater.available", { version: newVersion })}
             </p>
             {status === "available" && (
@@ -138,7 +138,7 @@ export default function SettingsUpdater({ t, layout = "content" }: SettingsUpdat
           {(status === "downloading" || status === "ready") && (
             <div className="mt-2 space-y-1">
               {status === "downloading" && (
-                <p className="text-xs text-blue-700">
+                <p className="text-xs text-blue-700 dark:text-blue-300">
                   {t("settings.updater.downloading", {
                     progress: String(progress),
                   })}
@@ -146,7 +146,7 @@ export default function SettingsUpdater({ t, layout = "content" }: SettingsUpdat
               )}
               <div className="h-2 w-full rounded bg-blue-100">
                 <div
-                  className="h-2 rounded bg-blue-500 transition-all"
+                  className="h-2 rounded bg-blue-500 transition-all dark:bg-blue-400"
                   style={{ width: `${status === "ready" ? 100 : progress}%` }}
                 />
               </div>
@@ -154,17 +154,17 @@ export default function SettingsUpdater({ t, layout = "content" }: SettingsUpdat
           )}
 
           {status === "ready" && (
-            <p className="mt-2 text-xs text-green-700">
+            <p className="mt-2 text-xs text-green-700 dark:text-green-300">
               {t("settings.updater.readyToInstall")}
             </p>
           )}
 
           {changelog && (
-            <details className="mt-2 text-xs text-gray-700">
+            <details className="mt-2 text-xs text-gray-700 dark:text-zinc-300">
               <summary className="cursor-pointer font-medium">
                 {t("settings.updater.changelog")}
               </summary>
-              <pre className="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap text-[11px]">
+              <pre className="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap rounded-xl bg-white/50 p-2 text-[11px] dark:bg-zinc-950/60">
                 {changelog}
               </pre>
             </details>

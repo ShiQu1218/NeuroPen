@@ -86,19 +86,19 @@ export default function SettingsAppProfileEditorOverlay({
   };
 
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(17,24,39,0.24)] px-6 py-8 backdrop-blur-sm">
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-[rgba(17,24,39,0.24)] px-6 py-8 backdrop-blur-sm dark:bg-[rgba(2,6,23,0.55)]">
       <div className="absolute inset-0" aria-hidden="true" onClick={onClose} />
-      <section className="relative z-10 flex h-full max-h-[840px] w-full max-w-[920px] flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[#fbf8f2] shadow-[0_30px_100px_rgba(15,23,42,0.18)]">
+      <section className="relative z-10 flex h-full max-h-[840px] w-full max-w-[920px] flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[#fbf8f2] shadow-[0_30px_100px_rgba(15,23,42,0.18)] dark:border-zinc-700 dark:bg-zinc-950">
         <div className="flex items-start justify-between gap-4 border-b border-black/5 px-6 py-5">
           <div>
-            <h2 className="text-[28px] font-semibold tracking-tight text-zinc-900">
+            <h2 className="text-[28px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
               {textDraft.name || t("settings.appProfile.namePlaceholder")}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white/80 text-xl text-zinc-500 transition hover:bg-white hover:text-zinc-900"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white/80 text-xl text-zinc-500 transition hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label={t("settings.cancel")}
           >
             ×
@@ -108,11 +108,11 @@ export default function SettingsAppProfileEditorOverlay({
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(300px,0.92fr)]">
             <div className="space-y-4">
-              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)] dark:border-zinc-700 dark:bg-zinc-900/80">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <div className="flex items-center justify-between gap-3">
-                      <label className="text-xs font-medium text-zinc-500">
+                      <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                         {t("settings.appProfile.name")}
                       </label>
                       <button
@@ -138,11 +138,11 @@ export default function SettingsAppProfileEditorOverlay({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-500">
+                    <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                       {t("settings.appProfile.enabled")}
                     </label>
-                    <div className="mt-1.5 flex h-10 items-center justify-between rounded-2xl border border-zinc-200 bg-[#fcfbf8] px-3">
-                      <span className="text-sm text-zinc-700">
+                    <div className="mt-1.5 flex h-10 items-center justify-between rounded-2xl border border-zinc-200 bg-[#fcfbf8] px-3 dark:border-zinc-700">
+                      <span className="text-sm text-zinc-700 dark:text-zinc-200">
                         {profile.enabled ? t("settings.appProfile.enabledStateOn") : t("settings.appProfile.enabledStateOff")}
                       </span>
                       <SettingsToggle
@@ -155,8 +155,8 @@ export default function SettingsAppProfileEditorOverlay({
                 </div>
               </section>
 
-              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
-                <p className="text-sm font-medium text-zinc-900">{t("settings.appProfile.keywords")}</p>
+              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)] dark:border-zinc-700 dark:bg-zinc-900/80">
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t("settings.appProfile.keywords")}</p>
                 <div className="mt-3 flex gap-2">
                   <input
                     className="settings-input-compact flex-1"
@@ -176,12 +176,12 @@ export default function SettingsAppProfileEditorOverlay({
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {profile.keywords.length === 0 ? (
-                    <span className="text-sm text-zinc-400">{t("settings.appProfile.noKeywords")}</span>
+                    <span className="text-sm text-zinc-400 dark:text-zinc-500">{t("settings.appProfile.noKeywords")}</span>
                   ) : (
                     profile.keywords.map((keyword) => (
                       <span
                         key={keyword}
-                        className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-[#fcfbf8] px-3 py-1.5 text-sm text-zinc-700"
+                        className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-[#fcfbf8] px-3 py-1.5 text-sm text-zinc-700 dark:border-zinc-700 dark:text-zinc-200"
                       >
                         {keyword}
                         <button
@@ -201,8 +201,8 @@ export default function SettingsAppProfileEditorOverlay({
                 </div>
               </section>
 
-              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
-                <p className="text-sm font-medium text-zinc-900">
+              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)] dark:border-zinc-700 dark:bg-zinc-900/80">
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                   {t("settings.appProfile.applyToModes")}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -221,8 +221,8 @@ export default function SettingsAppProfileEditorOverlay({
                         }
                         className={`rounded-full px-3 py-1.5 text-sm font-medium transition ${
                           active
-                            ? "bg-zinc-900 text-white"
-                            : "border border-zinc-200 bg-[#fcfbf8] text-zinc-700 hover:border-zinc-300"
+                            ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-950"
+                            : "border border-zinc-200 bg-[#fcfbf8] text-zinc-700 hover:border-zinc-300 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-500"
                         }`}
                       >
                         {t(APP_WORKFLOW_LABEL_KEYS[mode])}
@@ -234,23 +234,23 @@ export default function SettingsAppProfileEditorOverlay({
             </div>
 
             <div className="space-y-4">
-              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)] dark:border-zinc-700 dark:bg-zinc-900/80">
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs font-medium text-zinc-500">
+                    <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                       {t("settings.languageVariant.label")}
                     </label>
                     <button
                       type="button"
                       onClick={onOpenLanguageVariantPicker}
-                      className="mt-1.5 flex h-10 w-full items-center justify-between rounded-2xl border border-zinc-200 bg-[#fcfbf8] px-3 text-left text-sm font-medium text-zinc-800 transition hover:border-zinc-300 hover:bg-white"
+                      className="mt-1.5 flex h-10 w-full items-center justify-between rounded-2xl border border-zinc-200 bg-[#fcfbf8] px-3 text-left text-sm font-medium text-zinc-800 transition hover:border-zinc-300 hover:bg-white dark:border-zinc-700 dark:text-zinc-100 dark:hover:border-zinc-500"
                     >
                       <span className="truncate">{languageSummary}</span>
-                      <span className="ml-3 text-zinc-400">▾</span>
+                      <span className="ml-3 text-zinc-400 dark:text-zinc-500">▾</span>
                     </button>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-500">
+                    <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                       {t("settings.appProfile.outputMode")}
                     </label>
                     <select
@@ -269,7 +269,7 @@ export default function SettingsAppProfileEditorOverlay({
                   </div>
                   {effectiveOutputMode === "PreviewStream" ? (
                     <div>
-                      <label className="text-xs font-medium text-zinc-500">
+                      <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                         {t("settings.appProfile.directPaste")}
                       </label>
                       <select
@@ -291,10 +291,10 @@ export default function SettingsAppProfileEditorOverlay({
                 </div>
               </section>
 
-              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+              <section className="rounded-[22px] border border-black/5 bg-white/85 p-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)] dark:border-zinc-700 dark:bg-zinc-900/80">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-zinc-900">{t("settings.appProfile.promptTitle")}</p>
+                    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{t("settings.appProfile.promptTitle")}</p>
                   </div>
                   <button type="button" onClick={() => void onSavePromptFields()} className="btn-primary px-4 py-2 text-sm">
                     {t("settings.save")}
@@ -302,7 +302,7 @@ export default function SettingsAppProfileEditorOverlay({
                 </div>
                 <div className="mt-3 space-y-3">
                   <div>
-                    <label className="text-xs font-medium text-zinc-500">
+                    <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                       {t("settings.appProfile.toneHint")}
                     </label>
                     <input
@@ -313,7 +313,7 @@ export default function SettingsAppProfileEditorOverlay({
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-500">
+                    <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
                       {t("settings.appProfile.promptAppendix")}
                     </label>
                     <textarea
@@ -328,15 +328,15 @@ export default function SettingsAppProfileEditorOverlay({
                 </div>
               </section>
 
-              <section className="rounded-[22px] border border-red-200 bg-red-50/70 p-4">
+              <section className="rounded-[22px] border border-red-200 bg-red-50/70 p-4 dark:border-red-900/60 dark:bg-red-950/30">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-red-700">{t("settings.appProfile.dangerZoneTitle")}</p>
-                    <p className="mt-1 text-xs text-red-600">
+                    <p className="text-sm font-semibold text-red-700 dark:text-red-200">{t("settings.appProfile.dangerZoneTitle")}</p>
+                    <p className="mt-1 text-xs text-red-600 dark:text-red-300">
                       {t("settings.appProfile.dangerZoneHint")}
                     </p>
                   </div>
-                  <button type="button" onClick={onDelete} className="rounded-full border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100">
+                  <button type="button" onClick={onDelete} className="rounded-full border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100 dark:border-red-800 dark:text-red-200 dark:hover:bg-red-950/50">
                     {t("settings.appProfile.delete")}
                   </button>
                 </div>

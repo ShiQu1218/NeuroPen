@@ -12,6 +12,7 @@ import {
   type CustomLanguageVariant,
   type PreferredLanguage,
   type QuickActionCommand,
+  type ThemePreference,
 } from "../store/useAppStore";
 import {
   buildOtherPreferenceCategory,
@@ -39,6 +40,7 @@ export default function QuickActionIcon() {
   const setLlmModel = useAppStore((s) => s.setLlmModel);
   const setLlmModelOptions = useAppStore((s) => s.setLlmModelOptions);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const setThemePreference = useAppStore((s) => s.setThemePreference);
   const setPreferredLanguage = useAppStore((s) => s.setPreferredLanguage);
   const setCustomLanguageVariants = useAppStore((s) => s.setCustomLanguageVariants);
   const setModeAPrompt = useAppStore((s) => s.setModeAPrompt);
@@ -102,6 +104,7 @@ export default function QuickActionIcon() {
         llmModel?: string;
         llmModelOptions?: string[];
         language?: AppLanguage;
+        themePreference?: ThemePreference;
         preferredLanguage?: PreferredLanguage;
         customLanguageVariants?: CustomLanguageVariant[];
         modeAPrompt?: string;
@@ -130,6 +133,9 @@ export default function QuickActionIcon() {
           }
           if (event.payload.language) {
             setLanguage(event.payload.language);
+          }
+          if (event.payload.themePreference) {
+            setThemePreference(event.payload.themePreference);
           }
           if (event.payload.customLanguageVariants) {
             setCustomLanguageVariants(event.payload.customLanguageVariants);
@@ -182,7 +188,7 @@ export default function QuickActionIcon() {
       void setWindowFocusable(false);
       void setQaInteracting(false);
     };
-  }, [setAppProfiles, setContextAwareTone, setCustomLanguageVariants, setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferenceLearningEnabled, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setWindowFocusable]);
+  }, [setAppProfiles, setContextAwareTone, setCustomLanguageVariants, setLanguage, setLlmModel, setLlmModelOptions, setLlmProvider, setModeAPrompt, setModeAStreamOutput, setModeBPrompt, setModeBStreamOutput, setModeCPrompt, setOutputMode, setPreferenceLearningEnabled, setPreferredLanguage, setQaInteracting, setQuickActionCommands, setThemePreference, setWindowFocusable]);
 
   useEffect(() => {
     void setWindowFocusable(false);
@@ -445,7 +451,7 @@ export default function QuickActionIcon() {
   return (
     <div
       ref={panelRef}
-      className="flex flex-col gap-2 p-2.5 bg-white backdrop-blur-xl rounded-2xl border border-zinc-200/60 shadow-[0_22px_50px_rgba(0,0,0,0.18)] text-sm animate-scaleUp overflow-hidden h-screen"
+      className="flex h-screen flex-col gap-2 overflow-hidden rounded-2xl border border-zinc-200/60 bg-white p-2.5 text-sm shadow-[0_22px_50px_rgba(0,0,0,0.18)] animate-scaleUp backdrop-blur-xl dark:border-zinc-700 dark:bg-zinc-950/92 dark:text-zinc-100"
       onMouseEnter={() => {
         clearCollapseTimer();
         void setQaInteracting(true);
@@ -456,7 +462,7 @@ export default function QuickActionIcon() {
       }}
     >
       <div
-        className="px-1 py-0.5 text-[10px] font-semibold text-zinc-400 uppercase tracking-wide cursor-move select-none"
+        className="cursor-move select-none px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500"
         onMouseDown={(e) => {
           if ((e.target as HTMLElement).closest("button,input,textarea")) return;
           void handleStartDrag();
@@ -465,13 +471,13 @@ export default function QuickActionIcon() {
         {t("quickAction.title")}
       </div>
       {quickActionCommands.length === 0 ? (
-        <p className="px-2 py-1 text-xs text-slate-400">{t("quickAction.empty")}</p>
+        <p className="px-2 py-1 text-xs text-slate-400 dark:text-zinc-500">{t("quickAction.empty")}</p>
       ) : (
         <div className="max-h-[170px] overflow-y-auto space-y-1">
           {quickActionCommands.map((command) => (
             <button
               key={command.id}
-              className="w-full text-left px-3 py-1.5 rounded-xl bg-white/80 hover:bg-zinc-100 hover:text-zinc-900 border border-zinc-200/60 transition-colors"
+              className="w-full rounded-xl border border-zinc-200/60 bg-white/80 px-3 py-1.5 text-left transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
               onMouseDown={() => pinSelectionAnchor()}
               onClick={(e) =>
                 invokeCommand(command, { x: e.clientX, y: e.clientY })
@@ -482,9 +488,9 @@ export default function QuickActionIcon() {
           ))}
         </div>
       )}
-      <div className="flex items-center gap-1.5 mt-1 border-t border-slate-100 pt-2">
+      <div className="mt-1 flex items-center gap-1.5 border-t border-slate-100 pt-2 dark:border-zinc-800">
         <input
-          className="flex-1 input-field px-2.5 py-1.5 text-xs bg-white/90"
+          className="flex-1 bg-white/90 px-2.5 py-1.5 text-xs input-field dark:bg-zinc-900/90"
           placeholder={t("quickAction.customPlaceholder")}
           value={customInput}
           onChange={(e) => setCustomInput(e.target.value)}

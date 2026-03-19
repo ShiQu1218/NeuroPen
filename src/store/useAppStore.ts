@@ -23,6 +23,7 @@ import {
   type SttEngine,
   type SttLanguage,
   type SttOutputStrategy,
+  type ThemePreference,
   type TranslationTarget,
 } from "./appStoreTypes";
 import {
@@ -45,6 +46,7 @@ export type {
   SttEngine,
   SttLanguage,
   SttOutputStrategy,
+  ThemePreference,
   TranslationTarget,
 } from "./appStoreTypes";
 export type { AppProfileMode } from "./appStoreTypes";
@@ -113,6 +115,7 @@ interface AppState {
   launchOnStartup: boolean;
   quickActionCommands: QuickActionCommand[];
   language: AppLanguage;
+  themePreference: ThemePreference;
   vocabularyTerms: string[];
   ttsEnabled: boolean;
   ttsVoice: string;
@@ -177,6 +180,7 @@ interface AppState {
   setLaunchOnStartup: (enabled: boolean) => void;
   setQuickActionCommands: (commands: QuickActionCommand[]) => void;
   setLanguage: (language: AppLanguage) => void;
+  setThemePreference: (themePreference: ThemePreference) => void;
   setVocabularyTerms: (terms: string[]) => void;
   setIsRecording: (recording: boolean) => void;
   setSelectedText: (text: string) => void;
@@ -295,6 +299,7 @@ export const useAppStore = create<AppState>()(
       launchOnStartup: false,
       quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
       language: "zh-TW",
+      themePreference: "light",
       vocabularyTerms: [],
       ttsEnabled: false,
       ttsVoice: "",
@@ -390,6 +395,7 @@ export const useAppStore = create<AppState>()(
       setLaunchOnStartup: (launchOnStartup) => set({ launchOnStartup }),
       setQuickActionCommands: (commands) => set({ quickActionCommands: commands }),
       setLanguage: (language) => set({ language }),
+      setThemePreference: (themePreference) => set({ themePreference }),
       setVocabularyTerms: (terms) => set({ vocabularyTerms: terms }),
       setIsRecording: (recording) => set({ isRecording: recording }),
       setSelectedText: (text) => set({ selectedText: text }),
@@ -496,6 +502,12 @@ export const useAppStore = create<AppState>()(
               ? persisted.preferenceLearningEnabled
               : currentState.preferenceLearningEnabled,
           customLanguageVariants: normalizedCustomVariants,
+          themePreference:
+            persisted.themePreference === "light" ||
+            persisted.themePreference === "dark" ||
+            persisted.themePreference === "system"
+              ? persisted.themePreference
+              : currentState.themePreference,
           appProfiles: normalizePersistedAppProfiles(
             persisted.appProfiles,
             normalizedCustomVariants
@@ -528,6 +540,7 @@ export const useAppStore = create<AppState>()(
         launchOnStartup: state.launchOnStartup,
         quickActionCommands: state.quickActionCommands,
         language: state.language,
+        themePreference: state.themePreference,
         vocabularyTerms: state.vocabularyTerms,
         ttsEnabled: state.ttsEnabled,
         ttsVoice: state.ttsVoice,

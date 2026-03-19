@@ -217,23 +217,23 @@ export default function SettingsLanguageVariantOverlay({
   );
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[rgba(17,24,39,0.3)] px-6 py-8 backdrop-blur-sm">
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[rgba(17,24,39,0.3)] px-6 py-8 backdrop-blur-sm dark:bg-[rgba(2,6,23,0.55)]">
       <div
         className="absolute inset-0"
         aria-hidden="true"
         onClick={onClose}
       />
-      <section className="relative z-10 flex h-full max-h-[860px] w-full max-w-[900px] flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[#f8f5ef] shadow-[0_30px_100px_rgba(15,23,42,0.22)]">
+      <section className="relative z-10 flex h-full max-h-[860px] w-full max-w-[900px] flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[#f8f5ef] shadow-[0_30px_100px_rgba(15,23,42,0.22)] dark:border-zinc-700 dark:bg-zinc-950">
         <div className="flex items-start justify-between gap-4 border-b border-black/5 px-6 py-5">
           <div>
-            <h2 className="text-[28px] font-semibold tracking-tight text-zinc-900">
+            <h2 className="text-[28px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
               {t("settings.languageVariant.title")}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white/80 text-xl text-zinc-500 transition hover:bg-white hover:text-zinc-900"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-black/5 bg-white/80 text-xl text-zinc-500 transition hover:bg-white hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label={t("settings.cancel")}
           >
             ×
@@ -242,12 +242,12 @@ export default function SettingsLanguageVariantOverlay({
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
           {scope === "profile" && (
-            <div className="mb-4 flex items-center justify-between gap-4 rounded-[22px] border border-black/5 bg-white/80 px-4 py-3">
+            <div className="mb-4 flex items-center justify-between gap-4 rounded-[22px] border border-black/5 bg-white/80 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/80">
               <div>
-                <p className="text-sm font-semibold text-zinc-900">
+                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   {t("settings.languageVariant.profileScopeTitle")}
                 </p>
-                <p className="mt-1 text-xs text-zinc-500">
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
                   {t("settings.languageVariant.profileScopeHint")}
                 </p>
               </div>
@@ -256,8 +256,8 @@ export default function SettingsLanguageVariantOverlay({
                 onClick={handleUseGlobal}
                 className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                   useGlobalSettings
-                    ? "bg-zinc-900 text-white"
-                    : "border border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+                    ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-950"
+                    : "border border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-500"
                 }`}
               >
                 {t("settings.appProfile.useGlobal")}
@@ -269,14 +269,14 @@ export default function SettingsLanguageVariantOverlay({
             {languageGroups.map((group) => (
               <div
                 key={group.languageCode}
-                className="grid gap-3 rounded-[22px] border border-black/5 bg-white/85 px-4 py-3 shadow-[0_10px_26px_rgba(15,23,42,0.05)] sm:grid-cols-[minmax(0,1fr)_280px]"
+                className="grid gap-3 rounded-[22px] border border-black/5 bg-white/85 px-4 py-3 shadow-[0_10px_26px_rgba(15,23,42,0.05)] sm:grid-cols-[minmax(0,1fr)_280px] dark:border-zinc-700 dark:bg-zinc-900/80"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-zinc-900">{group.languageLabel}</p>
+                  <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{group.languageLabel}</p>
                 </div>
                 <label className="relative block">
                   <select
-                    className="input-field h-10 w-full appearance-none rounded-2xl border-black/5 bg-[#fcfbf8] px-3 pr-10 text-sm font-semibold text-zinc-800"
+                    className="input-field h-10 w-full appearance-none rounded-2xl border-black/5 bg-[#fcfbf8] px-3 pr-10 text-sm font-semibold text-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
                     value={getLanguageVariantSelectionForLanguage(
                       draftPreferences,
                       group.languageCode,
@@ -290,7 +290,7 @@ export default function SettingsLanguageVariantOverlay({
                       </option>
                     ))}
                   </select>
-                  <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-lg text-zinc-500">
+                  <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-lg text-zinc-500 dark:text-zinc-400">
                     ▾
                   </span>
                 </label>
@@ -298,10 +298,10 @@ export default function SettingsLanguageVariantOverlay({
             ))}
           </div>
 
-          <div className="mt-4 rounded-[22px] border border-black/5 bg-white/80 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)]">
+          <div className="mt-4 rounded-[22px] border border-black/5 bg-white/80 px-4 py-4 shadow-[0_10px_26px_rgba(15,23,42,0.05)] dark:border-zinc-700 dark:bg-zinc-900/80">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold text-zinc-900">
+                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   {t("settings.languageVariant.customSubtitle")}
                 </h3>
               </div>
@@ -311,7 +311,7 @@ export default function SettingsLanguageVariantOverlay({
                   setShowCustomForm((current) => !current);
                   setErrorMessage("");
                 }}
-                className="rounded-full border border-zinc-200 bg-[#faf6ee] px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-[#f4eee2]"
+                className="rounded-full border border-zinc-200 bg-[#faf6ee] px-4 py-2 text-sm font-medium text-zinc-700 transition hover:border-zinc-300 hover:bg-[#f4eee2] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-500 dark:hover:bg-zinc-800"
               >
                 {t("settings.languageVariant.addCustom")}
               </button>

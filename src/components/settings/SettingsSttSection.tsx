@@ -452,7 +452,7 @@ export default function SettingsSttSection({
                           downloadProgress.status === "error"
                             ? "bg-red-500"
                             : downloadProgress.status === "cancelled"
-                              ? "bg-amber-500"
+                              ? "bg-amber-500 dark:bg-zinc-100"
                               : "bg-blue-500"
                         }`}
                         style={{ width: `${progressPct}%` }}

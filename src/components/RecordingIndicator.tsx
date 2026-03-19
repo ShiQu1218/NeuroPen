@@ -12,7 +12,7 @@ import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
-import { useAppStore, type AppLanguage } from "../store/useAppStore";
+import { useAppStore, type AppLanguage, type ThemePreference } from "../store/useAppStore";
 
 export default function RecordingIndicator() {
   const [isRecording, setIsRecording] = useState(false);
@@ -24,6 +24,7 @@ export default function RecordingIndicator() {
   const isRecordingRef = useRef(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setLanguage = useAppStore((s) => s.setLanguage);
+  const setThemePreference = useAppStore((s) => s.setThemePreference);
   const setPartialTranscript = useAppStore((s) => s.setPartialTranscript);
   const { t } = useI18n();
 
@@ -104,11 +105,14 @@ export default function RecordingIndicator() {
       });
       if (cancelled) { u4(); } else { unlisten.push(u4); }
 
-      const u3 = await listen<{ language?: AppLanguage }>(
+      const u3 = await listen<{ language?: AppLanguage; themePreference?: ThemePreference }>(
         "neuropen://settings-saved",
         (event) => {
           if (event.payload.language) {
             setLanguage(event.payload.language);
+          }
+          if (event.payload.themePreference) {
+            setThemePreference(event.payload.themePreference);
           }
         }
       );
@@ -135,7 +139,7 @@ export default function RecordingIndicator() {
       clearHideTimer();
       unlisten.forEach((fn) => fn());
     };
-  }, [setLanguage, setPartialTranscript]);
+  }, [setLanguage, setPartialTranscript, setThemePreference]);
 
   // Elapsed timer
   useEffect(() => {
@@ -154,20 +158,20 @@ export default function RecordingIndicator() {
 
   return (
     <div className="flex items-center justify-center w-full h-full bg-transparent">
-      <div key={animKey} className="flex items-center gap-2 bg-black/80 text-white px-4 py-2 rounded-full text-sm shadow-lg backdrop-blur-sm max-w-[400px] animate-scaleUp">
+      <div key={animKey} className="flex max-w-[400px] items-center gap-2 rounded-full bg-black/80 px-4 py-2 text-sm text-white shadow-lg backdrop-blur-sm animate-scaleUp dark:bg-zinc-950/90 dark:text-zinc-100">
         <span
           className={`w-2.5 h-2.5 rounded-full shrink-0 ${isRecording
             ? "bg-red-500 animate-pulse"
-            : "bg-gray-400"
+            : "bg-gray-400 dark:bg-zinc-500"
             }`}
         />
         {isRecording && partialText ? (
-          <span className="text-white/70 text-xs truncate">{partialText}</span>
+          <span className="truncate text-xs text-white/70 dark:text-zinc-400">{partialText}</span>
         ) : (
           <span>{isRecording ? t("recording.recording") : (statusText || t("recording.processing"))}</span>
         )}
         {isRecording && (
-          <span className="text-white/60 text-xs ml-1 shrink-0">
+          <span className="ml-1 shrink-0 text-xs text-white/60 dark:text-zinc-500">
             {formatTime(elapsed)}
           </span>
         )}

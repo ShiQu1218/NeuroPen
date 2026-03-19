@@ -316,9 +316,9 @@ export default function HistoryPanel() {
     : entries;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col rounded-[22px] border border-zinc-200 bg-white/70 dark:border-zinc-700 dark:bg-zinc-950/50">
       {/* Search bar */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200">
+      <div className="flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
         <input
           className="flex-1 input-field px-2.5 py-1.5 text-sm"
           placeholder={t("history.searchPlaceholder")}
@@ -327,7 +327,7 @@ export default function HistoryPanel() {
         />
         {entries.length > 0 && (
           <button
-            className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap"
+            className="whitespace-nowrap text-xs text-red-500 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200"
             onClick={handleClear}
           >
             {t("history.clearAll")}
@@ -336,12 +336,12 @@ export default function HistoryPanel() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 px-3 py-1.5 border-b border-zinc-100">
+      <div className="flex gap-1 border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-800">
         <button
           className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
             filter === "all"
-              ? "bg-blue-100 text-blue-700 font-medium"
-              : "text-zinc-500 hover:bg-zinc-100"
+              ? "bg-blue-100 text-blue-700 font-medium dark:bg-blue-950/70 dark:text-blue-200"
+              : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           }`}
           onClick={() => setFilter("all")}
         >
@@ -350,8 +350,8 @@ export default function HistoryPanel() {
         <button
           className={`text-[11px] px-2 py-0.5 rounded-full transition-colors ${
             filter === "favorites"
-              ? "bg-amber-100 text-amber-700 font-medium"
-              : "text-zinc-500 hover:bg-zinc-100"
+              ? "bg-amber-100 text-amber-700 font-medium dark:bg-zinc-100 dark:text-zinc-950"
+              : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           }`}
           onClick={() => setFilter("favorites")}
         >
@@ -362,14 +362,14 @@ export default function HistoryPanel() {
       {/* Entry list */}
       <div className="flex-1 overflow-auto">
         {displayedEntries.length === 0 ? (
-          <div className="p-4 text-center text-zinc-400 text-sm">
+          <div className="p-4 text-center text-sm text-zinc-400 dark:text-zinc-500">
             {t("history.empty")}
           </div>
         ) : (
           displayedEntries.map((entry) => (
             <div
               key={entry.id}
-              className="border-b border-zinc-100 hover:bg-zinc-50 transition-colors"
+              className="border-b border-zinc-100 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/60"
             >
               {/* Header */}
               <div
@@ -379,19 +379,19 @@ export default function HistoryPanel() {
                 }
               >
                 {entry.favorited && (
-                  <span className="text-amber-500 text-[11px]">★</span>
+                  <span className="text-[11px] text-amber-500 dark:text-zinc-100">★</span>
                 )}
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-mono text-blue-700 dark:bg-blue-950/70 dark:text-blue-200">
                   {(() => {
                     const workflowLabelKey =
                       APP_WORKFLOW_LABEL_KEYS[entry.mode as keyof typeof APP_WORKFLOW_LABEL_KEYS];
                     return workflowLabelKey ? t(workflowLabelKey) : entry.mode;
                   })()}
                 </span>
-                <span className="flex-1 text-sm text-zinc-700 truncate">
+                <span className="flex-1 truncate text-sm text-zinc-700 dark:text-zinc-200">
                   {entry.instruction || entry.inputText || entry.output}
                 </span>
-                <span className="text-[10px] text-zinc-400 whitespace-nowrap">
+                <span className="whitespace-nowrap text-[10px] text-zinc-400 dark:text-zinc-500">
                   {formatTime(entry.timestamp)}
                 </span>
               </div>
@@ -401,36 +401,36 @@ export default function HistoryPanel() {
                 <div className="px-3 pb-3 space-y-2 text-xs">
                   {entry.inputText && (
                     <div>
-                      <span className="font-semibold text-zinc-500">
+                      <span className="font-semibold text-zinc-500 dark:text-zinc-400">
                         {t("history.input")}:
                       </span>
-                      <p className="mt-0.5 text-zinc-600 whitespace-pre-wrap">
+                      <p className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
                         {entry.inputText}
                       </p>
                     </div>
                   )}
                   {entry.instruction && (
                     <div>
-                      <span className="font-semibold text-zinc-500">
+                      <span className="font-semibold text-zinc-500 dark:text-zinc-400">
                         {t("history.instruction")}:
                       </span>
-                      <p className="mt-0.5 text-zinc-600 whitespace-pre-wrap">
+                      <p className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
                         {entry.instruction}
                       </p>
                     </div>
                   )}
                   {entry.output && (
                     <div>
-                      <span className="font-semibold text-zinc-500">
+                      <span className="font-semibold text-zinc-500 dark:text-zinc-400">
                         {t("history.output")}:
                       </span>
-                      <p className="mt-0.5 text-zinc-600 whitespace-pre-wrap">
+                      <p className="mt-0.5 whitespace-pre-wrap text-zinc-600 dark:text-zinc-300">
                         {entry.output}
                       </p>
                     </div>
                   )}
                   {(entry.provider || entry.model) && (
-                    <div className="text-[10px] text-zinc-400">
+                    <div className="text-[10px] text-zinc-400 dark:text-zinc-500">
                       {entry.provider} / {entry.model}
                     </div>
                   )}
@@ -439,8 +439,8 @@ export default function HistoryPanel() {
                     <button
                       className={`text-[10px] ${
                         entry.feedbackRating === "up"
-                          ? "text-emerald-600"
-                          : "text-zinc-400 hover:text-emerald-600"
+                          ? "text-emerald-600 dark:text-emerald-300"
+                          : "text-zinc-400 hover:text-emerald-600 dark:text-zinc-500 dark:hover:text-emerald-300"
                       } disabled:opacity-40 disabled:cursor-not-allowed`}
                       disabled={!preferenceLearningEnabled || incognito}
                       onClick={() => void handleRate(entry, "up")}
@@ -457,8 +457,8 @@ export default function HistoryPanel() {
                     <button
                       className={`text-[10px] ${
                         entry.feedbackRating === "down"
-                          ? "text-rose-600"
-                          : "text-zinc-400 hover:text-rose-600"
+                          ? "text-rose-600 dark:text-rose-300"
+                          : "text-zinc-400 hover:text-rose-600 dark:text-zinc-500 dark:hover:text-rose-300"
                       } disabled:opacity-40 disabled:cursor-not-allowed`}
                       disabled={!preferenceLearningEnabled || incognito}
                       onClick={() => void handleRate(entry, "down")}
@@ -473,14 +473,14 @@ export default function HistoryPanel() {
                       {t("history.feedbackDown")}
                     </button>
                     <button
-                      className="text-[10px] text-blue-600 hover:text-blue-800"
+                      className="text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                       onClick={() => handleReExecute(entry)}
                     >
                       {t("history.reExecute")}
                     </button>
                     {entry.instruction && (
                       <button
-                        className="text-[10px] text-blue-600 hover:text-blue-800"
+                        className="text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                         onClick={() => handleApplyToSelection(entry)}
                       >
                         {t("history.applyToSelection")}
@@ -488,14 +488,14 @@ export default function HistoryPanel() {
                     )}
                     {entry.instruction && (
                       <button
-                        className="text-[10px] text-blue-600 hover:text-blue-800"
+                        className="text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                         onClick={() => handleAddToQuickAction(entry)}
                       >
                         {t("history.addToQuickAction")}
                       </button>
                     )}
                     <button
-                      className="text-[10px] text-blue-600 hover:text-blue-800"
+                      className="text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-200"
                       onClick={() => handleCopy(entry.output)}
                     >
                       {t("history.copyOutput")}
@@ -503,15 +503,15 @@ export default function HistoryPanel() {
                     <button
                       className={`text-[10px] ${
                         entry.favorited
-                          ? "text-amber-500 hover:text-amber-700"
-                          : "text-zinc-400 hover:text-amber-500"
+                          ? "text-amber-500 hover:text-amber-700 dark:text-zinc-100 dark:hover:text-white"
+                          : "text-zinc-400 hover:text-amber-500 dark:text-zinc-500 dark:hover:text-zinc-100"
                       }`}
                       onClick={() => handleToggleFavorite(entry.id)}
                     >
                       {entry.favorited ? t("history.unfavorite") : t("history.favorite")}
                     </button>
                     <button
-                      className="text-[10px] text-red-500 hover:text-red-700"
+                      className="text-[10px] text-red-500 hover:text-red-700 dark:text-red-300 dark:hover:text-red-200"
                       onClick={() => handleDelete(entry.id)}
                     >
                       {t("history.delete")}

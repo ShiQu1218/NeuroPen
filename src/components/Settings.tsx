@@ -12,6 +12,7 @@ import {
   type LlmProvider,
   type PreferredLanguage,
   type QuickActionCommand,
+  type ThemePreference,
   type TranslationTarget,
 } from "../store/useAppStore";
 import {
@@ -139,6 +140,8 @@ const UI_LANGUAGE_OPTIONS: AppLanguage[] = [
   "ru-RU",
 ];
 
+const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
+
 const createDefaultProfile = (name: string): AppProfile => ({
   id: `custom-${Date.now()}`,
   name,
@@ -160,7 +163,9 @@ function SectionStatus({ status }: { status: PanelMessage | undefined }) {
   return (
     <div
       className={`rounded-full px-3 py-1 text-xs font-medium ${
-        status.tone === "error" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"
+        status.tone === "error"
+          ? "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-200"
+          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-200"
       }`}
     >
       {status.message}
@@ -222,6 +227,7 @@ export default function Settings() {
     launchOnStartup, setLaunchOnStartup,
     quickActionCommands, setQuickActionCommands,
     setLanguage,
+    themePreference, setThemePreference,
     localSttAvailable, setLocalSttAvailable,
     apiKeySet, setApiKeySet,
     ttsVoice, setTtsVoice,
@@ -947,6 +953,15 @@ export default function Settings() {
     setPanelMessage("general", "success", translate(value, "settings.saveApplied"));
   }, [broadcastSettingsSaved, language, setLanguage, setPanelMessage]);
 
+  const handleThemePreferenceChange = useCallback(async (value: ThemePreference) => {
+    if (value === themePreference) {
+      return;
+    }
+    setThemePreference(value);
+    await broadcastSettingsSaved({ themePreference: value });
+    setPanelMessage("general", "success", t("settings.saveApplied"));
+  }, [broadcastSettingsSaved, setPanelMessage, setThemePreference, t, themePreference]);
+
   const handleMicrophoneSourceChange = useCallback(async (value: string) => {
     const previousValue = microphoneSource;
     try {
@@ -1557,7 +1572,25 @@ export default function Settings() {
             <div className="space-y-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <label className="text-xs font-medium text-zinc-500">{t("settings.language.label")}</label>
+                  <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t("settings.theme.label")}</label>
+                  <SettingsInfoHint text={t("settings.theme.hint")} />
+                </div>
+                <select
+                  className="settings-input-compact mt-1.5"
+                  value={themePreference}
+                  onChange={(event) => void handleThemePreferenceChange(event.target.value as ThemePreference)}
+                  aria-label={t("settings.theme.label")}
+                >
+                  {THEME_PREFERENCE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {t(`settings.theme.${option}` as TranslationKey)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{t("settings.language.label")}</label>
                   <SettingsInfoHint text={t("settings.language.hint")} />
                 </div>
                 <select
@@ -1777,7 +1810,9 @@ export default function Settings() {
                             type="button"
                             onClick={() => void handleOutputModeChange(mode)}
                             className={`flex h-10 items-center justify-between rounded-2xl px-3 text-sm font-medium ${
-                              outputMode === mode ? "bg-zinc-900 text-white" : "border border-zinc-200 bg-white text-zinc-700"
+                              outputMode === mode
+                                ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-950"
+                                : "border border-zinc-200 bg-white text-zinc-700"
                             }`}
                           >
                             <span>{mode === "PreviewStream" ? t("settings.llm.previewStream") : t("settings.llm.directInject")}</span>
@@ -1960,8 +1995,8 @@ export default function Settings() {
   };
 
   return (
-    <div className="relative h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(250,240,220,0.94),_rgba(243,244,246,1)_40%,_rgba(232,238,245,1)_100%)] text-zinc-900" style={{ fontFamily: "'Noto Sans TC', 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', 'Microsoft JhengHei', 'Segoe UI', sans-serif" }}>
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.52),transparent_35%,rgba(255,255,255,0.24)_100%)]" />
+    <div className="relative h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(250,240,220,0.94),_rgba(243,244,246,1)_40%,_rgba(232,238,245,1)_100%)] text-zinc-900 dark:bg-[radial-gradient(circle_at_top_left,_rgba(68,64,60,0.42),_rgba(9,9,11,1)_42%,_rgba(15,23,42,1)_100%)]" style={{ fontFamily: "'Noto Sans TC', 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', 'Microsoft JhengHei', 'Segoe UI', sans-serif" }}>
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.52),transparent_35%,rgba(255,255,255,0.24)_100%)] dark:bg-[linear-gradient(135deg,rgba(255,255,255,0.05),transparent_35%,rgba(255,255,255,0.08)_100%)]" />
       <div className="relative z-10 flex h-full min-h-0 flex-col px-4 py-4">
         <div className="grid h-full min-h-0 flex-1 gap-4 overflow-hidden grid-cols-[220px_minmax(0,1fr)]">
           <aside className="h-full min-h-0">

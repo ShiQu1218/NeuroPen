@@ -153,7 +153,7 @@ export default function PreviewWindowBody({
   return (
     <div
       key={animKey}
-      className="relative flex flex-col h-screen text-zinc-900 select-text glass-panel-lg overflow-hidden animate-scaleUp"
+      className="relative flex h-screen flex-col overflow-hidden select-text text-zinc-900 animate-scaleUp glass-panel-lg dark:text-zinc-100"
       onMouseUpCapture={swallowDragRelease}
       onClickCapture={swallowDragRelease}
       // Block keyboard copy briefly while pointer activity settles so window drags cannot surface a false copy toast.
@@ -184,7 +184,7 @@ export default function PreviewWindowBody({
       }}
     >
       <div
-        className="flex items-center justify-between px-3 py-2 bg-white/75 border-b border-zinc-200 cursor-move shrink-0"
+        className="flex shrink-0 cursor-move items-center justify-between border-b border-zinc-200 bg-white/75 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/75"
         onMouseDown={(event) => {
           if ((event.target as HTMLElement).closest("button")) return;
           event.preventDefault();
@@ -193,8 +193,8 @@ export default function PreviewWindowBody({
         }}
       >
         <div className="pointer-events-none select-none">
-          <span className="text-xs font-semibold text-zinc-700">{t("preview.title")}</span>
-          <p className="text-[10px] text-zinc-400 leading-tight">
+          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">{t("preview.title")}</span>
+          <p className="text-[10px] leading-tight text-zinc-400 dark:text-zinc-500">
             {t("preview.subtitle")}
             {(sttDurationMs > 0 || llmDurationMs > 0) && (
               <span className="ml-2 text-zinc-300">
@@ -209,8 +209,8 @@ export default function PreviewWindowBody({
           {hasOutput && (
             <button
               className={`w-6 h-6 flex items-center justify-center rounded-lg transition-colors ${isTtsPlaying
-                ? "bg-blue-100 text-blue-600"
-                : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
+                ? "bg-blue-100 text-blue-600 dark:bg-blue-950/70 dark:text-blue-200"
+                : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                 }`}
               onClick={() => {
                 if (isDragInteractionLocked()) return;
@@ -239,8 +239,8 @@ export default function PreviewWindowBody({
             disabled={!canRateOutput}
             className={`w-6 h-6 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               feedbackRating === "up"
-                ? "bg-emerald-100 text-emerald-700"
-                : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-200"
+                : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             }`}
             onClick={() => {
               if (!canRateOutput || isDragInteractionLocked()) return;
@@ -258,8 +258,8 @@ export default function PreviewWindowBody({
             disabled={!canRateOutput}
             className={`w-6 h-6 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
               feedbackRating === "down"
-                ? "bg-rose-100 text-rose-700"
-                : "hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700"
+                ? "bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-200"
+                : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             }`}
             onClick={() => {
               if (!canRateOutput || isDragInteractionLocked()) return;
@@ -273,7 +273,7 @@ export default function PreviewWindowBody({
             </svg>
           </button>
           <button
-            className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-zinc-100 text-zinc-400 hover:text-zinc-700 transition-colors"
+            className="flex h-6 w-6 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             onClick={() => {
               if (isDragInteractionLocked()) return;
               void handleClose();
@@ -321,19 +321,19 @@ export default function PreviewWindowBody({
         </div>
 
         {attachments.length > 0 && (
-          <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-blue-50/80 max-h-32 overflow-y-auto">
+          <div className="max-h-32 shrink-0 overflow-y-auto border-b border-zinc-200 bg-blue-50/80 px-3 py-2 dark:border-zinc-700 dark:bg-blue-950/30">
             <div className="flex flex-col gap-2">
               {attachments.map((attachment, index) => (
                 <div
                   key={`${attachment.kind}-${attachment.name}-${index}`}
-                  className="flex items-center gap-2 rounded-lg border border-blue-100 bg-white/90 px-2 py-1.5"
+                  className="flex items-center gap-2 rounded-lg border border-blue-100 bg-white/90 px-2 py-1.5 dark:border-blue-900/60 dark:bg-zinc-900/80"
                 >
-                  <span className="shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-blue-700">
+                  <span className="shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-blue-700 dark:bg-blue-950/70 dark:text-blue-200">
                     {getAttachmentFormatLabel(attachment)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs text-zinc-700 truncate">{attachment.name}</div>
-                    <div className="text-[11px] text-zinc-500 leading-tight">
+                    <div className="truncate text-xs text-zinc-700 dark:text-zinc-200">{attachment.name}</div>
+                    <div className="text-[11px] leading-tight text-zinc-500 dark:text-zinc-400">
                       {attachment.source === "screenshot"
                         ? t("preview.screenshotAttached")
                         : attachment.kind === "image"
@@ -343,7 +343,7 @@ export default function PreviewWindowBody({
                     </div>
                   </div>
                   <button
-                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-200 text-zinc-400 hover:text-zinc-700 transition-colors"
+                    className="flex h-5 w-5 items-center justify-center rounded text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                     onClick={() => handleRemoveAttachment(index)}
                     title={t("preview.removeAttachment")}
                   >
@@ -359,8 +359,8 @@ export default function PreviewWindowBody({
         )}
 
         {quickActionCommands.length > 0 && (
-          <div className="px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70 max-h-28 overflow-y-auto">
-            <div className="text-[11px] font-medium text-zinc-500 mb-1.5">{t("preview.quickActions")}</div>
+          <div className="max-h-28 shrink-0 overflow-y-auto border-b border-zinc-200 bg-white/70 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/70">
+            <div className="mb-1.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t("preview.quickActions")}</div>
             <div className="flex flex-wrap gap-1.5">
               {quickActionCommands.map((command) => (
                 <button
@@ -380,9 +380,9 @@ export default function PreviewWindowBody({
         )}
       </div>
 
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 shrink-0 bg-white/70">
+      <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/70 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/70">
         <button
-          className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
           disabled={isLlmLoading}
           onClick={() => {
             if (isDragInteractionLocked()) return;
@@ -417,7 +417,7 @@ export default function PreviewWindowBody({
         </button>
       </div>
 
-      <div className="flex justify-center gap-2 px-3 py-2 shrink-0 bg-white/80">
+      <div className="flex shrink-0 justify-center gap-2 bg-white/80 px-3 py-2 dark:bg-zinc-950/80">
         <button
           type="button"
           disabled={!hasOutput}
@@ -499,10 +499,10 @@ export default function PreviewWindowBody({
       )}
 
       {isFileDragActive && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-blue-100/50 backdrop-blur-[1px]">
-          <div className="rounded-2xl border-2 border-dashed border-blue-400 bg-white/85 px-6 py-4 text-center shadow-lg">
-            <div className="text-sm font-semibold text-blue-700">{t("preview.attachFile")}</div>
-            <div className="mt-1 text-xs text-blue-600">Drop files here</div>
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-blue-100/50 backdrop-blur-[1px] dark:bg-blue-950/40">
+          <div className="rounded-2xl border-2 border-dashed border-blue-400 bg-white/85 px-6 py-4 text-center shadow-lg dark:border-blue-700 dark:bg-zinc-950/90">
+            <div className="text-sm font-semibold text-blue-700 dark:text-blue-200">{t("preview.attachFile")}</div>
+            <div className="mt-1 text-xs text-blue-600 dark:text-blue-300">Drop files here</div>
           </div>
         </div>
       )}

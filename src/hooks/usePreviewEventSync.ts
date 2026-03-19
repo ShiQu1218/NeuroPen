@@ -10,6 +10,7 @@ import {
   type CustomLanguageVariant,
   type PreferredLanguage,
   type QuickActionCommand,
+  type ThemePreference,
 } from "../store/useAppStore";
 import type { PreviewSourceMode } from "../utils/previewWindow";
 import type { PreviewAttachment } from "../utils/previewAttachments";
@@ -197,6 +198,7 @@ export function usePreviewEventSync({
         llmModel?: string;
         llmModelOptions?: string[];
         language?: AppLanguage;
+        themePreference?: ThemePreference;
         preferredLanguage?: PreferredLanguage;
         customLanguageVariants?: CustomLanguageVariant[];
         modeAPrompt?: string;
@@ -223,6 +225,9 @@ export function usePreviewEventSync({
         }
         if (event.payload.language) {
           state.setLanguage(event.payload.language);
+        }
+        if (event.payload.themePreference) {
+          state.setThemePreference(event.payload.themePreference);
         }
         if (event.payload.customLanguageVariants) {
           state.setCustomLanguageVariants(event.payload.customLanguageVariants);

@@ -23,6 +23,7 @@ export type AppLanguage =
   | "fr-FR"
   | "ar-SA"
   | "ru-RU";
+export type ThemePreference = "light" | "dark" | "system";
 
 export type SttEngine = "openAi" | "localWhisper" | "senseVoice" | "moonshine";
 export type SttLanguage = "auto" | "zh" | "en" | "ja" | "ko" | "de" | "fr" | "es" | "ru" | "ar";

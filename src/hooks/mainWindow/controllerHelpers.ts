@@ -7,6 +7,7 @@ import type {
   PreferredLanguage,
   QuickActionCommand,
   SttLanguage,
+  ThemePreference,
   TranslationTarget,
 } from "../../store/useAppStore";
 import { useAppStore } from "../../store/useAppStore";
@@ -41,6 +42,7 @@ export interface SettingsSavedPayload {
   llmModel?: string;
   llmModelOptions?: string[];
   language?: AppLanguage;
+  themePreference?: ThemePreference;
   preferredLanguage?: PreferredLanguage;
   customLanguageVariants?: CustomLanguageVariant[];
   modeAPrompt?: string;
@@ -235,6 +237,9 @@ export function applySettingsSavedPayload(
   }
   if (payload.language) {
     store.setLanguage(payload.language);
+  }
+  if (payload.themePreference) {
+    store.setThemePreference(payload.themePreference);
   }
   if (payload.preferredLanguage) {
     store.setPreferredLanguage(payload.preferredLanguage);
