@@ -1,6 +1,6 @@
 [package]
 name = "neuropen"
-version = "0.2.10"
+version = "0.3.0"
 description = "NeuroPen - Windows Desktop AI Voice Assistant"
 authors = ["you"]
 edition = "2021"
