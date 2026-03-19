@@ -92,11 +92,64 @@ export const DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER: Record<LlmProvider, string[]
   lmStudio: ["local-model"],
 };
 
+export const LLM_PROVIDER_KEYS = [
+  "openAi",
+  "gemini",
+  "claude",
+  "grok",
+  "ollama",
+  "llamaCpp",
+  "lmStudio",
+  "qwen",
+  "doubao",
+  "deepseek",
+] as const satisfies ReadonlyArray<LlmProvider>;
+
 export const getDefaultLlmModelOptions = (provider: LlmProvider) =>
   [...(DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER[provider] ?? DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER.openAi)];
 
 export const getDefaultLlmModel = (provider: LlmProvider) =>
   getDefaultLlmModelOptions(provider)[0] ?? "gpt-4o-mini";
+
+export const createDefaultLlmModelOptionsByProvider = (): Record<LlmProvider, string[]> =>
+  Object.fromEntries(
+    LLM_PROVIDER_KEYS.map((provider) => [provider, getDefaultLlmModelOptions(provider)])
+  ) as Record<LlmProvider, string[]>;
+
+export const normalizeLlmModelOptionsByProvider = (
+  value: Partial<Record<LlmProvider, string[]>> | undefined,
+  selectedModelsByProvider?: Partial<Record<LlmProvider, string>>,
+): Record<LlmProvider, string[]> =>
+  Object.fromEntries(
+    LLM_PROVIDER_KEYS.map((provider) => {
+      const preferredModel = selectedModelsByProvider?.[provider]?.trim() || getDefaultLlmModel(provider);
+      const sourceModels = Array.isArray(value?.[provider])
+        ? value[provider] ?? []
+        : getDefaultLlmModelOptions(provider);
+      return [provider, normalizeLlmModelOptions(sourceModels, preferredModel)];
+    })
+  ) as Record<LlmProvider, string[]>;
+
+export const normalizeLlmSelectedModelsByProvider = (
+  value: Partial<Record<LlmProvider, string>> | undefined,
+  modelOptionsByProvider: Partial<Record<LlmProvider, string[]>> | Record<LlmProvider, string[]>,
+): Record<LlmProvider, string> =>
+  Object.fromEntries(
+    LLM_PROVIDER_KEYS.map((provider) => {
+      const preferredModel = value?.[provider]?.trim() ?? "";
+      const providerOptions = normalizeLlmModelOptions(
+        Array.isArray(modelOptionsByProvider[provider])
+          ? modelOptionsByProvider[provider] ?? []
+          : getDefaultLlmModelOptions(provider),
+        getDefaultLlmModel(provider),
+      );
+      const nextModel =
+        preferredModel && providerOptions.includes(preferredModel)
+          ? preferredModel
+          : providerOptions[0] ?? getDefaultLlmModel(provider);
+      return [provider, nextModel];
+    })
+  ) as Record<LlmProvider, string>;
 
 export const isLocalRuntimeLlmProvider = (provider: LlmProvider) =>
   provider === "ollama" || provider === "llamaCpp" || provider === "lmStudio";

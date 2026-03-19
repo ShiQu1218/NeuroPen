@@ -213,6 +213,8 @@ export default function Settings() {
     llmProvider, setLlmProvider,
     llmModel, setLlmModel,
     llmModelOptions, setLlmModelOptions,
+    llmModelOptionsByProvider,
+    llmSelectedModelByProvider,
     sttEnabled, setSttEnabled,
     selectionEnabled, setSelectionEnabled,
     screenshotEnabled, setScreenshotEnabled,
@@ -336,6 +338,8 @@ export default function Settings() {
     provider: LlmProvider,
     preferredModel?: string,
   ) => {
+    const rememberedModel = llmSelectedModelByProvider[provider]?.trim() ?? "";
+    const requestedModel = preferredModel?.trim() || rememberedModel;
     if (isLocalRuntimeLlmProvider(provider)) {
       const fallbackModel = getDefaultLlmModel(provider);
       const fallbackOptions = normalizeRuntimeModelCatalog([fallbackModel]);
@@ -345,7 +349,7 @@ export default function Settings() {
           await settingsService.listAvailableLlmModels(provider)
         );
         const nextOptions = discoveredModels.length > 0 ? discoveredModels : fallbackOptions;
-        const trimmedPreferredModel = preferredModel?.trim() ?? "";
+        const trimmedPreferredModel = requestedModel;
         const nextModel =
           trimmedPreferredModel && nextOptions.includes(trimmedPreferredModel)
             ? trimmedPreferredModel
@@ -354,22 +358,23 @@ export default function Settings() {
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         setPanelMessage("llm", "error", reason || t("settings.saveError"));
+        const retainedModel = requestedModel || fallbackModel;
         return {
-          nextModel: fallbackModel,
-          nextOptions: fallbackOptions,
+          nextModel: retainedModel,
+          nextOptions: normalizeRuntimeModelCatalog([retainedModel, ...fallbackOptions]),
         };
       } finally {
         setLlmModelsLoading(false);
       }
     }
 
-    const nextModel = preferredModel?.trim() || getDefaultLlmModel(provider);
+    const nextModel = requestedModel || getDefaultLlmModel(provider);
     const nextOptions = normalizeLlmModelOptions(
-      getDefaultLlmModelOptions(provider),
+      llmModelOptionsByProvider[provider] ?? getDefaultLlmModelOptions(provider),
       nextModel,
     );
     return { nextModel, nextOptions };
-  }, [setPanelMessage, t]);
+  }, [llmModelOptionsByProvider, llmSelectedModelByProvider, setPanelMessage, t]);
 
   const formatBytes = useCallback((bytes?: number) => {
     if (!bytes || bytes <= 0) {
@@ -1071,9 +1076,12 @@ export default function Settings() {
   }, [setPanelMessage, sttTextDrafts.vocabularyTerms, t]);
 
   const handleLlmProviderChange = useCallback(async (value: typeof llmProvider) => {
-    const { nextModel, nextOptions } = await resolveProviderModelState(value);
+    const { nextModel, nextOptions } = await resolveProviderModelState(
+      value,
+      llmSelectedModelByProvider[value],
+    );
     await applyResolvedLlmProviderState(value, nextModel, nextOptions);
-  }, [applyResolvedLlmProviderState, resolveProviderModelState]);
+  }, [applyResolvedLlmProviderState, llmSelectedModelByProvider, resolveProviderModelState]);
 
   const localLlmProviderNoKeyHint =
     llmProvider === "ollama"

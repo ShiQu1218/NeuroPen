@@ -2,10 +2,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   DEFAULT_APP_PROFILES,
+  createDefaultLlmModelOptionsByProvider,
   getDefaultLlmModel,
   getDefaultLlmModelOptions,
   DEFAULT_QUICK_ACTION_COMMANDS,
   normalizeLlmModelOptions,
+  normalizeLlmModelOptionsByProvider,
+  normalizeLlmSelectedModelsByProvider,
 } from "./appStoreDefaults";
 import {
   DEFAULT_MODE_A_PROMPT,
@@ -89,6 +92,20 @@ const normalizePersistedAppProfiles = (
     }));
 };
 
+const normalizePersistedProviderModelOptions = (value: unknown): Partial<Record<LlmProvider, string[]>> => {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return value as Partial<Record<LlmProvider, string[]>>;
+};
+
+const normalizePersistedProviderSelectedModels = (value: unknown): Partial<Record<LlmProvider, string>> => {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return value as Partial<Record<LlmProvider, string>>;
+};
+
 interface AppState {
   // --- User preferences (persisted) ---
   wakeWord: string;
@@ -97,6 +114,8 @@ interface AppState {
   llmProvider: LlmProvider;
   llmModel: string;
   llmModelOptions: string[];
+  llmModelOptionsByProvider: Record<LlmProvider, string[]>;
+  llmSelectedModelByProvider: Record<LlmProvider, string>;
   incognito: boolean;
   sttEnabled: boolean;
   selectionEnabled: boolean;
@@ -268,6 +287,12 @@ const SESSION_RUNTIME_RESET: Pick<
   currentFeedbackRating: null,
 };
 
+const DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE = createDefaultLlmModelOptionsByProvider();
+const DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE = normalizeLlmSelectedModelsByProvider(
+  undefined,
+  DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE,
+);
+
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
@@ -276,11 +301,10 @@ export const useAppStore = create<AppState>()(
       sttModelPath: "",
       outputMode: "PreviewStream",
       llmProvider: "openAi",
-      llmModel: getDefaultLlmModel("openAi"),
-      llmModelOptions: normalizeLlmModelOptions(
-        getDefaultLlmModelOptions("openAi"),
-        getDefaultLlmModel("openAi")
-      ),
+      llmModel: DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE.openAi,
+      llmModelOptions: DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE.openAi,
+      llmModelOptionsByProvider: DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE,
+      llmSelectedModelByProvider: DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE,
       incognito: false,
       sttEnabled: true,
       selectionEnabled: true,
@@ -341,22 +365,71 @@ export const useAppStore = create<AppState>()(
       setWakeWord: (word) => set({ wakeWord: word }),
       setSttModelPath: (path) => set({ sttModelPath: path }),
       setOutputMode: (mode) => set({ outputMode: mode }),
-      setLlmProvider: (provider) => set({ llmProvider: provider }),
+      setLlmProvider: (provider) =>
+        set((state) => {
+          const rememberedModel = state.llmSelectedModelByProvider[provider]?.trim() || getDefaultLlmModel(provider);
+          const nextOptions = normalizeLlmModelOptions(
+            state.llmModelOptionsByProvider[provider] ?? getDefaultLlmModelOptions(provider),
+            rememberedModel,
+          );
+          const nextModel =
+            rememberedModel && nextOptions.includes(rememberedModel)
+              ? rememberedModel
+              : nextOptions[0] ?? getDefaultLlmModel(provider);
+          return {
+            llmProvider: provider,
+            llmModel: nextModel,
+            llmModelOptions: nextOptions,
+            llmModelOptionsByProvider: {
+              ...state.llmModelOptionsByProvider,
+              [provider]: nextOptions,
+            },
+            llmSelectedModelByProvider: {
+              ...state.llmSelectedModelByProvider,
+              [provider]: nextModel,
+            },
+          };
+        }),
       setLlmModel: (model) =>
         set((state) => {
           const nextModel = model.trim();
           if (!nextModel) {
             return state;
           }
+          const nextOptions = normalizeLlmModelOptions(state.llmModelOptions, nextModel);
           return {
             llmModel: nextModel,
-            llmModelOptions: normalizeLlmModelOptions(state.llmModelOptions, nextModel),
+            llmModelOptions: nextOptions,
+            llmModelOptionsByProvider: {
+              ...state.llmModelOptionsByProvider,
+              [state.llmProvider]: nextOptions,
+            },
+            llmSelectedModelByProvider: {
+              ...state.llmSelectedModelByProvider,
+              [state.llmProvider]: nextModel,
+            },
           };
         }),
       setLlmModelOptions: (llmModelOptions) =>
-        set((state) => ({
-          llmModelOptions: normalizeLlmModelOptions(llmModelOptions, state.llmModel),
-        })),
+        set((state) => {
+          const nextOptions = normalizeLlmModelOptions(llmModelOptions, state.llmModel);
+          const nextModel =
+            state.llmModel.trim() && nextOptions.includes(state.llmModel.trim())
+              ? state.llmModel.trim()
+              : nextOptions[0] ?? getDefaultLlmModel(state.llmProvider);
+          return {
+            llmModel: nextModel,
+            llmModelOptions: nextOptions,
+            llmModelOptionsByProvider: {
+              ...state.llmModelOptionsByProvider,
+              [state.llmProvider]: nextOptions,
+            },
+            llmSelectedModelByProvider: {
+              ...state.llmSelectedModelByProvider,
+              [state.llmProvider]: nextModel,
+            },
+          };
+        }),
       setIncognito: (on) => set({ incognito: on }),
       setSttEnabled: (sttEnabled) => set({ sttEnabled }),
       setSelectionEnabled: (selectionEnabled) => set({ selectionEnabled }),
@@ -474,10 +547,43 @@ export const useAppStore = create<AppState>()(
           typeof persisted.llmProvider === "string"
             ? persisted.llmProvider
             : currentState.llmProvider;
-        const nextModel =
+        const legacyCurrentModel =
           typeof persisted.llmModel === "string" && persisted.llmModel.trim()
             ? persisted.llmModel.trim()
             : getDefaultLlmModel(nextProvider);
+        const persistedModelOptionsByProvider = normalizePersistedProviderModelOptions(
+          persisted.llmModelOptionsByProvider
+        );
+        const persistedSelectedModelsByProvider = normalizePersistedProviderSelectedModels(
+          persisted.llmSelectedModelByProvider
+        );
+        const migratedModelOptionsByProvider = normalizeLlmModelOptionsByProvider(
+          {
+            ...currentState.llmModelOptionsByProvider,
+            ...persistedModelOptionsByProvider,
+            ...(Array.isArray(persisted.llmModelOptions)
+              ? { [nextProvider]: persisted.llmModelOptions }
+              : {}),
+          },
+          {
+            ...currentState.llmSelectedModelByProvider,
+            ...persistedSelectedModelsByProvider,
+            [nextProvider]: legacyCurrentModel,
+          },
+        );
+        const migratedSelectedModelsByProvider = normalizeLlmSelectedModelsByProvider(
+          {
+            ...currentState.llmSelectedModelByProvider,
+            ...persistedSelectedModelsByProvider,
+            [nextProvider]: legacyCurrentModel,
+          },
+          migratedModelOptionsByProvider,
+        );
+        const nextModel = migratedSelectedModelsByProvider[nextProvider] ?? legacyCurrentModel;
+        const nextModelOptions = normalizeLlmModelOptions(
+          migratedModelOptionsByProvider[nextProvider] ?? getDefaultLlmModelOptions(nextProvider),
+          nextModel,
+        );
         const normalizedCustomVariants = normalizeCustomLanguageVariants(persisted.customLanguageVariants);
         return {
           ...currentState,
@@ -491,12 +597,15 @@ export const useAppStore = create<AppState>()(
           modeCPrompt: typeof normalizedModeCPrompt === "string" ? normalizedModeCPrompt : currentState.modeCPrompt,
           llmProvider: nextProvider,
           llmModel: nextModel,
-          llmModelOptions: normalizeLlmModelOptions(
-            Array.isArray(persisted.llmModelOptions)
-              ? persisted.llmModelOptions
-              : getDefaultLlmModelOptions(nextProvider),
-            nextModel,
-          ),
+          llmModelOptions: nextModelOptions,
+          llmModelOptionsByProvider: {
+            ...migratedModelOptionsByProvider,
+            [nextProvider]: nextModelOptions,
+          },
+          llmSelectedModelByProvider: {
+            ...migratedSelectedModelsByProvider,
+            [nextProvider]: nextModel,
+          },
           preferenceLearningEnabled:
             typeof persisted.preferenceLearningEnabled === "boolean"
               ? persisted.preferenceLearningEnabled
@@ -522,6 +631,8 @@ export const useAppStore = create<AppState>()(
         llmProvider: state.llmProvider,
         llmModel: state.llmModel,
         llmModelOptions: state.llmModelOptions,
+        llmModelOptionsByProvider: state.llmModelOptionsByProvider,
+        llmSelectedModelByProvider: state.llmSelectedModelByProvider,
         incognito: state.incognito,
         sttEnabled: state.sttEnabled,
         selectionEnabled: state.selectionEnabled,
