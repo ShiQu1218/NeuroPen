@@ -272,8 +272,12 @@ export default function Settings() {
   const [failedTtsDownloadModelId, setFailedTtsDownloadModelId] = useState("");
   const [ttsModelStatus, setTtsModelStatus] = useState<{ type: "" | "success" | "error"; message: string }>(EMPTY_BUSY_MESSAGE);
   const [promptDrafts, setPromptDrafts] = useState({ modeAPrompt, modeBPrompt, modeCPrompt });
-  const [profilePromptDrafts, setProfilePromptDrafts] = useState<Record<string, AppProfilePromptDraft>>({});
-  const [profileTextDrafts, setProfileTextDrafts] = useState<Record<string, AppProfileTextDraft>>({});
+  const [profilePromptDrafts, setProfilePromptDrafts] = useState<Record<string, AppProfilePromptDraft>>(() =>
+    Object.fromEntries(appProfiles.map((p) => [p.id, { toneHint: p.toneHint, promptAppendix: p.promptAppendix }]))
+  );
+  const [profileTextDrafts, setProfileTextDrafts] = useState<Record<string, AppProfileTextDraft>>(() =>
+    Object.fromEntries(appProfiles.map((p) => [p.id, { name: p.name }]))
+  );
   const [sttTextDrafts, setSttTextDrafts] = useState<SttTextDrafts>({
     wakeWord,
     vocabularyTerms: vocabularyTerms.join("\n"),
@@ -505,53 +509,6 @@ export default function Settings() {
   );
 
   useEffect(() => {
-    setPromptDrafts({ modeAPrompt, modeBPrompt, modeCPrompt });
-  }, [modeAPrompt, modeBPrompt, modeCPrompt]);
-
-  useEffect(() => {
-    setProfilePromptDrafts((prev) => {
-      const next: Record<string, AppProfilePromptDraft> = {};
-      for (const profile of appProfiles) {
-        next[profile.id] = prev[profile.id] ?? {
-          toneHint: profile.toneHint,
-          promptAppendix: profile.promptAppendix,
-        };
-      }
-      return next;
-    });
-  }, [appProfiles]);
-
-  useEffect(() => {
-    setProfileTextDrafts((prev) => {
-      const next: Record<string, AppProfileTextDraft> = {};
-      for (const profile of appProfiles) {
-        next[profile.id] = prev[profile.id] ?? {
-          name: profile.name,
-        };
-      }
-      return next;
-    });
-  }, [appProfiles]);
-
-  useEffect(() => {
-    setSttTextDrafts((prev) => ({
-      ...prev,
-      wakeWord,
-    }));
-  }, [wakeWord]);
-
-  useEffect(() => {
-    setSttTextDrafts((prev) => ({
-      ...prev,
-      vocabularyTerms: vocabularyTerms.join("\n"),
-    }));
-  }, [vocabularyTerms]);
-
-  useEffect(() => {
-    setLlmModelDraft(llmModel);
-  }, [llmModel]);
-
-  useEffect(() => {
     if (initialLocalLlmCatalogSyncedRef.current) {
       return;
     }
@@ -580,18 +537,6 @@ export default function Settings() {
       cancelled = true;
     };
   }, [applyResolvedLlmProviderState, llmModel, llmModelOptions, llmProvider, resolveProviderModelState]);
-
-  useEffect(() => {
-    setQuickActionDraftCommands(quickActionCommands);
-  }, [quickActionCommands]);
-
-  useEffect(() => {
-    setTtsTextDrafts({
-      voice: ttsVoice,
-      rate: ttsRate,
-      pitch: ttsPitch,
-    });
-  }, [ttsPitch, ttsRate, ttsVoice]);
 
   useEffect(() => {
     settingsService.getSttCapabilities()
@@ -1436,10 +1381,12 @@ export default function Settings() {
   }, []);
 
   const handleSaveProfilePrompts = useCallback(async (profileId: string) => {
-    const promptDraft = profilePromptDrafts[profileId];
-    if (!promptDraft) {
-      return;
-    }
+    const profileForFallback = appProfiles.find((p) => p.id === profileId);
+    if (!profileForFallback) return;
+    const promptDraft = profilePromptDrafts[profileId] ?? {
+      toneHint: profileForFallback.toneHint,
+      promptAppendix: profileForFallback.promptAppendix,
+    };
     const nextProfiles = appProfiles.map((profile) =>
       profile.id === profileId
         ? { ...profile, toneHint: promptDraft.toneHint, promptAppendix: promptDraft.promptAppendix }
@@ -1451,10 +1398,9 @@ export default function Settings() {
   }, [appProfiles, broadcastSettingsSaved, profilePromptDrafts, setAppProfiles, setPanelMessage, t]);
 
   const handleSaveProfileTextFields = useCallback(async (profileId: string) => {
-    const textDraft = profileTextDrafts[profileId];
-    if (!textDraft) {
-      return;
-    }
+    const profileForFallback = appProfiles.find((p) => p.id === profileId);
+    if (!profileForFallback) return;
+    const textDraft = profileTextDrafts[profileId] ?? { name: profileForFallback.name };
     const nextName = textDraft.name.trim();
     setProfileTextDrafts((prev) => ({
       ...prev,

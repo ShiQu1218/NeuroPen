@@ -28,13 +28,11 @@ export default function RecordingIndicator() {
   const setPartialTranscript = useAppStore((s) => s.setPartialTranscript);
   const { t } = useI18n();
 
-  useEffect(() => {
-    statusTextRef.current = statusText;
-  }, [statusText]);
-
-  useEffect(() => {
-    isRecordingRef.current = isRecording;
-  }, [isRecording]);
+  // Sync latest values into refs so setTimeout callbacks read current state
+  // without stale closures. Assigning refs during render is safe and avoids
+  // the overhead of two extra effects.
+  statusTextRef.current = statusText;
+  isRecordingRef.current = isRecording;
 
   const clearHideTimer = () => {
     if (hideTimerRef.current) {
