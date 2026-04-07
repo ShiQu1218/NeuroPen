@@ -32,10 +32,14 @@ export const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
 const SENTENCE_BOUNDARY_RE = /([.!?;。！？؛；]+)\s*/g;
 const CLAUSE_BOUNDARY_RE = /([,;:，、：؛；])\s*/g;
 const LIST_PREFIX_RE = /^(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+)/;
+const MATH_CONNECTOR_SPLIT_RE = /(所以|因此|故|則|于是|then|therefore|hence)/g;
+const COMMON_TEX_COMMAND_RE =
+  /\\(?:sqrt|frac|times|cdot|div|left|right|alpha|beta|gamma|delta|theta|lambda|mu|pi|sigma|omega|sum|prod|int|log|ln|sin|cos|tan|cot|sec|csc|leq|geq|neq|approx|pm|mp|to|infty|text)\b/;
 
 /**
  * Apply a regex replacement only to text segments that lie **outside** of
- * `$…$` and `$$…$$` math spans.  Math spans are returned unchanged.
+ * `$…$`, `$$…$$`, `\(...\)`, and `\[...\]` math spans.  Math spans are
+ * returned unchanged.
  *
  * This prevents text-formatting heuristics (list-prefix insertion, sentence
  * breaking, etc.) from corrupting LaTeX expressions that happen to contain
@@ -46,7 +50,7 @@ const replaceOutsideMath = (
   pattern: RegExp,
   replacement: string,
 ): string => {
-  const mathRe = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$/g;
+  const mathRe = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\[[\s\S]+?\\\]|\\\([^$\n]+?\\\)/g;
   const parts: string[] = [];
   let cursor = 0;
   let m: RegExpExecArray | null;
@@ -170,6 +174,28 @@ export const formatModeAText = (text: string) => {
     .trim();
 };
 
+export const formatModeATextForPreview = (text: string) => {
+  const normalized = text.replace(/\r\n?/g, "\n").trim();
+  if (!normalized) return "";
+
+  if (looksLikeMarkdown(normalized)) {
+    return normalizePreviewMarkdown(normalized);
+  }
+
+  let result = normalized
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ");
+
+  result = replaceOutsideMath(result, /([^\n])((?:\(?\d{1,3}[.)]\s+))/g, "$1\n$2");
+  result = replaceOutsideMath(result, /([^\n])((?:[-*+•]\s+))/g, "$1\n$2");
+
+  return result
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+};
+
 export const normalizeStructuredText = (text: string) =>
   text
     .replace(/\r\n?/g, "\n")
@@ -245,9 +271,140 @@ export const looksLikeGfmMarkdown = (text: string) =>
   );
 
 export const looksLikeMathMarkdown = (text: string) =>
-  /(^|[^\\])\$\$[\s\S]+?\$\$|(^|[^\\])\$[^$\n]+?\$|\\\((?:[\s\S]+?)\\\)|\\\[(?:[\s\S]+?)\\\]|\\begin\{[a-zA-Z*]+\}/m.test(
+  /(^|[^\\])\$\$[\s\S]+?\$\$|(^|[^\\])\$[^$\n]+?\$|\\\((?:[\s\S]+?)\\\)|\\\[(?:[\s\S]+?)\\\]|\\begin\{[a-zA-Z*]+\}|\\(?:sqrt|frac|times|cdot|left|right|alpha|beta|gamma|delta|theta|lambda|mu|pi|sigma|omega|sum|prod|int|log|ln|sin|cos|tan|cot|sec|csc|leq|geq|neq|approx|pm|mp|to|infty|text)\b/m.test(
     text,
   );
+
+const looksLikeMathSegment = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 180 || trimmed.includes("`")) {
+    return false;
+  }
+
+  const hasCommand = COMMON_TEX_COMMAND_RE.test(trimmed);
+  const hasOperator =
+    /[=+\-*/^]|\\(?:times|cdot|frac|sqrt|left|right|div|leq|geq|neq|approx|pm|mp|to|infty)\b/.test(
+      trimmed,
+    );
+  const hasOperand = /[0-9A-Za-z]/.test(trimmed) || /[πθλμσωα-ω]/i.test(trimmed);
+  if ((!hasCommand && !hasOperator) || !hasOperand) {
+    return false;
+  }
+
+  const cjkChars = trimmed.match(/[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/g) ?? [];
+  if (cjkChars.length > 2 && !trimmed.includes("\\text{")) {
+    return false;
+  }
+
+  return true;
+};
+
+const findNextUnescapedDollar = (text: string, fromIndex: number) => {
+  for (let index = fromIndex; index < text.length; index += 1) {
+    if (text[index] === "$" && text[index - 1] !== "\\") {
+      return index;
+    }
+  }
+  return -1;
+};
+
+const unwrapInvalidInlineMath = (line: string) => {
+  let cursor = 0;
+  let result = "";
+
+  while (cursor < line.length) {
+    const start = findNextUnescapedDollar(line, cursor);
+    if (start < 0) {
+      result += line.slice(cursor);
+      break;
+    }
+
+    const end = findNextUnescapedDollar(line, start + 1);
+    if (end < 0) {
+      result += line.slice(cursor);
+      break;
+    }
+
+    result += line.slice(cursor, start);
+    const content = line.slice(start + 1, end);
+    result += looksLikeMathSegment(content) ? `$${content}$` : content;
+    cursor = end + 1;
+  }
+
+  return result;
+};
+
+const splitMathTailSuffix = (text: string) => {
+  let end = text.length;
+  while (end > 0) {
+    const ch = text[end - 1];
+    if (/\s/.test(ch) || "*：:，,。；;!！?？".includes(ch)) {
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return {
+    core: text.slice(0, end),
+    suffix: text.slice(end),
+  };
+};
+
+const wrapMathTailInSegment = (segment: string) => {
+  if (!segment.trim() || segment.includes("$")) {
+    return segment;
+  }
+
+  for (let index = 0; index < segment.length; index += 1) {
+    const ch = segment[index];
+    const isCandidateStart =
+      (ch === "\\" && /[A-Za-z]/.test(segment[index + 1] ?? "")) ||
+      /[0-9A-Za-z]/.test(ch);
+    if (!isCandidateStart) {
+      continue;
+    }
+
+    const prefix = segment.slice(0, index);
+    const trailing = segment.slice(index);
+    const leadingWhitespace = trailing.match(/^\s*/)?.[0] ?? "";
+    const body = trailing.slice(leadingWhitespace.length);
+    const { core, suffix } = splitMathTailSuffix(body);
+
+    if (!looksLikeMathSegment(core)) {
+      continue;
+    }
+
+    return `${prefix}${leadingWhitespace}$${core}$${suffix}`;
+  }
+
+  return segment;
+};
+
+const normalizeMalformedMathLines = (text: string) => {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let inCodeFence = false;
+
+  return lines
+    .map((line) => {
+      if (line.trimStart().startsWith("```")) {
+        inCodeFence = !inCodeFence;
+        return line;
+      }
+      if (inCodeFence) {
+        return line;
+      }
+      if (line.includes("$$")) {
+        return line;
+      }
+
+      const repairedInlineMath = unwrapInvalidInlineMath(line);
+      return repairedInlineMath
+        .split(MATH_CONNECTOR_SPLIT_RE)
+        .map((segment, index) => (index % 2 === 1 ? segment : wrapMathTailInSegment(segment)))
+        .join("");
+    })
+    .join("\n");
+};
 
 /**
  * Normalise math blocks for remark-math compatibility.  Two problems are addressed:
@@ -271,22 +428,47 @@ export const looksLikeMathMarkdown = (text: string) =>
  * left untouched.
  */
 export const normalizeMathBlocks = (text: string): string => {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const lines = normalizeMalformedMathLines(text).replace(/\r\n?/g, "\n").split("\n");
   let inCodeFence = false;
   const result: string[] = [];
+  let bracketDisplay:
+    | {
+        indent: string;
+        contentLines: string[];
+        rawLines: string[];
+      }
+    | null = null;
 
-  const pushDisplayBlock = (indent: string, content: string) => {
+  const pushDisplayBlock = (indent: string, contentLines: string[]) => {
     // Blank line before the block when the preceding line is non-blank.
     if (result.length > 0 && result[result.length - 1].trim() !== "") {
       result.push("");
     }
     result.push(`${indent}$$`);
-    result.push(`${indent}${content}`);
+    contentLines.forEach((contentLine) => {
+      result.push(contentLine);
+    });
     result.push(`${indent}$$`);
     result.push(""); // blank line after
   };
 
   for (const line of lines) {
+    if (bracketDisplay) {
+      bracketDisplay.rawLines.push(line);
+      const closeIndex = line.indexOf("\\]");
+      if (closeIndex >= 0) {
+        const beforeClose = line.slice(0, closeIndex).trimEnd();
+        if (beforeClose.trim()) {
+          bracketDisplay.contentLines.push(beforeClose);
+        }
+        pushDisplayBlock(bracketDisplay.indent, bracketDisplay.contentLines);
+        bracketDisplay = null;
+      } else {
+        bracketDisplay.contentLines.push(line);
+      }
+      continue;
+    }
+
     if (line.trimStart().startsWith("```")) {
       inCodeFence = !inCodeFence;
       result.push(line);
@@ -297,24 +479,51 @@ export const normalizeMathBlocks = (text: string): string => {
       continue;
     }
 
+    const matchBracketDisplaySingleLine = line.match(/^([ \t]*)\\\[(.+?)\\\][ \t]*$/);
+    if (matchBracketDisplaySingleLine) {
+      pushDisplayBlock(matchBracketDisplaySingleLine[1], [
+        `${matchBracketDisplaySingleLine[1]}${matchBracketDisplaySingleLine[2].trim()}`,
+      ]);
+      continue;
+    }
+
+    const matchBracketDisplayStart = line.match(/^([ \t]*)\\\[(.*)$/);
+    if (matchBracketDisplayStart) {
+      const contentAfterOpen = matchBracketDisplayStart[2].trim();
+      bracketDisplay = {
+        indent: matchBracketDisplayStart[1],
+        contentLines: contentAfterOpen
+          ? [`${matchBracketDisplayStart[1]}${contentAfterOpen}`]
+          : [],
+        rawLines: [line],
+      };
+      continue;
+    }
+
+    const normalizedLine = line.replace(/\\\((.+?)\\\)/g, (_, content: string) => `$${content.trim()}$`);
+
     // Case 1: Single-line $$...$$ display math → multi-line format.
     // The non-greedy `.+?` avoids false matches on lines like `$$a$$ text $$b$$`.
-    const matchDouble = line.match(/^([ \t]*)\$\$(.+?)\$\$[ \t]*$/);
+    const matchDouble = normalizedLine.match(/^([ \t]*)\$\$(.+?)\$\$[ \t]*$/);
     if (matchDouble) {
-      pushDisplayBlock(matchDouble[1], matchDouble[2].trim());
+      pushDisplayBlock(matchDouble[1], [`${matchDouble[1]}${matchDouble[2].trim()}`]);
       continue;
     }
 
     // Case 2: Standalone $...$ inline math (sole content on the line) → promote to
     // display math.  `[^$]+` ensures we only match a single $…$ pair and avoids
     // matching `$$` or lines with multiple inline-math blocks.
-    const matchSingle = line.match(/^([ \t]*)\$([^$]+)\$[ \t]*$/);
+    const matchSingle = normalizedLine.match(/^([ \t]*)\$([^$]+)\$[ \t]*$/);
     if (matchSingle) {
-      pushDisplayBlock(matchSingle[1], matchSingle[2].trim());
+      pushDisplayBlock(matchSingle[1], [`${matchSingle[1]}${matchSingle[2].trim()}`]);
       continue;
     }
 
-    result.push(line);
+    result.push(normalizedLine);
+  }
+
+  if (bracketDisplay) {
+    result.push(...bracketDisplay.rawLines);
   }
 
   return result.join("\n").replace(/\n{3,}/g, "\n\n");

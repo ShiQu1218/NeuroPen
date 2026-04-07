@@ -25,12 +25,12 @@ import {
   mergeLanguageVariantPreferences,
   resolveLanguageVariantPromptInstructionForText,
 } from "../utils/languageVariants";
+import { PREVIEW_DEFAULT_SIZE } from "../utils/previewLayout";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
 const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 260 };
-const PREVIEW_INITIAL_SIZE = { width: 420, height: 320 };
 
 export default function QuickActionIcon() {
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
@@ -368,7 +368,7 @@ export default function QuickActionIcon() {
       : qaPos.y + qaSize.height + 4;
     await showPreviewWindow({
       focusable: false,
-      size: PREVIEW_INITIAL_SIZE,
+      size: PREVIEW_DEFAULT_SIZE,
       position: {
         x: previewX,
         y: previewY,

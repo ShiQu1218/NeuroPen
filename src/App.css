@@ -490,6 +490,15 @@ body {
   margin: 0.48em 0;
 }
 
+.preview-markdown p,
+.preview-markdown li,
+.preview-markdown blockquote,
+.preview-markdown td,
+.preview-markdown th {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
 .preview-markdown ul,
 .preview-markdown ol {
   padding-left: 1.5em;
@@ -515,6 +524,8 @@ body {
   padding: 0.15em 0.35em;
   font-size: 0.88em;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .dark .preview-markdown code {
@@ -554,10 +565,17 @@ body {
   color: #a1a1aa;
 }
 
+.preview-markdown-table-wrap {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .preview-markdown table {
   border-collapse: collapse;
-  width: 100%;
-  margin: 0.5em 0;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
   font-size: 0.88em;
 }
 
@@ -585,6 +603,8 @@ body {
 .preview-markdown a {
   color: #2563eb;
   text-decoration: underline;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .dark .preview-markdown a {
@@ -610,4 +630,11 @@ body {
 
 .preview-markdown .katex {
   font-size: 1em;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.preview-markdown .katex * {
+  overflow-wrap: normal;
+  word-break: normal;
 }

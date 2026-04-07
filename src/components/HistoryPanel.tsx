@@ -13,6 +13,7 @@ import {
   type PreferenceFeedbackRating,
 } from "../utils/preferenceLearning";
 import { resolveLanguageVariantPromptInstructionForText } from "../utils/languageVariants";
+import { PREVIEW_DEFAULT_SIZE } from "../utils/previewLayout";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
 import { APP_WORKFLOW_LABEL_KEYS } from "../utils/workflowLabels";
 
@@ -150,7 +151,7 @@ export default function HistoryPanel() {
     await showPreviewWindow({
       focusable: true,
       focus: true,
-      size: { width: 420, height: 320 },
+      size: PREVIEW_DEFAULT_SIZE,
     });
 
     try {
@@ -231,7 +232,7 @@ export default function HistoryPanel() {
     await showPreviewWindow({
       focusable: true,
       focus: true,
-      size: { width: 420, height: 320 },
+      size: PREVIEW_DEFAULT_SIZE,
     });
 
     try {

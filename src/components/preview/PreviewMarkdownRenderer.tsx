@@ -1,4 +1,5 @@
 import ReactMarkdown from "react-markdown";
+import { previewMarkdownComponents } from "./previewMarkdownComponents";
 
 interface PreviewMarkdownRendererProps {
   markdown: string;
@@ -7,5 +8,5 @@ interface PreviewMarkdownRendererProps {
 export default function PreviewMarkdownRenderer({
   markdown,
 }: PreviewMarkdownRendererProps) {
-  return <ReactMarkdown>{markdown}</ReactMarkdown>;
+  return <ReactMarkdown components={previewMarkdownComponents}>{markdown}</ReactMarkdown>;
 }

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { usePreviewDragGuard } from "./usePreviewDragGuard";
 import { usePreviewEventSync, type PreviewSession } from "./usePreviewEventSync";
 import { usePreviewTts } from "./usePreviewTts";
@@ -18,12 +17,10 @@ import {
   type PreferenceFeedbackRating,
 } from "../utils/preferenceLearning";
 import type { PreviewAttachment } from "../utils/previewAttachments";
-import { clampToMonitorBounds } from "../utils/windowBounds";
-
-const PREVIEW_WIDTH = 480;
-const PREVIEW_MIN_HEIGHT = 340;
-const PREVIEW_MAX_HEIGHT = 620;
-const PREVIEW_CHROME_HEIGHT = 240;
+import {
+  fitPreviewWindowToContent,
+  resetPreviewWindowSize,
+} from "../utils/previewLayout";
 const MAX_ATTACHMENT_CONTEXT_CHARS = 24_000;
 
 function toPreviewAttachment(attachment: LoadedAttachment): PreviewAttachment {
@@ -185,17 +182,6 @@ export function usePreviewWindowController() {
     [modeAStreamOutput, modeBStreamOutput]
   );
 
-  const keepPreviewInBounds = useCallback(async (width: number, height: number) => {
-    try {
-      const win = getCurrentWindow();
-      const pos = await win.outerPosition();
-      const clamped = await clampToMonitorBounds(pos.x, pos.y, width, height);
-      await win.setPosition(new PhysicalPosition(clamped.x, clamped.y));
-    } catch (err) {
-      console.warn("[Preview] keepPreviewInBounds failed:", err);
-    }
-  }, []);
-
   const setPreviewFocusable = useCallback(async (focusable: boolean, focus = false) => {
     const win = getCurrentWindow();
     await win.setFocusable(focusable).catch(() => { });
@@ -210,7 +196,6 @@ export function usePreviewWindowController() {
 
   usePreviewEventSync({
     fallbackTtsActiveRef,
-    keepPreviewInBounds,
     setAnimKey,
     setPreviewSession,
   });
@@ -602,10 +587,7 @@ export function usePreviewWindowController() {
     if (!llmOutput.trim()) {
       void (async () => {
         try {
-          await getCurrentWindow().setSize(
-            new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
-          );
-          await keepPreviewInBounds(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT);
+          await resetPreviewWindowSize();
         } catch (err) {
           console.warn("[Preview] reset size failed:", err);
         }
@@ -614,25 +596,17 @@ export function usePreviewWindowController() {
     }
 
     outputRef.current.scrollTop = outputRef.current.scrollHeight;
-    // Resize the preview to fit the rendered answer, but clamp it so long outputs
-    // switch to scrolling instead of growing past the monitor.
-    const outputHeight = Math.max(
-      60,
-      outputContentRef.current?.scrollHeight ?? outputRef.current.scrollHeight,
-    );
-    const nextHeight = Math.min(
-      PREVIEW_MAX_HEIGHT,
-      Math.max(PREVIEW_MIN_HEIGHT, outputHeight + PREVIEW_CHROME_HEIGHT)
-    );
     void (async () => {
       try {
-        await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, nextHeight));
-        await keepPreviewInBounds(PREVIEW_WIDTH, nextHeight);
+        await fitPreviewWindowToContent(
+          outputContentRef.current,
+          outputRef.current,
+        );
       } catch (err) {
         console.warn("[Preview] grow size failed:", err);
       }
     })();
-  }, [keepPreviewInBounds, llmOutput]);
+  }, [llmOutput, previewSession?.attachments.length]);
 
   const handleCopy = useCallback(async () => {
     await invoke("copy_to_clipboard", { text: llmOutput });
@@ -665,7 +639,7 @@ export function usePreviewWindowController() {
     await invoke("tts_stop").catch(() => { });
     await invoke("clear_conversation");
     await setPreviewFocusable(false);
-    await getCurrentWindow().setSize(new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT));
+    await resetPreviewWindowSize();
     await getCurrentWindow().hide();
     setLlmOutput("");
     setIsLlmLoading(false);

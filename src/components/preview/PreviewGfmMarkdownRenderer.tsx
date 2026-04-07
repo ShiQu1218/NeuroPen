@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { previewMarkdownComponents } from "./previewMarkdownComponents";
 
 interface PreviewGfmMarkdownRendererProps {
   markdown: string;
@@ -8,5 +9,12 @@ interface PreviewGfmMarkdownRendererProps {
 export default function PreviewGfmMarkdownRenderer({
   markdown,
 }: PreviewGfmMarkdownRendererProps) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>;
+  return (
+    <ReactMarkdown
+      components={previewMarkdownComponents}
+      remarkPlugins={[remarkGfm]}
+    >
+      {markdown}
+    </ReactMarkdown>
+  );
 }

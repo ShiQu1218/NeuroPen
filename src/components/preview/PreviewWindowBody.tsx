@@ -3,7 +3,7 @@ import type { useI18n } from "../../i18n";
 import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
 import {
-  formatModeAText,
+  formatModeATextForPreview,
   looksLikeGfmMarkdown,
   looksLikeMarkdown,
   looksLikeMathMarkdown,
@@ -139,7 +139,7 @@ export default function PreviewWindowBody({
     isModeALlmPreview
       ? normalizeStructuredText(llmOutput)
       : isModeAPreview
-      ? formatModeAText(llmOutput)
+      ? formatModeATextForPreview(llmOutput)
       : normalizePreviewMarkdown(llmOutput);
   // When the output contains math markdown, normalise single-line $$...$$ blocks into
   // multi-line format so that remark-math can parse them correctly.  Without this,

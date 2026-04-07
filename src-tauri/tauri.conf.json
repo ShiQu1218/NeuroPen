@@ -33,7 +33,7 @@
       {
         "label": "preview",
         "title": "Output Preview",
-        "width": 480,
+        "width": 560,
         "height": 340,
         "visible": false,
         "focusable": false,

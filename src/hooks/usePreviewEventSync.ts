@@ -1,7 +1,5 @@
-import { LogicalSize } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
   useAppStore,
@@ -14,9 +12,7 @@ import {
 } from "../store/useAppStore";
 import type { PreviewSourceMode } from "../utils/previewWindow";
 import type { PreviewAttachment } from "../utils/previewAttachments";
-
-const PREVIEW_WIDTH = 480;
-const PREVIEW_MIN_HEIGHT = 340;
+import { resetPreviewWindowSize } from "../utils/previewLayout";
 
 export interface PreviewSession {
   type: "text" | "screenshot";
@@ -35,14 +31,12 @@ export interface PreviewSession {
 
 interface UsePreviewEventSyncOptions {
   fallbackTtsActiveRef: MutableRefObject<boolean>;
-  keepPreviewInBounds: (width: number, height: number) => Promise<void>;
   setAnimKey: Dispatch<SetStateAction<number>>;
   setPreviewSession: Dispatch<SetStateAction<PreviewSession | null>>;
 }
 
 export function usePreviewEventSync({
   fallbackTtsActiveRef,
-  keepPreviewInBounds,
   setAnimKey,
   setPreviewSession,
 }: UsePreviewEventSyncOptions) {
@@ -127,10 +121,7 @@ export function usePreviewEventSync({
         // do not leave the next session oversized before new content arrives.
         void (async () => {
           try {
-            await getCurrentWindow().setSize(
-              new LogicalSize(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT)
-            );
-            await keepPreviewInBounds(PREVIEW_WIDTH, PREVIEW_MIN_HEIGHT);
+            await resetPreviewWindowSize();
           } catch (err) {
             console.warn("[Preview] preview-session resize failed:", err);
           }
@@ -325,5 +316,5 @@ export function usePreviewEventSync({
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [fallbackTtsActiveRef, keepPreviewInBounds, setAnimKey, setPreviewSession]);
+  }, [fallbackTtsActiveRef, setAnimKey, setPreviewSession]);
 }
