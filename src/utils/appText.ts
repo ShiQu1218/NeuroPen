@@ -70,6 +70,17 @@ const replaceOutsideMath = (
   return parts.join("");
 };
 
+const splitMarkdownListPrefix = (line: string) => {
+  const match = line.match(/^([ \t]*(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+))(.*)$/);
+  if (!match) {
+    return { prefix: "", content: line };
+  }
+  return {
+    prefix: match[1],
+    content: match[2],
+  };
+};
+
 const buildParagraphs = (
   parts: string[],
   options: { maxParts: number; maxChars: number }
@@ -383,6 +394,8 @@ const wrapMathTailInSegment = (segment: string) => {
 const normalizeMalformedMathLines = (text: string) => {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   let inCodeFence = false;
+  let inDollarDisplayFence = false;
+  let inBracketDisplayFence = false;
 
   return lines
     .map((line) => {
@@ -393,35 +406,102 @@ const normalizeMalformedMathLines = (text: string) => {
       if (inCodeFence) {
         return line;
       }
-      if (line.includes("$$")) {
+
+      const trimmedLine = line.trim();
+      if (trimmedLine === "$$") {
+        inDollarDisplayFence = !inDollarDisplayFence;
+        return line;
+      }
+      if (inDollarDisplayFence) {
         return line;
       }
 
-      const repairedInlineMath = unwrapInvalidInlineMath(line);
-      return repairedInlineMath
+      if (trimmedLine.startsWith("\\[") && !trimmedLine.includes("\\]")) {
+        inBracketDisplayFence = true;
+        return line;
+      }
+      if (inBracketDisplayFence) {
+        if (trimmedLine.includes("\\]")) {
+          inBracketDisplayFence = false;
+        }
+        return line;
+      }
+
+      if (line.includes("$$") || line.includes("\\[")) {
+        return line;
+      }
+
+      const { prefix, content } = splitMarkdownListPrefix(line);
+      const repairedInlineMath = unwrapInvalidInlineMath(content);
+      const repairedContent = repairedInlineMath
         .split(MATH_CONNECTOR_SPLIT_RE)
         .map((segment, index) => (index % 2 === 1 ? segment : wrapMathTailInSegment(segment)))
         .join("");
+      return `${prefix}${repairedContent}`;
     })
     .join("\n");
 };
 
+const countUnescapedDollars = (text: string) => {
+  let count = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === "$" && text[index - 1] !== "\\") {
+      count += 1;
+    }
+  }
+  return count;
+};
+
+const unwrapRedundantMathWrapper = (math: string) => {
+  let normalized = math.trim();
+
+  while (true) {
+    if (
+      normalized.startsWith("$") &&
+      normalized.endsWith("$") &&
+      !normalized.startsWith("$$") &&
+      !normalized.endsWith("$$") &&
+      countUnescapedDollars(normalized) === 2
+    ) {
+      normalized = normalized.slice(1, -1).trim();
+      continue;
+    }
+
+    if (normalized.startsWith("\\(") && normalized.endsWith("\\)")) {
+      normalized = normalized.slice(2, -2).trim();
+      continue;
+    }
+
+    break;
+  }
+
+  return normalized;
+};
+
+export const normalizePreviewMathExpression = (math: string) =>
+  unwrapRedundantMathWrapper(
+    math
+    .replace(/\r\n?/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .trim(),
+  );
+
 /**
- * Normalise math blocks for remark-math compatibility.  Two problems are addressed:
+ * Normalise math blocks for preview KaTeX compatibility before markdown rendering.
+ * Two problems are addressed:
  *
  * 1. **Single-line `$$…$$` display math.**
- *    `remark-math` (via `micromark-extension-math`) treats `$$` at line start as the
- *    opening fence of a display-math block and expects the closing `$$` on a *separate*
- *    line.  When an LLM produces `$$formula$$` on one line — especially indented inside
- *    list items — the parser sees the first `$$` as opening a block, keeps consuming
- *    subsequent content as raw math text, and breaks numbered-list markers.
+ *    LLMs often mix `$$formula$$` with surrounding list indentation or prose.  Rewriting
+ *    those lines into a block-safe `$$\n...\n$$` form keeps the formula isolated so the
+ *    markdown parser cannot merge it into adjacent text before KaTeX auto-render runs.
  *
  * 2. **Standalone `$…$` on its own line.**
  *    When consecutive lines each contain a single `$…$` block, markdown collapses
- *    them into one paragraph (single newlines become spaces).  Adjacent inline-math
- *    blocks inside the same paragraph can cause remark-math to fail on the second
- *    block onward.  Promoting standalone `$…$` to display math (`$$`) avoids the
- *    collapse and gives proper block-level rendering.
+ *    them into one prose paragraph.  Promoting standalone `$…$` lines to display math
+ *    (`$$`) keeps them as separate block-level formulas for the preview.
  *
  * In both cases the output is multi-line `$$\ncontent\n$$` with preserved indentation
  * and surrounding blank lines for clean block separation.  Code-fenced regions are
@@ -431,6 +511,7 @@ export const normalizeMathBlocks = (text: string): string => {
   const lines = normalizeMalformedMathLines(text).replace(/\r\n?/g, "\n").split("\n");
   let inCodeFence = false;
   const result: string[] = [];
+  let inDollarDisplayFence = false;
   let bracketDisplay:
     | {
         indent: string;
@@ -479,6 +560,17 @@ export const normalizeMathBlocks = (text: string): string => {
       continue;
     }
 
+    if (line.trim() === "$$") {
+      inDollarDisplayFence = !inDollarDisplayFence;
+      result.push(line);
+      continue;
+    }
+
+    if (inDollarDisplayFence) {
+      result.push(line);
+      continue;
+    }
+
     const matchBracketDisplaySingleLine = line.match(/^([ \t]*)\\\[(.+?)\\\][ \t]*$/);
     if (matchBracketDisplaySingleLine) {
       pushDisplayBlock(matchBracketDisplaySingleLine[1], [
@@ -501,6 +593,17 @@ export const normalizeMathBlocks = (text: string): string => {
     }
 
     const normalizedLine = line.replace(/\\\((.+?)\\\)/g, (_, content: string) => `$${content.trim()}$`);
+    const trimmedNormalizedLine = normalizedLine.trim();
+
+    if (
+      trimmedNormalizedLine &&
+      !LIST_PREFIX_RE.test(trimmedNormalizedLine) &&
+      !trimmedNormalizedLine.includes("$") &&
+      looksLikeMathSegment(trimmedNormalizedLine)
+    ) {
+      pushDisplayBlock("", [trimmedNormalizedLine]);
+      continue;
+    }
 
     // Case 1: Single-line $$...$$ display math → multi-line format.
     // The non-greedy `.+?` avoids false matches on lines like `$$a$$ text $$b$$`.

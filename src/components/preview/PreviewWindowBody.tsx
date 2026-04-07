@@ -132,21 +132,23 @@ export default function PreviewWindowBody({
         : t("preview.refinementPlaceholder");
   // Mode A (voice input without instruction) → formatModeAText
   // Mode A with LLM instruction → normalizeStructuredText
-  // Mode B (selection processing) → normalizePreviewMarkdown (ensures proper
-  //   paragraph/list separation and math-safe formatting for LLM output)
-  // Mode C (assistant chat) / screenshot → normalizePreviewMarkdown
-  const rawOutput =
+  // Mode B (selection processing) / Mode C (assistant chat, screenshot) start
+  // from raw text so math normalization can run before markdown/list heuristics.
+  const sourceOutput =
     isModeALlmPreview
       ? normalizeStructuredText(llmOutput)
       : isModeAPreview
       ? formatModeATextForPreview(llmOutput)
-      : normalizePreviewMarkdown(llmOutput);
-  // When the output contains math markdown, normalise single-line $$...$$ blocks into
-  // multi-line format so that remark-math can parse them correctly.  Without this,
-  // indented $$formula$$ (e.g. inside list items) causes remark-math to consume
-  // subsequent list markers as raw math text, hiding numbered lists and breaking LaTeX.
-  const usesMathMarkdown = looksLikeMathMarkdown(rawOutput);
-  const renderedOutput = usesMathMarkdown ? normalizeMathBlocks(rawOutput) : rawOutput;
+      : llmOutput.replace(/\r\n?/g, "\n").trim();
+  // When the output contains math markup, normalise it before markdown rendering so
+  // KaTeX auto-render can scan the finished preview DOM without markdown list/text
+  // heuristics corrupting the original formula structure first.
+  const usesMathMarkdown = looksLikeMathMarkdown(sourceOutput);
+  const mathNormalizedOutput = usesMathMarkdown ? normalizeMathBlocks(sourceOutput) : sourceOutput;
+  const renderedOutput =
+    isModeALlmPreview || isModeAPreview
+      ? mathNormalizedOutput
+      : normalizePreviewMarkdown(mathNormalizedOutput);
   const usesGfmMarkdown = looksLikeGfmMarkdown(renderedOutput);
   const usesMarkdown = usesMathMarkdown || looksLikeMarkdown(renderedOutput);
 

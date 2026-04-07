@@ -1,9 +1,4 @@
-import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import "katex/dist/katex.min.css";
-import { previewMarkdownComponents } from "./previewMarkdownComponents";
+import PreviewAutoMathMarkdownRenderer from "./PreviewAutoMathMarkdownRenderer";
 
 interface PreviewMathGfmMarkdownRendererProps {
   markdown: string;
@@ -12,13 +7,5 @@ interface PreviewMathGfmMarkdownRendererProps {
 export default function PreviewMathGfmMarkdownRenderer({
   markdown,
 }: PreviewMathGfmMarkdownRendererProps) {
-  return (
-    <ReactMarkdown
-      components={previewMarkdownComponents}
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
-    >
-      {markdown}
-    </ReactMarkdown>
-  );
+  return <PreviewAutoMathMarkdownRenderer markdown={markdown} useGfm />;
 }

@@ -267,6 +267,19 @@ fn normalize_math_output_if_needed(output: &str, mode: PromptMode) -> String {
     formatting::normalize_math_output(output)
 }
 
+fn math_output_guidance(language_hint: &str) -> String {
+    format!(
+        "If mathematical expressions are present, render them in valid KaTeX-compatible LaTeX. \
+         Use inline $...$ only for short expressions embedded inside a sentence or list item. \
+         Use display math $$...$$ for standalone equations or derivation steps that belong on their own line, even if the user did not explicitly request display math. \
+         Keep list numbers, bullets, headings, labels, and explanatory prose outside math delimiters. \
+         When prose and math appear on the same line, wrap only the formula fragment, not the whole line. \
+         Never nest one math delimiter pair inside another; `$$ $...$ $$` is invalid. \
+         Never emit raw delimiter lines unless they enclose one complete valid formula. \
+         Never leave equations as plain text without LaTeX delimiters.{language_hint}"
+    )
+}
+
 fn build_prompt(
     selected_text: &str,
     instruction: &str,
@@ -277,6 +290,7 @@ fn build_prompt(
     let language_hint = preferred_language_hint(preferred_language)
         .map(|hint| format!(" {hint}"))
         .unwrap_or_default();
+    let math_guidance = math_output_guidance(&language_hint);
     let question_like = is_question_like_instruction(instruction);
     let mode = PromptMode::from_input(prompt_mode, !selected_text.is_empty());
     let system_prompt = match mode {
@@ -286,9 +300,7 @@ fn build_prompt(
              Preserve the original language unless the instruction explicitly requests translation. \
              If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when the transcript text uses another script or locale. \
              Follow the mode-specific formatting guidance carefully, keep the meaning intact, and do not add commentary or preamble. \
-             If mathematical expressions are present, render them in valid KaTeX-compatible LaTeX. \
-             Use inline $...$ by default, and do not use display math unless the user explicitly requests it. \
-             Never leave equations as plain text without LaTeX delimiters.{language_hint}"
+             {math_guidance}"
         ),
         PromptMode::B => format!(
             "You are handling selected-text commands for Mode B. \
@@ -299,9 +311,7 @@ fn build_prompt(
              Always apply the instruction to the highlighted text. \
              When answering, reply directly and clearly in natural text. \
              Use short paragraphs or lists only when they genuinely help. \
-             If mathematical expressions are present, render them in valid KaTeX-compatible LaTeX. \
-             Use inline $...$ by default, and do not use display math unless the user explicitly requests it. \
-             Never leave equations as plain text without LaTeX delimiters.{language_hint}"
+             {math_guidance}"
         ),
         PromptMode::C => format!(
             "You are handling spoken assistant queries for Mode C. \
@@ -310,9 +320,7 @@ fn build_prompt(
             If a language-variant preference is provided for that language, follow that preferred script and regional variant strictly even when the transcript or quoted content uses another script or locale. \
             Keep short paragraphs when helpful, use lists only when they genuinely improve clarity, and avoid filler opening lines. \
             Avoid unnecessary headings for simple answers, but structure longer answers clearly when needed. \
-            If mathematical expressions are present, render them in valid KaTeX-compatible LaTeX. \
-            Use inline $...$ by default, and do not use display math unless the user explicitly requests it. \
-            Never leave equations as plain text without LaTeX delimiters.{language_hint}"
+            {math_guidance}"
         ),
     };
     let system_prompt = merge_prompt_override(system_prompt, prompt_override);
@@ -1467,14 +1475,14 @@ pub async fn call_llm_with_images(
     let language_hint = preferred_language_hint(preferred_language.as_deref())
         .map(|h| format!(" {h}"))
         .unwrap_or_default();
+    let math_guidance = math_output_guidance(&language_hint);
     let mode = PromptMode::from_input(prompt_mode.as_deref(), false);
     let image_count = images.len();
     let base_prompt = format!(
         "You are a helpful assistant. The user has sent {image_count} image attachment(s) and a question about them. \
          Answer concisely based on the image content. \
          If there are multiple images, compare and synthesize across all relevant images. \
-         If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
-         Never leave equations as plain text without LaTeX delimiters.{language_hint}"
+         {math_guidance}"
     );
     let system_prompt = if mode == PromptMode::C {
         merge_prompt_override(
@@ -1486,8 +1494,7 @@ pub async fn call_llm_with_images(
                  Use short paragraphs or lists only when they genuinely help. \
                  If there are multiple images, use all of them and call out disagreements or comparisons explicitly. \
                  OCR may produce imperfect symbols, so normalize detected formulas into valid LaTeX. \
-                 If mathematical expressions are present, format them with LaTeX delimiters: inline $...$, block $$...$$. \
-                 Never leave equations as plain text without LaTeX delimiters.{language_hint}"
+                 {math_guidance}"
             ),
             prompt_override.as_deref(),
         )
@@ -1687,12 +1694,14 @@ mod tests {
     }
 
     #[test]
-    fn mode_b_prompt_prefers_inline_math_by_default() {
+    fn mode_b_prompt_distinguishes_inline_and_display_math() {
         let (system_prompt, _) =
             build_prompt("x^2 + y^2 = z^2", "解釋這個式子", None, Some("B"), None);
 
-        assert!(system_prompt.contains("Use inline $...$ by default"));
-        assert!(!system_prompt.contains("block $$...$$"));
+        assert!(system_prompt.contains("Use inline $...$ only for short expressions"));
+        assert!(system_prompt.contains("Use display math $$...$$ for standalone equations"));
+        assert!(system_prompt.contains("Keep list numbers, bullets, headings, labels, and explanatory prose outside math delimiters"));
+        assert!(system_prompt.contains("Never nest one math delimiter pair inside another"));
     }
 
     #[test]
