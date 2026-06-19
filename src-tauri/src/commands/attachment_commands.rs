@@ -1,13 +1,34 @@
 use base64::Engine;
+use once_cell::sync::Lazy;
 use rfd::AsyncFileDialog;
 use serde::Serialize;
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 const MAX_TEXT_ATTACHMENT_CHARS: usize = 18_000;
-const MAX_IMAGE_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_COUNT: usize = 8;
+const MAX_TEXT_ATTACHMENT_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_IMAGE_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_PDF_ATTACHMENT_BYTES: u64 = 15 * 1024 * 1024;
+const DROP_AUTH_TTL: Duration = Duration::from_secs(30);
+
+#[derive(Debug, Clone)]
+struct AuthorizedDropPath {
+    path: PathBuf,
+    expires_at: Instant,
+}
+
+static AUTHORIZED_DROPS: Lazy<Mutex<HashMap<String, Vec<AuthorizedDropPath>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum LoadedAttachment {
     Image {
         name: String,
@@ -40,26 +61,44 @@ pub async fn pick_attachments() -> Result<PickAttachmentsResult, String> {
         .add_filter(
             "Supported files",
             &[
-                "png", "jpg", "jpeg", "webp", "gif", "bmp", "pdf", "txt", "md", "markdown",
-                "json", "csv", "ts", "tsx", "js", "jsx", "rs", "py", "html", "htm", "css",
-                "yaml", "yml", "xml", "log", "ini", "toml",
+                "png", "jpg", "jpeg", "webp", "gif", "bmp", "pdf", "txt", "md", "markdown", "json",
+                "csv", "ts", "tsx", "js", "jsx", "rs", "py", "html", "htm", "css", "yaml", "yml",
+                "xml", "log", "ini", "toml",
             ],
         )
         .pick_files()
         .await
         .ok_or_else(|| "No file selected.".to_string())?;
 
+    if files.len() > MAX_ATTACHMENT_COUNT {
+        return Err(format!(
+            "Please select at most {MAX_ATTACHMENT_COUNT} files at a time."
+        ));
+    }
+
     let mut loaded_files = Vec::with_capacity(files.len());
     for file in files {
-        loaded_files.push((file.file_name(), file.read().await));
+        let file_name = file.file_name();
+        match validate_attachment_path(file.path()) {
+            Ok(()) => loaded_files.push((file_name, file.read().await)),
+            Err(_) => loaded_files.push((file_name, Vec::new())),
+        }
     }
     Ok(parse_attachment_batch(loaded_files))
 }
 
 #[tauri::command]
-pub fn load_attachments_from_paths(paths: Vec<String>) -> Result<PickAttachmentsResult, String> {
+pub fn load_attachments_from_paths(
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<PickAttachmentsResult, String> {
     if paths.is_empty() {
         return Err("No file selected.".to_string());
+    }
+    if paths.len() > MAX_ATTACHMENT_COUNT {
+        return Err(format!(
+            "Please drop at most {MAX_ATTACHMENT_COUNT} files at a time."
+        ));
     }
 
     let mut loaded_files = Vec::with_capacity(paths.len());
@@ -68,18 +107,54 @@ pub fn load_attachments_from_paths(paths: Vec<String>) -> Result<PickAttachments
         if normalized_path.is_empty() {
             continue;
         }
-        let file_name = Path::new(normalized_path)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| name.to_string())
-            .unwrap_or_else(|| normalized_path.to_string());
-        match std::fs::read(normalized_path) {
-            Ok(bytes) => loaded_files.push((file_name, bytes)),
-            Err(_) => loaded_files.push((file_name, Vec::new())),
+        let path = Path::new(normalized_path);
+        let Some(canonical_path) = authorized_canonical_path(window.label(), path) else {
+            return Err(
+                "Dropped file paths are no longer authorized. Drop the files again.".to_string(),
+            );
+        };
+        match read_attachment_from_path(&canonical_path) {
+            Ok(file) => loaded_files.push(file),
+            Err(_) => {
+                let file_name = safe_file_name(path);
+                loaded_files.push((file_name, Vec::new()));
+            }
         }
     }
 
     Ok(parse_attachment_batch(loaded_files))
+}
+
+pub(crate) fn record_native_drop_paths(window_label: &str, paths: &[PathBuf]) {
+    let now = Instant::now();
+    let expires_at = now + DROP_AUTH_TTL;
+    let mut canonical_paths = Vec::new();
+
+    for path in paths.iter().take(MAX_ATTACHMENT_COUNT) {
+        if let Ok(canonical_path) = canonical_file_path(path) {
+            canonical_paths.push(AuthorizedDropPath {
+                path: canonical_path,
+                expires_at,
+            });
+        }
+    }
+
+    if canonical_paths.is_empty() {
+        return;
+    }
+
+    let Ok(mut drops_by_window) = AUTHORIZED_DROPS.lock() else {
+        return;
+    };
+    let window_paths = drops_by_window
+        .entry(window_label.to_string())
+        .or_insert_with(Vec::new);
+    window_paths.retain(|entry| entry.expires_at > now);
+    window_paths.extend(canonical_paths);
+    if window_paths.len() > MAX_ATTACHMENT_COUNT {
+        let excess = window_paths.len() - MAX_ATTACHMENT_COUNT;
+        window_paths.drain(0..excess);
+    }
 }
 
 fn parse_attachment_batch(files: Vec<(String, Vec<u8>)>) -> PickAttachmentsResult {
@@ -116,11 +191,9 @@ fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachmen
         .unwrap_or_else(|| "attachment".to_string());
     let extension = normalized_extension(&safe_file_name);
     let mime_type = detect_mime_type(&extension);
+    validate_attachment_bytes(&extension, bytes.len() as u64)?;
 
     if is_supported_image_extension(&extension) {
-        if bytes.len() > MAX_IMAGE_ATTACHMENT_BYTES {
-            return Err("The selected image is too large. Please keep it under 10 MB.".to_string());
-        }
         return Ok(LoadedAttachment::Image {
             name: safe_file_name,
             mime_type: mime_type.to_string(),
@@ -170,6 +243,90 @@ fn normalized_extension(file_name: &str) -> String {
         .and_then(|value| value.to_str())
         .map(|value| value.trim().to_ascii_lowercase())
         .unwrap_or_default()
+}
+
+fn read_attachment_from_path(path: &Path) -> Result<(String, Vec<u8>), String> {
+    validate_attachment_path(path)?;
+    let file_name = safe_file_name(path);
+    let bytes = std::fs::read(path).map_err(|err| format!("Failed to read file: {err}"))?;
+    Ok((file_name, bytes))
+}
+
+fn validate_attachment_path(path: &Path) -> Result<(), String> {
+    let metadata =
+        std::fs::metadata(path).map_err(|err| format!("Failed to inspect file: {err}"))?;
+    if !metadata.is_file() {
+        return Err("The selected path is not a file.".to_string());
+    }
+    let file_name = safe_file_name(path);
+    let extension = normalized_extension(&file_name);
+    validate_attachment_bytes(&extension, metadata.len())
+}
+
+fn validate_attachment_bytes(extension: &str, byte_len: u64) -> Result<(), String> {
+    if is_supported_image_extension(extension) {
+        if byte_len > MAX_IMAGE_ATTACHMENT_BYTES {
+            return Err("The selected image is too large. Please keep it under 10 MB.".to_string());
+        }
+        return Ok(());
+    }
+    if extension == "pdf" {
+        if byte_len > MAX_PDF_ATTACHMENT_BYTES {
+            return Err("The selected PDF is too large. Please keep it under 15 MB.".to_string());
+        }
+        return Ok(());
+    }
+    if is_supported_text_extension(extension) {
+        if byte_len > MAX_TEXT_ATTACHMENT_BYTES {
+            return Err(
+                "The selected text file is too large. Please keep it under 2 MB.".to_string(),
+            );
+        }
+        return Ok(());
+    }
+    Err("Unsupported file type. Use an image, PDF, or text-based file.".to_string())
+}
+
+fn authorized_canonical_path(window_label: &str, path: &Path) -> Option<PathBuf> {
+    let Ok(canonical_path) = canonical_file_path(path) else {
+        return None;
+    };
+    let now = Instant::now();
+    let Ok(mut drops_by_window) = AUTHORIZED_DROPS.lock() else {
+        return None;
+    };
+    let Some(window_paths) = drops_by_window.get_mut(window_label) else {
+        return None;
+    };
+    window_paths.retain(|entry| entry.expires_at > now);
+    window_paths
+        .iter()
+        .any(|entry| entry.path == canonical_path)
+        .then_some(canonical_path)
+}
+
+#[cfg(test)]
+fn is_path_authorized_for_window(window_label: &str, path: &Path) -> bool {
+    authorized_canonical_path(window_label, path).is_some()
+}
+
+fn canonical_file_path(path: &Path) -> Result<PathBuf, String> {
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|err| format!("Failed to resolve file path: {err}"))?;
+    let metadata = std::fs::metadata(&canonical_path)
+        .map_err(|err| format!("Failed to inspect file: {err}"))?;
+    if !metadata.is_file() {
+        return Err("The selected path is not a file.".to_string());
+    }
+    Ok(canonical_path)
+}
+
+fn safe_file_name(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .unwrap_or_else(|| "attachment".to_string())
 }
 
 fn detect_mime_type(extension: &str) -> &'static str {
@@ -242,4 +399,41 @@ fn truncate_text(text: String, max_chars: usize) -> (String, bool) {
     // cut mid-character before being sent to the LLM.
     let truncated = text.chars().take(max_chars).collect::<String>();
     (truncated, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oversized_text_attachment_is_rejected_before_decoding() {
+        let bytes = vec![b'a'; (MAX_TEXT_ATTACHMENT_BYTES + 1) as usize];
+
+        let result = parse_attachment("large.txt".to_string(), bytes);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("text file is too large"));
+    }
+
+    #[test]
+    fn unsupported_extension_is_rejected_by_size_validation() {
+        let result = validate_attachment_bytes("exe", 128);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unsupported file type"));
+    }
+
+    #[test]
+    fn native_drop_authorization_is_scoped_to_window_label() {
+        let path =
+            std::env::temp_dir().join(format!("neuropen-drop-auth-{}.txt", std::process::id()));
+        std::fs::write(&path, "ok").expect("write temp attachment");
+
+        record_native_drop_paths("preview", &[path.clone()]);
+
+        assert!(is_path_authorized_for_window("preview", &path));
+        assert!(!is_path_authorized_for_window("settings", &path));
+
+        let _ = std::fs::remove_file(path);
+    }
 }

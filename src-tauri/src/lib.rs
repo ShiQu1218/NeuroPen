@@ -16,7 +16,7 @@ mod undo;
 mod window_focus;
 
 use commands::attachment_commands::{
-    load_attachment, load_attachments_from_paths, pick_attachments,
+    load_attachment, load_attachments_from_paths, pick_attachments, record_native_drop_paths,
 };
 use commands::history_commands::{
     history_clear, history_delete, history_list, history_save, history_search,
@@ -503,6 +503,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(hotkey::build_plugin())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                record_native_drop_paths(window.label(), paths);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             trigger_hotkey,
             lock_window,
