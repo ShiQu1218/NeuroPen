@@ -121,6 +121,7 @@ export default function PreviewWindowBody({
   } | null>(null);
   const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
   const isModeALlmPreview = isModeAPreview && !!previewSession?.instruction.trim();
+  const isAssistantChatPreview = previewSession?.sourceMode === "C";
   const hasImageAttachment = attachments.some((attachment) => attachment.kind === "image");
   const refinementPlaceholder =
     hasImageAttachment
@@ -132,8 +133,8 @@ export default function PreviewWindowBody({
         : t("preview.refinementPlaceholder");
   // Mode A (voice input without instruction) → formatModeAText
   // Mode A with LLM instruction → normalizeStructuredText
-  // Mode B (selection processing) / Mode C (assistant chat, screenshot) start
-  // from raw text so math normalization can run before markdown/list heuristics.
+  // Mode B (selection processing) starts from raw text so math normalization can
+  // run before markdown/list heuristics. Mode C keeps model-provided structure.
   const sourceOutput =
     isModeALlmPreview
       ? normalizeStructuredText(llmOutput)
@@ -146,7 +147,7 @@ export default function PreviewWindowBody({
   const usesMathMarkdown = looksLikeMathMarkdown(sourceOutput);
   const mathNormalizedOutput = usesMathMarkdown ? normalizeMathBlocks(sourceOutput) : sourceOutput;
   const renderedOutput =
-    isModeALlmPreview || isModeAPreview
+    isModeALlmPreview || isModeAPreview || isAssistantChatPreview
       ? mathNormalizedOutput
       : normalizePreviewMarkdown(mathNormalizedOutput);
   const usesGfmMarkdown = looksLikeGfmMarkdown(renderedOutput);
