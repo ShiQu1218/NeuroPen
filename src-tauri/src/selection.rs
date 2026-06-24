@@ -7,15 +7,78 @@
 //!
 //! Uses IUIAutomation via the `windows` crate.
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReleaseGesture {
     PlainClick,
-    DragSelect,
+    DragSelect { distance_px: i32 },
     DoubleClick,
 }
 
-const DRAG_DISTANCE_THRESHOLD_PX: i32 = 3;
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SelectionRect {
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+}
+
+impl SelectionRect {
+    fn right(self) -> f64 {
+        self.left + self.width
+    }
+
+    fn bottom(self) -> f64 {
+        self.top + self.height
+    }
+
+    fn is_visible(self) -> bool {
+        self.left.is_finite()
+            && self.top.is_finite()
+            && self.width.is_finite()
+            && self.height.is_finite()
+            && self.width > 0.5
+            && self.height > 0.5
+    }
+
+    fn distance_to_point(self, x: i32, y: i32) -> f64 {
+        let x = x as f64;
+        let y = y as f64;
+        let dx = if x < self.left {
+            self.left - x
+        } else if x > self.right() {
+            x - self.right()
+        } else {
+            0.0
+        };
+        let dy = if y < self.top {
+            self.top - y
+        } else if y > self.bottom() {
+            y - self.bottom()
+        } else {
+            0.0
+        };
+        (dx * dx + dy * dy).sqrt()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SelectionDetails {
+    text: String,
+    rects: Vec<SelectionRect>,
+    anchor_x: i32,
+    anchor_y: i32,
+}
+
+#[derive(Debug, Clone)]
+enum DetailedSelectionResult {
+    Selected(SelectionDetails),
+    None,
+    Unavailable,
+}
+
+const DRAG_DISTANCE_THRESHOLD_PX: i32 = 8;
+const CLIPBOARD_PROBE_DRAG_DISTANCE_THRESHOLD_PX: i32 = 12;
+const SELECTION_GESTURE_PROXIMITY_PX: f64 = 96.0;
 const DOUBLE_CLICK_WINDOW_MS: u64 = 450;
 const DOUBLE_CLICK_POSITION_TOLERANCE_PX: i32 = 4;
 const POLL_INTERVAL_MS: u64 = 25;
@@ -23,17 +86,20 @@ const UIA_SELECTION_SEARCH_DEPTH: usize = 16;
 const UIA_DESCENDANT_SEARCH_MAX_NODES: usize = 60;
 const UIA_DESCENDANT_SEARCH_MAX_DEPTH: usize = 6;
 const UIA_DESCENDANT_SEARCH_BUDGET_MS: u64 = 15;
+const SELECTION_CANDIDATE_DELAY_MS: u64 = 90;
 const CLIPBOARD_PROBE_DELAY_MS: u64 = 150;
 const CLIPBOARD_PROBE_POLL_MAX_MS: u64 = 80;
 const PROBE_CANCEL_DISTANCE_PX: i32 = 20;
 
 fn combine_selection_fragments<'a>(fragments: impl IntoIterator<Item = &'a str>) -> Option<String> {
-    let combined = fragments.into_iter().fold(String::new(), |mut acc, fragment| {
-        if !fragment.is_empty() {
-            acc.push_str(fragment);
-        }
-        acc
-    });
+    let combined = fragments
+        .into_iter()
+        .fold(String::new(), |mut acc, fragment| {
+            if !fragment.is_empty() {
+                acc.push_str(fragment);
+            }
+            acc
+        });
 
     if combined.trim().is_empty() {
         None
@@ -54,15 +120,16 @@ fn classify_release_gesture(
     }
 
     let (cx, cy) = cursor_pos;
-    let was_drag_select = match drag_start {
-        Some((sx, sy)) => {
-            (cx - sx).abs() >= DRAG_DISTANCE_THRESHOLD_PX || (cy - sy).abs() >= DRAG_DISTANCE_THRESHOLD_PX
-        }
-        None => false,
+    let drag_distance_px = match drag_start {
+        Some((sx, sy)) => (cx - sx).abs().max((cy - sy).abs()),
+        None => 0,
     };
+    let was_drag_select = drag_distance_px >= DRAG_DISTANCE_THRESHOLD_PX;
 
     if was_drag_select {
-        return Some(ReleaseGesture::DragSelect);
+        return Some(ReleaseGesture::DragSelect {
+            distance_px: drag_distance_px,
+        });
     }
 
     let is_double_click_release = match (last_release_at, last_release_pos) {
@@ -81,6 +148,67 @@ fn classify_release_gesture(
     }
 }
 
+fn release_gesture_name(gesture: Option<ReleaseGesture>) -> Option<&'static str> {
+    match gesture {
+        Some(ReleaseGesture::PlainClick) => Some("plain-click"),
+        Some(ReleaseGesture::DragSelect { .. }) => Some("drag-select"),
+        Some(ReleaseGesture::DoubleClick) => Some("double-click"),
+        None => None,
+    }
+}
+
+fn gesture_allows_clipboard_probe(gesture: ReleaseGesture) -> bool {
+    match gesture {
+        ReleaseGesture::DoubleClick => true,
+        ReleaseGesture::DragSelect { distance_px } => {
+            distance_px >= CLIPBOARD_PROBE_DRAG_DISTANCE_THRESHOLD_PX
+        }
+        ReleaseGesture::PlainClick => false,
+    }
+}
+
+fn visible_rects(rects: &[SelectionRect]) -> Vec<SelectionRect> {
+    rects
+        .iter()
+        .copied()
+        .filter(|rect| rect.is_visible())
+        .collect()
+}
+
+fn selection_anchor_from_rects(
+    rects: &[SelectionRect],
+    fallback_x: i32,
+    fallback_y: i32,
+) -> (i32, i32) {
+    let visible = visible_rects(rects);
+    if let Some(rect) = visible.last() {
+        (rect.right().round() as i32, rect.bottom().round() as i32)
+    } else {
+        (fallback_x, fallback_y)
+    }
+}
+
+fn selection_rects_match_gesture(
+    rects: &[SelectionRect],
+    drag_start: Option<(i32, i32)>,
+    release_pos: (i32, i32),
+) -> bool {
+    let visible = visible_rects(rects);
+    if visible.is_empty() {
+        return false;
+    }
+
+    let release_near = visible.iter().any(|rect| {
+        rect.distance_to_point(release_pos.0, release_pos.1) <= SELECTION_GESTURE_PROXIMITY_PX
+    });
+    let start_near = drag_start.map_or(false, |(x, y)| {
+        visible
+            .iter()
+            .any(|rect| rect.distance_to_point(x, y) <= SELECTION_GESTURE_PROXIMITY_PX)
+    });
+
+    release_near || start_near
+}
 
 /// Result of a selection poll attempt.
 #[derive(Debug, Clone)]
@@ -98,24 +226,87 @@ pub enum SelectionResult {
 /// Never panics; always returns a `SelectionResult`.
 #[cfg(target_os = "windows")]
 pub fn get_selected_text() -> SelectionResult {
+    match get_selected_text_details() {
+        DetailedSelectionResult::Selected(details) => SelectionResult::Selected(details.text),
+        DetailedSelectionResult::None => SelectionResult::None,
+        DetailedSelectionResult::Unavailable => SelectionResult::Unavailable,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn get_selected_text_details() -> DetailedSelectionResult {
+    use std::ffi::c_void;
+    use windows::core::Interface;
     use windows::Win32::Foundation::POINT;
     use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
+    use windows::Win32::System::Ole::{
+        SafeArrayAccessData, SafeArrayDestroy, SafeArrayGetLBound, SafeArrayGetUBound,
+        SafeArrayUnaccessData,
+    };
     use windows::Win32::UI::Accessibility::*;
-    use windows::core::Interface;
+
+    unsafe fn rects_from_safearray(
+        psa: *mut windows::Win32::System::Com::SAFEARRAY,
+    ) -> Vec<SelectionRect> {
+        if psa.is_null() {
+            return Vec::new();
+        }
+
+        let lbound = match SafeArrayGetLBound(psa, 1) {
+            Ok(bound) => bound,
+            Err(_) => {
+                let _ = SafeArrayDestroy(psa);
+                return Vec::new();
+            }
+        };
+        let ubound = match SafeArrayGetUBound(psa, 1) {
+            Ok(bound) => bound,
+            Err(_) => {
+                let _ = SafeArrayDestroy(psa);
+                return Vec::new();
+            }
+        };
+        if ubound < lbound {
+            let _ = SafeArrayDestroy(psa);
+            return Vec::new();
+        }
+
+        let mut data: *mut c_void = std::ptr::null_mut();
+        let mut rects = Vec::new();
+        if SafeArrayAccessData(psa, &mut data).is_ok() && !data.is_null() {
+            let value_count = (ubound - lbound + 1) as usize;
+            let values = std::slice::from_raw_parts(data as *const f64, value_count);
+            for chunk in values.chunks_exact(4) {
+                let rect = SelectionRect {
+                    left: chunk[0],
+                    top: chunk[1],
+                    width: chunk[2],
+                    height: chunk[3],
+                };
+                if rect.is_visible() {
+                    rects.push(rect);
+                }
+            }
+            let _ = SafeArrayUnaccessData(psa);
+        }
+        let _ = SafeArrayDestroy(psa);
+        rects
+    }
 
     unsafe fn selection_from_text_range_array(
         selection: &IUIAutomationTextRangeArray,
-    ) -> SelectionResult {
+    ) -> DetailedSelectionResult {
         let count = match selection.Length() {
             Ok(n) => n,
-            Err(_) => return SelectionResult::None,
+            Err(_) => return DetailedSelectionResult::None,
         };
 
         if count == 0 {
-            return SelectionResult::None;
+            return DetailedSelectionResult::None;
         }
 
         let mut fragments = Vec::new();
+        let mut rects = Vec::new();
         for index in 0..count {
             let range: IUIAutomationTextRange = match selection.GetElement(index) {
                 Ok(r) => r,
@@ -129,58 +320,69 @@ pub fn get_selected_text() -> SelectionResult {
                 continue;
             }
             fragments.push(fragment);
+            if let Ok(psa) = range.GetBoundingRectangles() {
+                rects.extend(rects_from_safearray(psa));
+            }
         }
 
         match combine_selection_fragments(fragments.iter().map(String::as_str)) {
-            Some(text) => SelectionResult::Selected(text),
-            None => SelectionResult::None,
+            Some(text) => {
+                let (anchor_x, anchor_y) = selection_anchor_from_rects(&rects, 0, 0);
+                DetailedSelectionResult::Selected(SelectionDetails {
+                    text,
+                    rects,
+                    anchor_x,
+                    anchor_y,
+                })
+            }
+            None => DetailedSelectionResult::None,
         }
     }
 
-    unsafe fn selection_from_pattern(pattern: &windows::core::IUnknown) -> SelectionResult {
+    unsafe fn selection_from_pattern(pattern: &windows::core::IUnknown) -> DetailedSelectionResult {
         if let Ok(text_pattern) = pattern.cast::<IUIAutomationTextPattern>() {
             return match text_pattern.GetSelection() {
                 Ok(selection) => selection_from_text_range_array(&selection),
-                Err(_) => SelectionResult::None,
+                Err(_) => DetailedSelectionResult::None,
             };
         }
 
         if let Ok(text_pattern2) = pattern.cast::<IUIAutomationTextPattern2>() {
             let base_pattern: IUIAutomationTextPattern = match text_pattern2.cast() {
                 Ok(pattern) => pattern,
-                Err(_) => return SelectionResult::Unavailable,
+                Err(_) => return DetailedSelectionResult::Unavailable,
             };
             return match base_pattern.GetSelection() {
                 Ok(selection) => selection_from_text_range_array(&selection),
-                Err(_) => SelectionResult::None,
+                Err(_) => DetailedSelectionResult::None,
             };
         }
 
-        SelectionResult::Unavailable
+        DetailedSelectionResult::Unavailable
     }
 
-    unsafe fn selection_from_element(element: &IUIAutomationElement) -> SelectionResult {
+    unsafe fn selection_from_element(element: &IUIAutomationElement) -> DetailedSelectionResult {
         for pattern_id in [UIA_TextPatternId, UIA_TextPattern2Id] {
             let pattern = match element.GetCurrentPattern(pattern_id) {
                 Ok(p) => p,
                 Err(_) => continue,
             };
             let result = selection_from_pattern(&pattern);
-            if !matches!(result, SelectionResult::Unavailable) {
+            if !matches!(result, DetailedSelectionResult::Unavailable) {
                 return result;
             }
         }
 
-        SelectionResult::Unavailable
+        DetailedSelectionResult::Unavailable
     }
 
     unsafe fn selection_from_element_chain(
         automation: &IUIAutomation,
         start: &IUIAutomationElement,
-    ) -> SelectionResult {
+    ) -> DetailedSelectionResult {
         let walker = match automation.RawViewWalker() {
             Ok(w) => w,
-            Err(_) => return SelectionResult::Unavailable,
+            Err(_) => return DetailedSelectionResult::Unavailable,
         };
 
         let mut current = Some(start.clone());
@@ -189,9 +391,11 @@ pub fn get_selected_text() -> SelectionResult {
 
         while let Some(element) = current {
             match selection_from_element(&element) {
-                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
-                SelectionResult::None => saw_text_container = true,
-                SelectionResult::Unavailable => {}
+                DetailedSelectionResult::Selected(details) => {
+                    return DetailedSelectionResult::Selected(details)
+                }
+                DetailedSelectionResult::None => saw_text_container = true,
+                DetailedSelectionResult::Unavailable => {}
             }
 
             depth += 1;
@@ -206,9 +410,9 @@ pub fn get_selected_text() -> SelectionResult {
         }
 
         if saw_text_container {
-            SelectionResult::None
+            DetailedSelectionResult::None
         } else {
-            SelectionResult::Unavailable
+            DetailedSelectionResult::Unavailable
         }
     }
 
@@ -219,10 +423,10 @@ pub fn get_selected_text() -> SelectionResult {
         automation: &IUIAutomation,
         root: &IUIAutomationElement,
         max_nodes: usize,
-    ) -> SelectionResult {
+    ) -> DetailedSelectionResult {
         let walker = match automation.RawViewWalker() {
             Ok(w) => w,
-            Err(_) => return SelectionResult::Unavailable,
+            Err(_) => return DetailedSelectionResult::Unavailable,
         };
 
         let budget = std::time::Duration::from_millis(UIA_DESCENDANT_SEARCH_BUDGET_MS);
@@ -236,7 +440,7 @@ pub fn get_selected_text() -> SelectionResult {
         if let Ok(first_child) = walker.GetFirstChildElement(root) {
             queue.push_back((first_child, 1));
         } else {
-            return SelectionResult::Unavailable;
+            return DetailedSelectionResult::Unavailable;
         }
 
         let mut nodes_visited = 0usize;
@@ -249,9 +453,11 @@ pub fn get_selected_text() -> SelectionResult {
             nodes_visited += 1;
 
             match selection_from_element(&element) {
-                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
-                SelectionResult::None => saw_text_container = true,
-                SelectionResult::Unavailable => {}
+                DetailedSelectionResult::Selected(details) => {
+                    return DetailedSelectionResult::Selected(details)
+                }
+                DetailedSelectionResult::None => saw_text_container = true,
+                DetailedSelectionResult::Unavailable => {}
             }
 
             // Enqueue all children at next depth
@@ -273,9 +479,9 @@ pub fn get_selected_text() -> SelectionResult {
         }
 
         if saw_text_container {
-            SelectionResult::None
+            DetailedSelectionResult::None
         } else {
-            SelectionResult::Unavailable
+            DetailedSelectionResult::Unavailable
         }
     }
 
@@ -285,7 +491,7 @@ pub fn get_selected_text() -> SelectionResult {
             CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER);
         let automation: IUIAutomation = match automation {
             Ok(a) => a,
-            Err(_) => return SelectionResult::Unavailable,
+            Err(_) => return DetailedSelectionResult::Unavailable,
         };
 
         let mut saw_text_container = false;
@@ -294,21 +500,28 @@ pub fn get_selected_text() -> SelectionResult {
         let focused = automation.GetFocusedElement().ok();
         if let Some(ref f) = focused {
             match selection_from_element_chain(&automation, f) {
-                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
-                SelectionResult::None => saw_text_container = true,
-                SelectionResult::Unavailable => {}
+                DetailedSelectionResult::Selected(details) => {
+                    return DetailedSelectionResult::Selected(details)
+                }
+                DetailedSelectionResult::None => saw_text_container = true,
+                DetailedSelectionResult::Unavailable => {}
             }
         }
 
         let (cursor_x, cursor_y) = get_cursor_pos();
         let hovered = automation
-            .ElementFromPoint(POINT { x: cursor_x, y: cursor_y })
+            .ElementFromPoint(POINT {
+                x: cursor_x,
+                y: cursor_y,
+            })
             .ok();
         if let Some(ref h) = hovered {
             match selection_from_element_chain(&automation, h) {
-                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
-                SelectionResult::None => saw_text_container = true,
-                SelectionResult::Unavailable => {}
+                DetailedSelectionResult::Selected(details) => {
+                    return DetailedSelectionResult::Selected(details)
+                }
+                DetailedSelectionResult::None => saw_text_container = true,
+                DetailedSelectionResult::Unavailable => {}
             }
         }
 
@@ -316,23 +529,27 @@ pub fn get_selected_text() -> SelectionResult {
         // Chromium editors expose TextPattern on *descendant* elements, not ancestors.
         if let Some(ref f) = focused {
             match selection_from_descendants(&automation, f, UIA_DESCENDANT_SEARCH_MAX_NODES) {
-                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
-                SelectionResult::None => saw_text_container = true,
-                SelectionResult::Unavailable => {}
+                DetailedSelectionResult::Selected(details) => {
+                    return DetailedSelectionResult::Selected(details)
+                }
+                DetailedSelectionResult::None => saw_text_container = true,
+                DetailedSelectionResult::Unavailable => {}
             }
         }
         if let Some(ref h) = hovered {
             match selection_from_descendants(&automation, h, UIA_DESCENDANT_SEARCH_MAX_NODES) {
-                SelectionResult::Selected(text) => return SelectionResult::Selected(text),
-                SelectionResult::None => saw_text_container = true,
-                SelectionResult::Unavailable => {}
+                DetailedSelectionResult::Selected(details) => {
+                    return DetailedSelectionResult::Selected(details)
+                }
+                DetailedSelectionResult::None => saw_text_container = true,
+                DetailedSelectionResult::Unavailable => {}
             }
         }
 
         if saw_text_container {
-            SelectionResult::None
+            DetailedSelectionResult::None
         } else {
-            SelectionResult::Unavailable
+            DetailedSelectionResult::Unavailable
         }
     }
 }
@@ -360,8 +577,8 @@ pub fn init_com() {}
 /// Get current cursor position (x, y).
 #[cfg(target_os = "windows")]
 fn get_cursor_pos() -> (i32, i32) {
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
     use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
     unsafe {
         let mut pt = POINT::default();
         let _ = GetCursorPos(&mut pt);
@@ -402,11 +619,162 @@ fn is_cursor_over_current_process_window(_x: i32, _y: i32) -> bool {
     false
 }
 
-/// Returns true while left mouse button is pressed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MouseHookEventKind {
+    LeftDown,
+    LeftUp,
+    Move,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MouseHookEvent {
+    kind: MouseHookEventKind,
+    x: i32,
+    y: i32,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReleaseCandidate {
+    gesture: ReleaseGesture,
+    drag_start: Option<(i32, i32)>,
+    release_pos: (i32, i32),
+    created_at: std::time::Instant,
+}
+
+#[derive(Debug)]
+struct MouseGestureState {
+    left_down: bool,
+    drag_start: Option<(i32, i32)>,
+    last_release_at: Option<std::time::Instant>,
+    last_release_pos: Option<(i32, i32)>,
+    cursor_pos: (i32, i32),
+}
+
+impl MouseGestureState {
+    fn new(initial_cursor_pos: (i32, i32)) -> Self {
+        Self {
+            left_down: false,
+            drag_start: None,
+            last_release_at: None,
+            last_release_pos: None,
+            cursor_pos: initial_cursor_pos,
+        }
+    }
+
+    fn handle_event(&mut self, event: MouseHookEvent) -> Option<ReleaseCandidate> {
+        self.cursor_pos = (event.x, event.y);
+        match event.kind {
+            MouseHookEventKind::LeftDown => {
+                self.left_down = true;
+                self.drag_start = if is_cursor_over_current_process_window(event.x, event.y) {
+                    None
+                } else {
+                    Some((event.x, event.y))
+                };
+                None
+            }
+            MouseHookEventKind::Move => None,
+            MouseHookEventKind::LeftUp => {
+                let was_down = self.left_down;
+                self.left_down = false;
+                if !was_down || is_cursor_over_current_process_window(event.x, event.y) {
+                    self.drag_start = None;
+                    return None;
+                }
+
+                let release_pos = (event.x, event.y);
+                let gesture = classify_release_gesture(
+                    true,
+                    self.drag_start,
+                    release_pos,
+                    self.last_release_at.as_ref(),
+                    self.last_release_pos,
+                )?;
+                let candidate = ReleaseCandidate {
+                    gesture,
+                    drag_start: self.drag_start,
+                    release_pos,
+                    created_at: std::time::Instant::now(),
+                };
+                self.drag_start = None;
+                self.last_release_at = Some(candidate.created_at);
+                self.last_release_pos = Some(release_pos);
+                Some(candidate)
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "windows")]
-fn is_left_button_down() -> bool {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
-    unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
+static MOUSE_HOOK_SENDER: std::sync::OnceLock<
+    std::sync::Mutex<std::sync::mpsc::Sender<MouseHookEvent>>,
+> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn low_level_mouse_proc(
+    code: i32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, MSLLHOOKSTRUCT, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+    };
+
+    if code >= 0 {
+        let message = wparam.0 as u32;
+        let kind = match message {
+            WM_LBUTTONDOWN => Some(MouseHookEventKind::LeftDown),
+            WM_LBUTTONUP => Some(MouseHookEventKind::LeftUp),
+            WM_MOUSEMOVE => Some(MouseHookEventKind::Move),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            let hook = &*(lparam.0 as *const MSLLHOOKSTRUCT);
+            if let Some(sender) = MOUSE_HOOK_SENDER.get() {
+                if let Ok(sender) = sender.lock() {
+                    let _ = sender.send(MouseHookEvent {
+                        kind,
+                        x: hook.pt.x,
+                        y: hook.pt.y,
+                    });
+                }
+            }
+        }
+    }
+
+    CallNextHookEx(
+        windows::Win32::UI::WindowsAndMessaging::HHOOK::default(),
+        code,
+        wparam,
+        lparam,
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn start_mouse_hook_thread(sender: std::sync::mpsc::Sender<MouseHookEvent>) {
+    let _ = MOUSE_HOOK_SENDER.set(std::sync::Mutex::new(sender));
+    std::thread::spawn(move || {
+        use windows::Win32::Foundation::{HINSTANCE, HWND};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetMessageW, SetWindowsHookExW, MSG, WH_MOUSE_LL,
+        };
+
+        unsafe {
+            let hook = SetWindowsHookExW(
+                WH_MOUSE_LL,
+                Some(low_level_mouse_proc),
+                HINSTANCE::default(),
+                0,
+            );
+            if hook.is_err() {
+                eprintln!("[selection] Failed to install WH_MOUSE_LL hook: {hook:?}");
+                return;
+            }
+
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {}
+        }
+    });
 }
 
 /// Returns true if the current foreground window is a Chromium/Electron-based window
@@ -471,11 +839,7 @@ fn clipboard_probe_selection() -> Option<String> {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or_default();
-    let sentinel = format!(
-        "__NEUROPEN_PROBE_SENTINEL_{}_{}__",
-        std::process::id(),
-        now
-    );
+    let sentinel = format!("__NEUROPEN_PROBE_SENTINEL_{}_{}__", std::process::id(), now);
 
     crate::clipboard::write_clipboard(&sentinel).ok()?;
     let _ = crate::injection::simulate_ctrl_c_raw();
@@ -492,7 +856,11 @@ fn clipboard_probe_selection() -> Option<String> {
         };
         if current != sentinel {
             let trimmed = current.trim().to_string();
-            break if trimmed.is_empty() { None } else { Some(trimmed) };
+            break if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            };
         }
         if elapsed >= CLIPBOARD_PROBE_POLL_MAX_MS {
             break None;
@@ -509,169 +877,235 @@ fn clipboard_probe_selection() -> Option<String> {
 /// Emits `neuropen://selection-changed` with
 /// `{ has_selection, text, cursor_x, cursor_y, anchor_x, anchor_y }`.
 #[cfg(target_os = "windows")]
-pub fn start_selection_watcher(app: tauri::AppHandle) {
+fn emit_selection_changed(
+    app: &tauri::AppHandle,
+    has_selection: bool,
+    text: Option<&str>,
+    cursor_pos: (i32, i32),
+    anchor_pos: Option<(i32, i32)>,
+    release_gesture: Option<ReleaseGesture>,
+    suppressed_by_plain_click: bool,
+    hide_immediately: bool,
+    selection_source: Option<&str>,
+) {
     use tauri::Emitter;
+
+    let gesture_name = release_gesture_name(release_gesture);
+    let payload = if has_selection {
+        let (anchor_x, anchor_y) = anchor_pos.unwrap_or(cursor_pos);
+        serde_json::json!({
+            "has_selection": true,
+            "text": text.unwrap_or_default(),
+            "cursor_x": cursor_pos.0,
+            "cursor_y": cursor_pos.1,
+            "anchor_x": anchor_x,
+            "anchor_y": anchor_y,
+            "release_gesture": gesture_name,
+            "suppressed_by_plain_click": false,
+            "hide_immediately": false,
+            "selection_source": selection_source
+        })
+    } else {
+        serde_json::json!({
+            "has_selection": false,
+            "text": null,
+            "cursor_x": cursor_pos.0,
+            "cursor_y": cursor_pos.1,
+            "anchor_x": null,
+            "anchor_y": null,
+            "release_gesture": gesture_name,
+            "suppressed_by_plain_click": suppressed_by_plain_click,
+            "hide_immediately": hide_immediately,
+            "selection_source": selection_source
+        })
+    };
+
+    let _ = app.emit("neuropen://selection-changed", payload);
+}
+
+#[cfg(target_os = "windows")]
+pub fn start_selection_watcher(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         init_com();
+        let (mouse_tx, mouse_rx) = std::sync::mpsc::channel::<MouseHookEvent>();
+        start_mouse_hook_thread(mouse_tx);
+
+        let mut mouse_state = MouseGestureState::new(get_cursor_pos());
+        let mut pending_candidate: Option<ReleaseCandidate> = None;
+        let mut pending_probe: Option<(std::time::Instant, ReleaseCandidate)> = None;
         let mut last_emitted_selection = false;
         let mut last_emitted_text = String::new();
-        let mut last_left_down = false;
-        let mut drag_start: Option<(i32, i32)> = None;
-        let mut last_release_at: Option<std::time::Instant> = None;
-        let mut last_release_pos: Option<(i32, i32)> = None;
-        // Phase 2: clipboard probe state
-        let mut pending_probe: Option<std::time::Instant> = None;
-        let mut probe_gesture_pos: Option<(i32, i32)> = None;
-        // Sustains the probe-confirmed selection text while UIA cannot confirm it.
-        // Only cleared when UIA actively finds a *different* selection (Selected)
-        // or a new mouse-down gesture begins.  NOT cleared on SelectionResult::None,
-        // because VS Code's descendant TextPattern elements report "no selection"
-        // even though text IS selected (Monaco UIA limitation).
-        let mut probe_active_text: Option<String> = None;
+        let mut last_emitted_anchor: Option<(i32, i32)> = None;
 
         loop {
             std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
 
-            let selection_result = get_selected_text();
-            let (uia_has_selection, uia_text) = match &selection_result {
-                SelectionResult::Selected(t) => (true, t.clone()),
-                _ => (false, String::new()),
-            };
+            for event in mouse_rx.try_iter() {
+                if matches!(event.kind, MouseHookEventKind::LeftDown) {
+                    pending_candidate = None;
+                    pending_probe = None;
+                }
 
-            let left_down = is_left_button_down();
-            let (cx, cy) = get_cursor_pos();
-            let cursor_over_neuropen_window = is_cursor_over_current_process_window(cx, cy);
-            let just_released = last_left_down && !left_down && !cursor_over_neuropen_window;
-
-            if left_down && !last_left_down {
-                if cursor_over_neuropen_window {
-                    drag_start = None;
-                } else {
-                    drag_start = Some((cx, cy));
+                if let Some(candidate) = mouse_state.handle_event(event) {
+                    pending_candidate = Some(candidate);
+                    pending_probe = None;
                 }
             }
-            let release_gesture = classify_release_gesture(
-                just_released,
-                drag_start,
-                (cx, cy),
-                last_release_at.as_ref(),
-                last_release_pos,
-            );
-            if just_released {
-                drag_start = None;
-                last_release_at = Some(std::time::Instant::now());
-                last_release_pos = Some((cx, cy));
-            } else if last_left_down && !left_down {
-                drag_start = None;
-            }
 
-            // Drop probe_active_text only when:
-            //  - UIA actively found a selection (the editor now exposes it natively), OR
-            //  - a new mouse-down starts (user clicked to deselect / re-select).
-            // Do NOT clear on SelectionResult::None — VS Code descendant walk returns
-            // None even while text is selected (Monaco TextPattern limitation).
-            if probe_active_text.is_some()
-                && (uia_has_selection || (left_down && !last_left_down))
-            {
-                probe_active_text = None;
-            }
-
-            // --- Phase 2 probe lifecycle (cancel → fire → schedule) ---
-
-            // Cancel pending probe if UIA found the selection, a new click started,
-            // user pressed Ctrl+C manually, or cursor drifted far from release point.
-            if pending_probe.is_some() {
-                let cancel = uia_has_selection
-                    || (left_down && !last_left_down)
-                    || is_ctrl_c_pressed()
-                    || probe_gesture_pos.map_or(false, |(px, py)| {
-                        (cx - px).abs() > PROBE_CANCEL_DISTANCE_PX
-                            || (cy - py).abs() > PROBE_CANCEL_DISTANCE_PX
-                    });
+            if let Some((scheduled_at, candidate)) = pending_probe {
+                let (cx, cy) = mouse_state.cursor_pos;
+                let release_pos = candidate.release_pos;
+                let cancel = is_ctrl_c_pressed()
+                    || (cx - release_pos.0).abs() > PROBE_CANCEL_DISTANCE_PX
+                    || (cy - release_pos.1).abs() > PROBE_CANCEL_DISTANCE_PX;
                 if cancel {
                     pending_probe = None;
-                    probe_gesture_pos = None;
-                }
-            }
-
-            // Fire probe when delay has elapsed AND no modifier key is physically held.
-            // Sending synthetic Ctrl+C while the user holds a physical Ctrl would
-            // release their Ctrl state (via the synthetic Ctrl↑), causing their
-            // next "C" keystroke to be interpreted as a bare "c" character.
-            if let Some(scheduled_at) = pending_probe {
-                if scheduled_at.elapsed()
+                } else if scheduled_at.elapsed()
                     >= std::time::Duration::from_millis(CLIPBOARD_PROBE_DELAY_MS)
                 {
                     if !is_any_modifier_held() {
                         pending_probe = None;
-                        probe_gesture_pos = None;
                         if let Some(probe_text) = clipboard_probe_selection() {
-                            probe_active_text = Some(probe_text);
+                            let anchor = Some(release_pos);
+                            let selection_changed = !last_emitted_selection
+                                || probe_text != last_emitted_text
+                                || anchor != last_emitted_anchor;
+                            if selection_changed {
+                                last_emitted_selection = true;
+                                last_emitted_text = probe_text.clone();
+                                last_emitted_anchor = anchor;
+                                emit_selection_changed(
+                                    &app,
+                                    true,
+                                    Some(&probe_text),
+                                    release_pos,
+                                    anchor,
+                                    Some(candidate.gesture),
+                                    false,
+                                    false,
+                                    Some("clipboard"),
+                                );
+                            }
+                        } else {
+                            last_emitted_selection = false;
+                            last_emitted_text.clear();
+                            last_emitted_anchor = None;
+                            emit_selection_changed(
+                                &app,
+                                false,
+                                None,
+                                release_pos,
+                                None,
+                                Some(candidate.gesture),
+                                false,
+                                true,
+                                Some("clipboard"),
+                            );
                         }
                     }
-                    // else: modifier held — keep pending, try again next cycle
                 }
             }
 
-            // Schedule a probe for drag-select or double-click in Chromium editors
-            // when UIA walks came up empty and no probe result is already active.
-            if let Some(gesture) = release_gesture {
-                if matches!(gesture, ReleaseGesture::DragSelect | ReleaseGesture::DoubleClick)
-                    && !uia_has_selection
-                    && probe_active_text.is_none()
-                    && pending_probe.is_none()
-                    && is_chromium_editor_window()
-                {
-                    pending_probe = Some(std::time::Instant::now());
-                    probe_gesture_pos = Some((cx, cy));
-                }
+            let candidate_ready = pending_candidate.as_ref().is_some_and(|candidate| {
+                candidate.created_at.elapsed()
+                    >= std::time::Duration::from_millis(SELECTION_CANDIDATE_DELAY_MS)
+            });
+            if !candidate_ready {
+                continue;
             }
 
-            // --- Compute effective selection (UIA first, then probe fallback) ---
-
-            let (raw_has_selection, raw_text) = if uia_has_selection {
-                (true, uia_text)
-            } else if let Some(ref t) = probe_active_text {
-                (true, t.clone())
-            } else {
-                (false, String::new())
+            let candidate = match pending_candidate.take() {
+                Some(candidate) => candidate,
+                None => continue,
             };
+            let release_pos = candidate.release_pos;
 
-            // Only surface selection after mouse release so icon appears post-selection.
-            let has_selection = raw_has_selection && !left_down;
-            let text = if has_selection { raw_text } else { String::new() };
-
-            let selection_changed =
-                has_selection != last_emitted_selection || text != last_emitted_text;
-
-            if selection_changed || just_released {
-                last_emitted_selection = has_selection;
-                last_emitted_text = text.clone();
-
-                let payload = if has_selection {
-                    serde_json::json!({
-                        "has_selection": true,
-                        "text": text,
-                        "cursor_x": cx,
-                        "cursor_y": cy,
-                        "anchor_x": cx,
-                        "anchor_y": cy
-                    })
-                } else {
-                    serde_json::json!({
-                        "has_selection": false,
-                        "text": null,
-                        "cursor_x": cx,
-                        "cursor_y": cy,
-                        "anchor_x": null,
-                        "anchor_y": null
-                    })
-                };
-
-                let _ = app.emit("neuropen://selection-changed", payload);
+            if matches!(candidate.gesture, ReleaseGesture::PlainClick) {
+                last_emitted_selection = false;
+                last_emitted_text.clear();
+                last_emitted_anchor = None;
+                emit_selection_changed(
+                    &app,
+                    false,
+                    None,
+                    release_pos,
+                    None,
+                    Some(candidate.gesture),
+                    true,
+                    true,
+                    None,
+                );
+                continue;
             }
 
-            last_left_down = left_down;
+            match get_selected_text_details() {
+                DetailedSelectionResult::Selected(details)
+                    if selection_rects_match_gesture(
+                        &details.rects,
+                        candidate.drag_start,
+                        release_pos,
+                    ) =>
+                {
+                    let anchor = Some((details.anchor_x, details.anchor_y));
+                    let selection_changed = !last_emitted_selection
+                        || details.text != last_emitted_text
+                        || anchor != last_emitted_anchor;
+                    if selection_changed {
+                        last_emitted_selection = true;
+                        last_emitted_text = details.text.clone();
+                        last_emitted_anchor = anchor;
+                        emit_selection_changed(
+                            &app,
+                            true,
+                            Some(&details.text),
+                            release_pos,
+                            anchor,
+                            Some(candidate.gesture),
+                            false,
+                            false,
+                            Some("uia"),
+                        );
+                    }
+                }
+                DetailedSelectionResult::Selected(_) => {
+                    last_emitted_selection = false;
+                    last_emitted_text.clear();
+                    last_emitted_anchor = None;
+                    emit_selection_changed(
+                        &app,
+                        false,
+                        None,
+                        release_pos,
+                        None,
+                        Some(candidate.gesture),
+                        false,
+                        true,
+                        Some("uia-stale"),
+                    );
+                }
+                DetailedSelectionResult::None | DetailedSelectionResult::Unavailable => {
+                    if gesture_allows_clipboard_probe(candidate.gesture)
+                        && is_chromium_editor_window()
+                    {
+                        pending_probe = Some((std::time::Instant::now(), candidate));
+                    } else {
+                        last_emitted_selection = false;
+                        last_emitted_text.clear();
+                        last_emitted_anchor = None;
+                        emit_selection_changed(
+                            &app,
+                            false,
+                            None,
+                            release_pos,
+                            None,
+                            Some(candidate.gesture),
+                            false,
+                            true,
+                            None,
+                        );
+                    }
+                }
+            }
         }
     });
 }
@@ -691,25 +1125,16 @@ mod tests {
 
     #[test]
     fn classify_release_gesture_detects_drag() {
-        let gesture = classify_release_gesture(
-            true,
-            Some((100, 100)),
-            (120, 102),
-            None,
-            None,
+        let gesture = classify_release_gesture(true, Some((100, 100)), (120, 102), None, None);
+        assert_eq!(
+            gesture,
+            Some(ReleaseGesture::DragSelect { distance_px: 20 })
         );
-        assert_eq!(gesture, Some(ReleaseGesture::DragSelect));
     }
 
     #[test]
     fn classify_release_gesture_detects_plain_click() {
-        let gesture = classify_release_gesture(
-            true,
-            Some((100, 100)),
-            (101, 102),
-            None,
-            None,
-        );
+        let gesture = classify_release_gesture(true, Some((100, 100)), (101, 102), None, None);
         assert_eq!(gesture, Some(ReleaseGesture::PlainClick));
     }
 
@@ -729,4 +1154,72 @@ mod tests {
         assert_eq!(gesture, Some(ReleaseGesture::DoubleClick));
     }
 
+    #[test]
+    fn clipboard_probe_ignores_tiny_drag_drift() {
+        let gesture =
+            classify_release_gesture(true, Some((100, 100)), (104, 100), None, None).unwrap();
+
+        assert_eq!(gesture, ReleaseGesture::PlainClick);
+        assert!(!gesture_allows_clipboard_probe(gesture));
+    }
+
+    #[test]
+    fn clipboard_probe_allows_deliberate_drag_and_double_click() {
+        assert!(gesture_allows_clipboard_probe(ReleaseGesture::DragSelect {
+            distance_px: CLIPBOARD_PROBE_DRAG_DISTANCE_THRESHOLD_PX
+        }));
+        assert!(gesture_allows_clipboard_probe(ReleaseGesture::DoubleClick));
+        assert!(!gesture_allows_clipboard_probe(ReleaseGesture::PlainClick));
+    }
+
+    #[test]
+    fn selection_geometry_requires_visible_rects_near_gesture() {
+        let rects = [SelectionRect {
+            left: 100.0,
+            top: 100.0,
+            width: 120.0,
+            height: 20.0,
+        }];
+
+        assert!(selection_rects_match_gesture(
+            &rects,
+            Some((95, 110)),
+            (220, 120)
+        ));
+        assert!(!selection_rects_match_gesture(
+            &rects,
+            Some((800, 800)),
+            (900, 900)
+        ));
+        assert!(!selection_rects_match_gesture(
+            &[SelectionRect {
+                left: 100.0,
+                top: 100.0,
+                width: 0.0,
+                height: 20.0,
+            }],
+            Some((100, 100)),
+            (100, 100)
+        ));
+    }
+
+    #[test]
+    fn selection_anchor_uses_last_visible_rect() {
+        let rects = [
+            SelectionRect {
+                left: 10.0,
+                top: 20.0,
+                width: 50.0,
+                height: 15.0,
+            },
+            SelectionRect {
+                left: 100.0,
+                top: 60.0,
+                width: 40.0,
+                height: 20.0,
+            },
+        ];
+
+        assert_eq!(selection_anchor_from_rects(&rects, 0, 0), (140, 80));
+    }
 }

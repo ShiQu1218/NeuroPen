@@ -16,6 +16,9 @@ export interface SelectionSnapshot {
   cursorY: number;
   anchorX?: number | null;
   anchorY?: number | null;
+  suppressedByPlainClick?: boolean;
+  hideImmediately?: boolean;
+  selectionSource?: "uia" | "uia-stale" | "clipboard" | null;
 }
 
 export interface SelectionListenerState {

@@ -219,6 +219,20 @@ export async function registerSelectionListeners({
       return;
     }
 
+    const clearSelectionAndHideQuickAction = async () => {
+      selectionState.lastSelectionFingerprint = "";
+      selectionState.suppressedSelectionFingerprint = "";
+      selectionState.lastSelectionSnapshot = null;
+      useAppStore.getState().setSelectedText("");
+      await qaWin.hide().catch(() => { });
+    };
+
+    if (snapshot?.suppressedByPlainClick || snapshot?.hideImmediately) {
+      clearQaHideTimer();
+      await clearSelectionAndHideQuickAction();
+      return;
+    }
+
     clearQaHideTimer();
     selectionState.qaHideTimer = setTimeout(() => {
       selectionState.qaHideTimer = null;
@@ -226,10 +240,7 @@ export async function registerSelectionListeners({
       void (async () => {
         const sel = await mainWindowService.getSelection().catch(() => ({ has_selection: false }));
         if (!sel.has_selection) {
-          selectionState.lastSelectionFingerprint = "";
-          selectionState.suppressedSelectionFingerprint = "";
-          useAppStore.getState().setSelectedText("");
-          await qaWin.hide().catch(() => { });
+          await clearSelectionAndHideQuickAction();
         }
       })();
     }, 180);
@@ -295,6 +306,10 @@ export async function registerSelectionListeners({
     cursor_y: number;
     anchor_x?: number | null;
     anchor_y?: number | null;
+    release_gesture?: "plain-click" | "drag-select" | "double-click" | null;
+    suppressed_by_plain_click?: boolean;
+    hide_immediately?: boolean;
+    selection_source?: "uia" | "uia-stale" | "clipboard" | null;
   }>(
     "neuropen://selection-changed",
     async (event) => {
@@ -306,6 +321,9 @@ export async function registerSelectionListeners({
         cursorY: event.payload.cursor_y,
         anchorX: event.payload.anchor_x,
         anchorY: event.payload.anchor_y,
+        suppressedByPlainClick: event.payload.suppressed_by_plain_click,
+        hideImmediately: event.payload.hide_immediately,
+        selectionSource: event.payload.selection_source,
       };
       if (!(await shouldPreserveQuickActionAnchor(selectionState, nextSnapshot))) {
         selectionState.lastSelectionSnapshot = nextSnapshot;
