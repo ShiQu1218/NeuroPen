@@ -1811,6 +1811,7 @@ export default function Settings() {
                         <option value="gemini">Gemini</option>
                         <option value="claude">Claude</option>
                         <option value="grok">Grok</option>
+                        <option value="openRouter">OpenRouter</option>
                         <option value="qwen">Qwen</option>
                         <option value="doubao">豆包 Doubao</option>
                         <option value="deepseek">DeepSeek</option>
@@ -1846,7 +1847,7 @@ export default function Settings() {
                                 void handleAddLlmModelOption();
                               }
                             }}
-                            placeholder="gpt-4o-mini / qwen-plus / deepseek-chat"
+                            placeholder="gpt-4o-mini / openai/gpt-4o-mini / deepseek-chat"
                           />
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             <button type="button" onClick={() => void handleAddLlmModelOption()} disabled={!llmModelDraftDirty} className="btn-secondary px-3 py-2 text-xs disabled:opacity-40">{t("settings.llm.modelAdd")}</button>

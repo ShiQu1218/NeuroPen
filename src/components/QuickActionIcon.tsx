@@ -100,7 +100,7 @@ export default function QuickActionIcon() {
       });
       unlistenSettings = await listen<{
         outputMode?: "DirectInject" | "PreviewStream";
-        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "ollama" | "llamaCpp" | "lmStudio" | "qwen" | "doubao" | "deepseek";
+        llmProvider?: "openAi" | "gemini" | "claude" | "grok" | "openRouter" | "ollama" | "llamaCpp" | "lmStudio" | "qwen" | "doubao" | "deepseek";
         llmModel?: string;
         llmModelOptions?: string[];
         language?: AppLanguage;

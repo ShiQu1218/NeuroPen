@@ -4,6 +4,7 @@ export type LlmProvider =
   | "gemini"
   | "claude"
   | "grok"
+  | "openRouter"
   | "ollama"
   | "llamaCpp"
   | "lmStudio"

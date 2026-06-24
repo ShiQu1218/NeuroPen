@@ -5,6 +5,7 @@
 //! - Gemini
 //! - Claude
 //! - Grok
+//! - OpenRouter
 //! - Ollama (local)
 //! - llama.cpp server (local, OpenAI-compatible)
 //! - LM Studio server (local, OpenAI-compatible)
@@ -47,6 +48,7 @@ pub enum LlmProvider {
     Gemini,
     Claude,
     Grok,
+    OpenRouter,
     Qwen,
     Doubao,
     Deepseek,
@@ -124,6 +126,7 @@ fn default_model(provider: &LlmProvider) -> &'static str {
         LlmProvider::Gemini => "gemini-1.5-flash",
         LlmProvider::Claude => "claude-3-5-sonnet-latest",
         LlmProvider::Grok => "grok-2-latest",
+        LlmProvider::OpenRouter => "~openai/gpt-latest",
         LlmProvider::Qwen => "qwen-plus",
         LlmProvider::Doubao => "doubao-seed-1-6-250615",
         LlmProvider::Deepseek => "deepseek-chat",
@@ -142,6 +145,16 @@ fn with_optional_bearer_auth(
         request
     } else {
         request.header("Authorization", format!("Bearer {trimmed}"))
+    }
+}
+
+fn with_provider_headers(
+    request: reqwest::RequestBuilder,
+    provider: &LlmProvider,
+) -> reqwest::RequestBuilder {
+    match provider {
+        LlmProvider::OpenRouter => request.header("X-OpenRouter-Title", "NeuroPen"),
+        _ => request,
     }
 }
 
@@ -370,6 +383,7 @@ fn extract_openai_text(parsed: &serde_json::Value) -> Option<String> {
 }
 
 async fn call_openai_compatible(
+    provider: &LlmProvider,
     base_url: &str,
     api_key: &str,
     model: &str,
@@ -385,12 +399,15 @@ async fn call_openai_compatible(
         ]
     });
 
-    let resp = with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("LLM API request failed: {e}"))?;
+    let resp = with_provider_headers(
+        with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+        provider,
+    )
+    .header("Content-Type", "application/json")
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("LLM API request failed: {e}"))?;
 
     let status = resp.status();
     let body = resp
@@ -457,6 +474,7 @@ fn handle_openai_stream_data(
 }
 
 async fn call_openai_compatible_streaming(
+    provider: &LlmProvider,
     base_url: &str,
     api_key: &str,
     model: &str,
@@ -474,12 +492,15 @@ async fn call_openai_compatible_streaming(
         ]
     });
 
-    let resp = with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("LLM API request failed: {e}"))?;
+    let resp = with_provider_headers(
+        with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+        provider,
+    )
+    .header("Content-Type", "application/json")
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("LLM API request failed: {e}"))?;
 
     let status = resp.status();
     if !status.is_success() {
@@ -745,6 +766,7 @@ fn openai_compatible_url(provider: &LlmProvider) -> Option<&'static str> {
     match provider {
         LlmProvider::OpenAi => Some("https://api.openai.com/v1/chat/completions"),
         LlmProvider::Grok => Some("https://api.x.ai/v1/chat/completions"),
+        LlmProvider::OpenRouter => Some("https://openrouter.ai/api/v1/chat/completions"),
         LlmProvider::Qwen => {
             Some("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")
         }
@@ -778,6 +800,7 @@ fn provider_display_name(provider: &LlmProvider) -> &'static str {
         LlmProvider::Gemini => "Gemini",
         LlmProvider::Claude => "Claude",
         LlmProvider::Grok => "Grok",
+        LlmProvider::OpenRouter => "OpenRouter",
         LlmProvider::Qwen => "Qwen",
         LlmProvider::Doubao => "Doubao",
         LlmProvider::Deepseek => "DeepSeek",
@@ -839,7 +862,10 @@ fn parse_ollama_model_names(body: &str) -> Result<Vec<String>, String> {
     Ok(normalize_runtime_model_catalog(models))
 }
 
-async fn list_openai_compatible_models(models_url: &str, api_key: &str) -> Result<Vec<String>, String> {
+async fn list_openai_compatible_models(
+    models_url: &str,
+    api_key: &str,
+) -> Result<Vec<String>, String> {
     let resp = with_optional_bearer_auth(HTTP_CLIENT.get(models_url), api_key)
         .send()
         .await
@@ -883,8 +909,12 @@ pub async fn list_available_models(
     match provider {
         LlmProvider::Ollama => list_ollama_models().await,
         LlmProvider::LlamaCpp | LlmProvider::LmStudio => {
-            let models_url = openai_compatible_models_url(provider)
-                .ok_or_else(|| format!("{} does not expose a model catalog URL.", provider_display_name(provider)))?;
+            let models_url = openai_compatible_models_url(provider).ok_or_else(|| {
+                format!(
+                    "{} does not expose a model catalog URL.",
+                    provider_display_name(provider)
+                )
+            })?;
             list_openai_compatible_models(models_url, api_key).await
         }
         _ => Err(format!(
@@ -912,7 +942,10 @@ async fn resolve_request_model(
         ));
     }
 
-    if available_models.iter().any(|available| available == &chosen_model) {
+    if available_models
+        .iter()
+        .any(|available| available == &chosen_model)
+    {
         return Ok(chosen_model);
     }
 
@@ -931,8 +964,15 @@ async fn call_provider(
     user_message: &str,
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
-        return call_openai_compatible(url, api_key, chosen_model, system_prompt, user_message)
-            .await;
+        return call_openai_compatible(
+            provider,
+            url,
+            api_key,
+            chosen_model,
+            system_prompt,
+            user_message,
+        )
+        .await;
     }
     match provider {
         LlmProvider::Gemini => {
@@ -957,6 +997,7 @@ async fn call_provider_preview_stream(
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
         return call_openai_compatible_streaming(
+            provider,
             url,
             api_key,
             chosen_model,
@@ -1196,6 +1237,7 @@ pub async fn call_custom_prompt_text(
 // ── Multimodal (image + text) support ───────────────────────────────────
 
 async fn call_openai_compatible_with_images(
+    provider: &LlmProvider,
     base_url: &str,
     api_key: &str,
     model: &str,
@@ -1219,12 +1261,15 @@ async fn call_openai_compatible_with_images(
         ]
     });
 
-    let resp = with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("LLM API request failed: {e}"))?;
+    let resp = with_provider_headers(
+        with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+        provider,
+    )
+    .header("Content-Type", "application/json")
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("LLM API request failed: {e}"))?;
 
     let status = resp.status();
     let body = resp
@@ -1403,6 +1448,7 @@ async fn call_provider_with_images(
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
         return call_openai_compatible_with_images(
+            provider,
             url,
             api_key,
             chosen_model,
@@ -1714,7 +1760,9 @@ mod tests {
             None,
         );
 
-        assert!(system_prompt.contains("follow that preferred script and regional variant strictly"));
+        assert!(
+            system_prompt.contains("follow that preferred script and regional variant strictly")
+        );
         assert!(system_prompt.contains("Traditional Chinese as commonly written in Taiwan"));
     }
 
@@ -1731,9 +1779,9 @@ mod tests {
         );
 
         assert!(system_prompt.contains("same language as the user's request"));
-        assert!(system_prompt.contains(
-            "follow that preferred script and regional variant strictly"
-        ));
+        assert!(
+            system_prompt.contains("follow that preferred script and regional variant strictly")
+        );
         assert!(system_prompt.contains("Traditional Chinese as commonly written in Taiwan"));
         assert_eq!(user_message, "请解释这段内容");
     }
@@ -1749,13 +1797,39 @@ mod tests {
     }
 
     #[test]
+    fn openrouter_provider_uses_frontend_camel_case() {
+        let serialized =
+            serde_json::to_string(&LlmProvider::OpenRouter).expect("expected provider json");
+        assert_eq!(serialized, "\"openRouter\"");
+
+        let parsed: LlmProvider =
+            serde_json::from_str("\"openRouter\"").expect("expected provider parse");
+        assert_eq!(parsed, LlmProvider::OpenRouter);
+    }
+
+    #[test]
+    fn openrouter_uses_openai_compatible_endpoint_and_model_slug() {
+        assert_eq!(
+            openai_compatible_url(&LlmProvider::OpenRouter),
+            Some("https://openrouter.ai/api/v1/chat/completions")
+        );
+        assert_eq!(
+            default_model(&LlmProvider::OpenRouter),
+            "~openai/gpt-latest"
+        );
+    }
+
+    #[test]
     fn parses_ollama_model_catalog() {
         let parsed = parse_ollama_model_names(
             r#"{"models":[{"name":"llama3.2"},{"name":"qwen2.5:7b"},{"name":"llama3.2"}]}"#,
         )
         .expect("expected model names");
 
-        assert_eq!(parsed, vec!["llama3.2".to_string(), "qwen2.5:7b".to_string()]);
+        assert_eq!(
+            parsed,
+            vec!["llama3.2".to_string(), "qwen2.5:7b".to_string()]
+        );
     }
 
     #[test]
