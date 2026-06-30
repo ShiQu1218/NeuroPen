@@ -113,6 +113,7 @@ export function usePreviewEventSync({
         preferenceCategoryKey?: string;
         preferenceCategoryLabel?: string;
         quickActionCommandId?: string;
+        attachments?: PreviewAttachment[];
       }>("neuropen://preview-session", (event) => {
         const startLoading = event.payload.startLoading ?? true;
         llmStartTime = startLoading ? Date.now() : 0;
@@ -166,7 +167,7 @@ export function usePreviewEventSync({
           selectedText: event.payload.selectedText ?? "",
           sourceMode: event.payload.sourceMode ?? "C",
           instruction: event.payload.instruction ?? "",
-          attachments: [],
+          attachments: event.payload.attachments ?? [],
           promptAppendix: event.payload.promptAppendix ?? "",
           preferredLanguage: event.payload.preferredLanguage ?? "",
           requestId: event.payload.requestId ?? "",

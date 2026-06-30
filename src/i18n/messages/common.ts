@@ -7,6 +7,7 @@ export const commonMessages = {
     "workflow.assistantChat": "助理對話",
     "quickAction.title": "快速操作",
     "quickAction.empty": "請到設定新增快捷指令",
+    "quickAction.uploadDocument": "上傳文檔",
     "quickAction.customPlaceholder": "自訂指令…",
     "recording.recording": "錄音中",
     "recording.processing": "處理中…",
@@ -61,6 +62,7 @@ export const commonMessages = {
     "workflow.assistantChat": "Assistant Chat",
     "quickAction.title": "Quick Actions",
     "quickAction.empty": "Add quick action commands in Settings",
+    "quickAction.uploadDocument": "Upload document",
     "quickAction.customPlaceholder": "Custom instruction…",
     "recording.recording": "Recording",
     "recording.processing": "Processing…",
@@ -110,6 +112,7 @@ export const commonMessages = {
   "ja-JP": {
     "quickAction.title": "クイックアクション",
     "quickAction.empty": "設定でクイックアクションを追加してください",
+    "quickAction.uploadDocument": "ドキュメントをアップロード",
     "quickAction.customPlaceholder": "カスタム指示…",
     "recording.recording": "録音中",
     "recording.processing": "処理中…",
@@ -159,6 +162,7 @@ export const commonMessages = {
   "zh-CN": {
     "quickAction.title": "快速操作",
     "quickAction.empty": "请到设置添加快捷指令",
+    "quickAction.uploadDocument": "上传文档",
     "quickAction.customPlaceholder": "自定义指令…",
     "recording.recording": "录音中",
     "recording.processing": "处理中…",
@@ -208,6 +212,7 @@ export const commonMessages = {
   "es-ES": {
     "quickAction.title": "Acciones rápidas",
     "quickAction.empty": "Añade comandos de acción rápida en Configuración",
+    "quickAction.uploadDocument": "Subir documento",
     "quickAction.customPlaceholder": "Instrucción personalizada…",
     "recording.recording": "Grabando",
     "recording.processing": "Procesando…",
@@ -257,6 +262,7 @@ export const commonMessages = {
   "ko-KR": {
     "quickAction.title": "빠른 작업",
     "quickAction.empty": "설정에서 빠른 작업 명령을 추가하세요",
+    "quickAction.uploadDocument": "문서 업로드",
     "quickAction.customPlaceholder": "사용자 지정 명령…",
     "recording.recording": "녹음 중",
     "recording.processing": "처리 중…",
@@ -306,6 +312,7 @@ export const commonMessages = {
   "de-DE": {
     "quickAction.title": "Schnellaktionen",
     "quickAction.empty": "Schnellaktionsbefehle in den Einstellungen hinzufügen",
+    "quickAction.uploadDocument": "Dokument hochladen",
     "quickAction.customPlaceholder": "Benutzerdefinierte Anweisung…",
     "recording.recording": "Aufnahme läuft",
     "recording.processing": "Verarbeitung…",
@@ -355,6 +362,7 @@ export const commonMessages = {
   "fr-FR": {
     "quickAction.title": "Actions rapides",
     "quickAction.empty": "Ajoutez des commandes d'action rapide dans les Paramètres",
+    "quickAction.uploadDocument": "Importer un document",
     "quickAction.customPlaceholder": "Instruction personnalisée…",
     "recording.recording": "Enregistrement",
     "recording.processing": "Traitement…",
@@ -404,6 +412,7 @@ export const commonMessages = {
   "ar-SA": {
     "quickAction.title": "الإجراءات السريعة",
     "quickAction.empty": "أضف أوامر الإجراءات السريعة في الإعدادات",
+    "quickAction.uploadDocument": "رفع مستند",
     "quickAction.customPlaceholder": "تعليمات مخصصة…",
     "recording.recording": "جارٍ التسجيل",
     "recording.processing": "جارٍ المعالجة…",
@@ -453,6 +462,7 @@ export const commonMessages = {
   "ru-RU": {
     "quickAction.title": "Быстрые действия",
     "quickAction.empty": "Добавьте команды быстрых действий в Настройках",
+    "quickAction.uploadDocument": "Загрузить документ",
     "quickAction.customPlaceholder": "Пользовательская инструкция…",
     "recording.recording": "Запись",
     "recording.processing": "Обработка…",

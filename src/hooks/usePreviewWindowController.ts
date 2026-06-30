@@ -6,7 +6,7 @@ import { usePreviewDragGuard } from "./usePreviewDragGuard";
 import { usePreviewEventSync, type PreviewSession } from "./usePreviewEventSync";
 import { usePreviewTts } from "./usePreviewTts";
 import { useI18n } from "../i18n";
-import { useAppStore, type QuickActionCommand } from "../store/useAppStore";
+import { useAppStore, type QuickActionAttachment, type QuickActionCommand } from "../store/useAppStore";
 import { mainWindowService, type LoadedAttachment } from "../services/mainWindowService";
 import { resolveLanguageVariantPromptInstructionForText } from "../utils/languageVariants";
 import {
@@ -16,12 +16,16 @@ import {
   generatePreferenceRequestId,
   type PreferenceFeedbackRating,
 } from "../utils/preferenceLearning";
-import type { PreviewAttachment } from "../utils/previewAttachments";
+import {
+  DEFAULT_RETAINED_DOCUMENT_INSTRUCTION,
+  buildAttachmentInstruction,
+  resolveRetainedDocumentInstruction,
+  type PreviewAttachment,
+} from "../utils/previewAttachments";
 import {
   fitPreviewWindowToContent,
   resetPreviewWindowSize,
 } from "../utils/previewLayout";
-const MAX_ATTACHMENT_CONTEXT_CHARS = 24_000;
 
 function toPreviewAttachment(attachment: LoadedAttachment): PreviewAttachment {
   if (attachment.kind === "image") {
@@ -43,53 +47,45 @@ function toPreviewAttachment(attachment: LoadedAttachment): PreviewAttachment {
   };
 }
 
-function buildAttachmentInstruction(
-  input: string,
-  selectedText: string,
-  attachments: PreviewAttachment[]
-) {
-  // Flatten ephemeral preview attachments into one LLM instruction so the backend
-  // can stay stateless and providers only see a single prompt payload.
-  if (attachments.length === 0) {
-    return input;
+function toQuickActionAttachment(attachment: PreviewAttachment): QuickActionAttachment {
+  if (attachment.kind === "image") {
+    return {
+      kind: "image",
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      base64Data: attachment.base64Data,
+    };
   }
-  const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
-  const textAttachments = attachments.filter((attachment) => attachment.kind === "text");
-  const sections: string[] = [];
+  return {
+    kind: "text",
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    textContent: attachment.textContent,
+    truncated: attachment.truncated,
+  };
+}
 
-  if (selectedText.trim()) {
-    sections.push(`Selected text for context:\n${selectedText}`);
+function toPreviewAttachmentFromCommand(attachment: QuickActionAttachment): PreviewAttachment {
+  if (attachment.kind === "image") {
+    return {
+      ...attachment,
+      source: "file",
+    };
   }
+  return {
+    ...attachment,
+    source: "file",
+  };
+}
 
-  if (imageAttachments.length > 0) {
-    sections.push(`Attached images (${imageAttachments.length}):\n${imageAttachments.map((attachment, index) => `${index + 1}. ${attachment.name}`).join("\n")}`);
+function buildDocumentCommandLabel(attachments: PreviewAttachment[], fallback: string) {
+  if (attachments.length === 1) {
+    return attachments[0].name;
   }
-
-  if (textAttachments.length > 0) {
-    let remainingChars = MAX_ATTACHMENT_CONTEXT_CHARS;
-    const renderedTextAttachments = textAttachments
-      .map((attachment, index) => {
-        const content = attachment.textContent.slice(0, remainingChars);
-        remainingChars = Math.max(0, remainingChars - content.length);
-        const truncated = attachment.truncated || content.length < attachment.textContent.length;
-        return [
-          `Document ${index + 1}: ${attachment.name}`,
-          `Type: ${attachment.mimeType}`,
-          "Content:",
-          '"""',
-          content,
-          '"""',
-          truncated ? "Note: This document was truncated to fit within the chat context." : "",
-        ]
-          .filter((part) => part !== "")
-          .join("\n");
-      })
-      .join("\n\n");
-    sections.push(`Attached documents:\n${renderedTextAttachments}`);
+  if (attachments.length > 1) {
+    return `${fallback} (${attachments.length})`;
   }
-
-  sections.push(`User request:\n${input}`);
-  return sections.join("\n\n");
+  return fallback;
 }
 
 function dedupeAttachments(attachments: PreviewAttachment[]) {
@@ -243,20 +239,27 @@ export function usePreviewWindowController() {
   }, [setLlmError]);
 
   const runPreviewInstruction = useCallback(
-    async (instruction: string, options?: { command?: QuickActionCommand }) => {
+    async (
+      instruction: string,
+      options?: { command?: QuickActionCommand; attachments?: PreviewAttachment[] },
+    ) => {
       const state = useAppStore.getState();
       const input = instruction.trim();
       if (!input) return;
       const selectedText = previewSession?.type === "text" ? previewSession.selectedText : "";
       const sourceMode = previewSession?.sourceMode ?? "C";
-      const attachments = previewSession?.attachments ?? [];
+      const attachments = options?.attachments ?? previewSession?.attachments ?? [];
       const attachmentsSnapshot = attachments;
       const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
       const instructionToSend = buildAttachmentInstruction(input, selectedText, attachments);
       const { promptMode, promptOverride: basePrompt } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
-      const category = options?.command
-        ? buildQuickActionPreferenceCategory(options.command)
+      const sessionCommand = previewSession?.quickActionCommandId
+        ? state.quickActionCommands.find((command) => command.id === previewSession.quickActionCommandId)
+        : undefined;
+      const categoryCommand = options?.command ?? sessionCommand;
+      const category = categoryCommand
+        ? buildQuickActionPreferenceCategory(categoryCommand)
         : buildOtherPreferenceCategory(t("history.preferenceOther"));
       const requestId = generatePreferenceRequestId();
       const learnedSummary =
@@ -435,6 +438,81 @@ export function usePreviewWindowController() {
       await setPreviewFocusable(true, true);
     }
   }, [appendLoadedAttachments, setLlmError, setPreviewFocusable, showToast, t]);
+
+  const handleSaveDocumentQuickAction = useCallback(async () => {
+    const win = getCurrentWindow();
+    await win.setAlwaysOnTop(false).catch(() => { });
+    await setPreviewFocusable(true, true);
+    try {
+      const { attachments: loadedAttachments, skippedCount } = await mainWindowService.pickAttachments();
+      const previewAttachments = loadedAttachments.map(toPreviewAttachment);
+      if (previewAttachments.length === 0) {
+        if (skippedCount > 0) {
+          setLlmError(t("preview.attachmentReadFailed"));
+        }
+        return;
+      }
+
+      appendLoadedAttachments(loadedAttachments);
+      const state = useAppStore.getState();
+      const commandAttachments = previewAttachments.map(toQuickActionAttachment);
+      const nextCommand: QuickActionCommand = {
+        id: `document-${Date.now()}`,
+        label: buildDocumentCommandLabel(previewAttachments, t("quickAction.uploadDocument")),
+        instruction: DEFAULT_RETAINED_DOCUMENT_INSTRUCTION,
+        attachments: commandAttachments,
+      };
+      const nextCommands = [...state.quickActionCommands, nextCommand];
+      state.setQuickActionCommands(nextCommands);
+      await emit("neuropen://settings-saved", { quickActionCommands: nextCommands });
+      showToast(t("preview.documentQuickActionSaved"));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      if (reason && reason !== "No file selected.") {
+        setLlmError(reason || t("preview.attachmentReadFailed"));
+      }
+    } finally {
+      await win.setAlwaysOnTop(true).catch(() => { });
+      await setPreviewFocusable(true, true);
+    }
+  }, [appendLoadedAttachments, setLlmError, setPreviewFocusable, showToast, t]);
+
+  const handleQuickActionCommand = useCallback(async (command: QuickActionCommand) => {
+    const retainedAttachments = command.attachments ?? [];
+    if (command.action === "documentUpload" && retainedAttachments.length === 0) {
+      await handleSaveDocumentQuickAction();
+      return;
+    }
+
+    if (retainedAttachments.length > 0) {
+      const previewAttachments = retainedAttachments.map(toPreviewAttachmentFromCommand);
+      const nextAttachments = dedupeAttachments([...(previewSession?.attachments ?? []), ...previewAttachments]);
+      setPreviewSession((current) => ({
+        type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
+        selectedText: current?.selectedText ?? "",
+        sourceMode: current?.sourceMode ?? "C",
+        instruction: current?.instruction ?? "",
+        attachments: dedupeAttachments([...(current?.attachments ?? []), ...previewAttachments]),
+        promptAppendix: current?.promptAppendix ?? "",
+        preferredLanguage: current?.preferredLanguage ?? "",
+        requestId: current?.requestId ?? "",
+        preferenceCategoryKey: current?.preferenceCategoryKey ?? "",
+        preferenceCategoryLabel: current?.preferenceCategoryLabel ?? "",
+        quickActionCommandId: command.id,
+        feedbackRating: current?.feedbackRating ?? null,
+      }));
+      setLlmError("");
+      await mainWindowService.clearConversation().catch((err) => {
+        console.warn("[Preview] clear_conversation failed before retained document command:", err);
+      });
+      await runPreviewInstruction(resolveRetainedDocumentInstruction(command.instruction), {
+        command,
+        attachments: nextAttachments,
+      });
+      return;
+    }
+    await runPreviewInstruction(command.instruction, { command });
+  }, [handleSaveDocumentQuickAction, previewSession?.attachments, runPreviewInstruction, setLlmError]);
 
   const handleRemoveAttachment = useCallback((indexToRemove: number) => {
     setPreviewSession((current) =>
@@ -630,9 +708,8 @@ export function usePreviewWindowController() {
     await new Promise((resolve) => setTimeout(resolve, 150));
     await invoke("restore_clipboard");
     showToast(t("preview.replaceSuccess"), 900);
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    await getCurrentWindow().hide();
-  }, [llmOutput, setLlmError, showToast, t]);
+    await setPreviewFocusable(true, true);
+  }, [llmOutput, setLlmError, setPreviewFocusable, showToast, t]);
 
   const handleClose = useCallback(async () => {
     stopFallbackTts();
@@ -715,6 +792,8 @@ export function usePreviewWindowController() {
     handleRefinement,
     handleRemoveAttachment,
     handleReplace,
+    handleQuickActionCommand,
+    handleSaveDocumentQuickAction,
     handleStartDrag,
     handleTtsToggle,
     hasOutput: llmOutput.length > 0,

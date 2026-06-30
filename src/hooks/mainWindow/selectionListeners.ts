@@ -2,7 +2,7 @@ import { emit } from "@tauri-apps/api/event";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { mainWindowService } from "../../services/mainWindowService";
-import { useAppStore } from "../../store/useAppStore";
+import { useAppStore, type QuickActionCommand } from "../../store/useAppStore";
 import { buildSelectionFingerprint } from "../../utils/appText";
 import { clampToMonitorBounds } from "../../utils/windowBounds";
 import { hideWindowByLabel, isAnyNeuroPenWindowFocused } from "../../utils/windowLifecycle";
@@ -284,7 +284,7 @@ export async function registerSelectionListeners({
   });
 
   await safeRegister<{
-    quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
+    quickActionCommands?: QuickActionCommand[];
   }>(
     "neuropen://settings-saved",
     async (event) => {

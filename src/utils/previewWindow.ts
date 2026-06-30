@@ -2,6 +2,7 @@ import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { emit } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { clampToMonitorBounds } from "./windowBounds";
+import type { PreviewAttachment } from "./previewAttachments";
 
 export type PreviewSourceMode = "A" | "B1" | "B2" | "C";
 
@@ -18,6 +19,7 @@ export type PreviewSessionPayload =
     preferenceCategoryKey?: string;
     preferenceCategoryLabel?: string;
     quickActionCommandId?: string;
+    attachments?: PreviewAttachment[];
   }
   | {
     sessionType: "screenshot";

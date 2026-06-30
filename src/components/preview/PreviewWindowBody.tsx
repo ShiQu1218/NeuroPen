@@ -1,15 +1,12 @@
 import { Suspense, lazy, useRef, type Dispatch, type MouseEvent, type RefObject, type SetStateAction } from "react";
 import type { useI18n } from "../../i18n";
-import type { PreviewSession } from "../../hooks/usePreviewEventSync";
 import type { QuickActionCommand } from "../../store/useAppStore";
 import {
-  formatModeATextForPreview,
   looksLikeGfmMarkdown,
   looksLikeMarkdown,
   looksLikeMathMarkdown,
   normalizeMathBlocks,
-  normalizePreviewMarkdown,
-  normalizeStructuredText,
+  normalizePlainTextOutput,
 } from "../../utils/appText";
 import type { PreviewAttachment } from "../../utils/previewAttachments";
 
@@ -42,10 +39,12 @@ interface PreviewWindowBodyProps {
   handleAttachFile: () => Promise<void>;
   handleClose: () => Promise<void>;
   handleCopy: () => Promise<void>;
+  handleQuickActionCommand: (command: QuickActionCommand) => Promise<void>;
   handleRateOutput: (rating: "up" | "down") => Promise<void>;
   handleRefinement: () => Promise<void>;
   handleRemoveAttachment: (index: number) => void;
   handleReplace: () => Promise<void>;
+  handleSaveDocumentQuickAction: () => Promise<void>;
   handleStartDrag: () => Promise<void>;
   handleTtsToggle: () => Promise<void>;
   hasOutput: boolean;
@@ -59,13 +58,8 @@ interface PreviewWindowBodyProps {
   llmOutput: string;
   outputContentRef: RefObject<HTMLDivElement | null>;
   outputRef: RefObject<HTMLDivElement | null>;
-  previewSession: PreviewSession | null;
   quickActionCommands: QuickActionCommand[];
   refinementInput: string;
-  runPreviewInstruction: (
-    instruction: string,
-    options?: { command?: QuickActionCommand },
-  ) => Promise<void>;
   setPreviewFocusable: (focusable: boolean, focus?: boolean) => Promise<void>;
   setRefinementInput: Dispatch<SetStateAction<string>>;
   suppressKeyboardCopy: (durationMs?: number) => void;
@@ -84,10 +78,12 @@ export default function PreviewWindowBody({
   handleAttachFile,
   handleClose,
   handleCopy,
+  handleQuickActionCommand,
   handleRateOutput,
   handleRefinement,
   handleRemoveAttachment,
   handleReplace,
+  handleSaveDocumentQuickAction,
   handleStartDrag,
   handleTtsToggle,
   hasOutput,
@@ -101,10 +97,8 @@ export default function PreviewWindowBody({
   llmOutput,
   outputContentRef,
   outputRef,
-  previewSession,
   quickActionCommands,
   refinementInput,
-  runPreviewInstruction,
   setPreviewFocusable,
   setRefinementInput,
   suppressKeyboardCopy,
@@ -119,9 +113,6 @@ export default function PreviewWindowBody({
     startY: number;
     moved: boolean;
   } | null>(null);
-  const isModeAPreview = previewSession?.type === "text" && previewSession.sourceMode === "A";
-  const isModeALlmPreview = isModeAPreview && !!previewSession?.instruction.trim();
-  const isAssistantChatPreview = previewSession?.sourceMode === "C";
   const hasImageAttachment = attachments.some((attachment) => attachment.kind === "image");
   const refinementPlaceholder =
     hasImageAttachment
@@ -131,25 +122,16 @@ export default function PreviewWindowBody({
       : attachments.length > 0
         ? t("preview.askAboutAttachment")
         : t("preview.refinementPlaceholder");
-  // Mode A (voice input without instruction) → formatModeAText
-  // Mode A with LLM instruction → normalizeStructuredText
-  // Mode B (selection processing) starts from raw text so math normalization can
-  // run before markdown/list heuristics. Mode C keeps model-provided structure.
-  const sourceOutput =
-    isModeALlmPreview
-      ? normalizeStructuredText(llmOutput)
-      : isModeAPreview
-      ? formatModeATextForPreview(llmOutput)
-      : llmOutput.replace(/\r\n?/g, "\n").trim();
+  const previewQuickActionCommands = quickActionCommands.filter(
+    (command) => command.action !== "documentUpload" || (command.attachments?.length ?? 0) > 0,
+  );
+  const sourceOutput = normalizePlainTextOutput(llmOutput);
   // When the output contains math markup, normalise it before markdown rendering so
   // KaTeX auto-render can scan the finished preview DOM without markdown list/text
   // heuristics corrupting the original formula structure first.
   const usesMathMarkdown = looksLikeMathMarkdown(sourceOutput);
   const mathNormalizedOutput = usesMathMarkdown ? normalizeMathBlocks(sourceOutput) : sourceOutput;
-  const renderedOutput =
-    isModeALlmPreview || isModeAPreview || isAssistantChatPreview
-      ? mathNormalizedOutput
-      : normalizePreviewMarkdown(mathNormalizedOutput);
+  const renderedOutput = mathNormalizedOutput;
   const usesGfmMarkdown = looksLikeGfmMarkdown(renderedOutput);
   const usesMarkdown = usesMathMarkdown || looksLikeMarkdown(renderedOutput);
 
@@ -361,26 +343,79 @@ export default function PreviewWindowBody({
           </div>
         )}
 
-        {quickActionCommands.length > 0 && (
-          <div className="max-h-28 shrink-0 overflow-y-auto border-b border-zinc-200 bg-white/70 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/70">
-            <div className="mb-1.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t("preview.quickActions")}</div>
-            <div className="flex flex-wrap gap-1.5">
-              {quickActionCommands.map((command) => (
+        <div className="max-h-28 shrink-0 overflow-y-auto border-b border-zinc-200 bg-white/70 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/70">
+          <div className="mb-1.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t("preview.quickActions")}</div>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              className="btn-secondary inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={isLlmLoading}
+              onClick={() => {
+                if (isDragInteractionLocked()) return;
+                void handleSaveDocumentQuickAction();
+              }}
+              title={t("quickAction.uploadDocument")}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="shrink-0"
+              >
+                <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.48-8.48" />
+              </svg>
+              <span>{t("quickAction.uploadDocument")}</span>
+            </button>
+            {previewQuickActionCommands.map((command) => {
+              const retainedAttachmentCount = command.attachments?.length ?? 0;
+              const hasRetainedAttachments = retainedAttachmentCount > 0;
+              return (
                 <button
                   key={`preview-command-${command.id}`}
-                  className="btn-secondary px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed"
+                  className={`btn-secondary px-2.5 py-1 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed ${
+                    hasRetainedAttachments ? "inline-flex items-center gap-1.5" : ""
+                  }`}
                   disabled={isLlmLoading}
                   onClick={() => {
                     if (isDragInteractionLocked()) return;
-                    void runPreviewInstruction(command.instruction, { command });
+                    void handleQuickActionCommand(command);
                   }}
+                  title={command.label}
                 >
-                  {command.label}
+                  {hasRetainedAttachments && (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                      className="shrink-0"
+                    >
+                      <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.48-8.48" />
+                    </svg>
+                  )}
+                  <span>{command.label}</span>
+                  {hasRetainedAttachments && (
+                    <span className="rounded-full bg-zinc-200 px-1.5 text-[10px] leading-4 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">
+                      {retainedAttachmentCount}
+                    </span>
+                  )}
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
 
       <div className="flex shrink-0 items-center gap-2 border-b border-zinc-200 bg-white/70 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/70">

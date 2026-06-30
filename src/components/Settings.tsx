@@ -11,10 +11,12 @@ import {
   type CustomLanguageVariant,
   type LlmProvider,
   type PreferredLanguage,
+  type QuickActionAttachment,
   type QuickActionCommand,
   type ThemePreference,
   type TranslationTarget,
 } from "../store/useAppStore";
+import { mainWindowService, type LoadedAttachment } from "../services/mainWindowService";
 import {
   getDefaultLlmModel,
   getDefaultLlmModelOptions,
@@ -50,6 +52,7 @@ import {
   normalizePreferredLanguageSelection,
 } from "../utils/languageVariants";
 import { formatAppWorkflowLabels } from "../utils/workflowLabels";
+import { DEFAULT_RETAINED_DOCUMENT_INSTRUCTION } from "../utils/previewAttachments";
 import {
   DEFAULT_MODE_A_PROMPT,
   DEFAULT_MODE_B_PROMPT,
@@ -57,6 +60,34 @@ import {
 } from "../store/appStoreTypes";
 
 type PanelTone = "" | "success" | "error";
+
+function toQuickActionAttachment(attachment: LoadedAttachment): QuickActionAttachment {
+  if (attachment.kind === "image") {
+    return {
+      kind: "image",
+      name: attachment.name,
+      mimeType: attachment.mimeType ?? attachment.mime_type ?? "image/png",
+      base64Data: attachment.base64Data ?? attachment.base64_data ?? "",
+    };
+  }
+  return {
+    kind: "text",
+    name: attachment.name,
+    mimeType: attachment.mimeType ?? attachment.mime_type ?? "text/plain",
+    textContent: attachment.textContent ?? attachment.text_content ?? "",
+    truncated: attachment.truncated,
+  };
+}
+
+function buildDocumentCommandLabel(attachments: LoadedAttachment[], fallback: string) {
+  if (attachments.length === 1) {
+    return attachments[0].name;
+  }
+  if (attachments.length > 1) {
+    return `${fallback} (${attachments.length})`;
+  }
+  return fallback;
+}
 
 interface PanelMessage {
   tone: PanelTone;
@@ -1098,6 +1129,34 @@ export default function Settings() {
     ]);
   }, [quickActionDraftCommands, t]);
 
+  const handleUploadQuickActionDocument = useCallback(async () => {
+    try {
+      const { attachments, skippedCount } = await mainWindowService.pickAttachments();
+      if (attachments.length === 0) {
+        if (skippedCount > 0) {
+          setPanelMessage("quickAction", "error", t("preview.attachmentReadFailed"));
+        }
+        return;
+      }
+
+      const nextCommand: QuickActionCommand = {
+        id: `document-${Date.now()}`,
+        label: buildDocumentCommandLabel(attachments, t("quickAction.uploadDocument")),
+        instruction: DEFAULT_RETAINED_DOCUMENT_INSTRUCTION,
+        attachments: attachments.map(toQuickActionAttachment),
+      };
+      const nextCommands = [...quickActionDraftCommands, nextCommand];
+      setQuickActionDraftCommands(nextCommands);
+      await commitQuickActionCommands(nextCommands);
+      setPanelMessage("quickAction", "success", t("preview.documentQuickActionSaved"));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (reason && reason !== "No file selected.") {
+        setPanelMessage("quickAction", "error", reason || t("preview.attachmentReadFailed"));
+      }
+    }
+  }, [commitQuickActionCommands, quickActionDraftCommands, setPanelMessage, t]);
+
   const handleUpdateQuickActionCommand = useCallback((commandId: string, field: "label" | "instruction", value: string) => {
     setQuickActionDraftCommands(
       quickActionDraftCommands.map((command) =>
@@ -1599,6 +1658,7 @@ export default function Settings() {
           onAdd={handleAddQuickActionCommand}
           onDelete={handleDeleteQuickActionCommand}
           onMove={handleMoveQuickActionCommand}
+          onUploadDocument={handleUploadQuickActionDocument}
           onUpdate={handleUpdateQuickActionCommand}
           onSave={handleSaveQuickActionCommands}
           t={t}

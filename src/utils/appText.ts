@@ -29,46 +29,10 @@ export const applyPunctuationMode = (text: string, mode: PunctuationMode) => {
   return normalized;
 };
 
-const SENTENCE_BOUNDARY_RE = /([.!?;。！？؛；]+)\s*/g;
-const CLAUSE_BOUNDARY_RE = /([,;:，、：؛；])\s*/g;
 const LIST_PREFIX_RE = /^(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+)/;
 const MATH_CONNECTOR_SPLIT_RE = /(所以|因此|故|則|于是|then|therefore|hence)/g;
 const COMMON_TEX_COMMAND_RE =
   /\\(?:sqrt|frac|times|cdot|div|left|right|alpha|beta|gamma|delta|theta|lambda|mu|pi|sigma|omega|sum|prod|int|log|ln|sin|cos|tan|cot|sec|csc|leq|geq|neq|approx|pm|mp|to|infty|text)\b/;
-
-/**
- * Apply a regex replacement only to text segments that lie **outside** of
- * `$…$`, `$$…$$`, `\(...\)`, and `\[...\]` math spans.  Math spans are
- * returned unchanged.
- *
- * This prevents text-formatting heuristics (list-prefix insertion, sentence
- * breaking, etc.) from corrupting LaTeX expressions that happen to contain
- * characters like `- `, `!`, or `;`.
- */
-const replaceOutsideMath = (
-  text: string,
-  pattern: RegExp,
-  replacement: string,
-): string => {
-  const mathRe = /\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\[[\s\S]+?\\\]|\\\([^$\n]+?\\\)/g;
-  const parts: string[] = [];
-  let cursor = 0;
-  let m: RegExpExecArray | null;
-
-  while ((m = mathRe.exec(text)) !== null) {
-    if (m.index > cursor) {
-      parts.push(text.slice(cursor, m.index).replace(pattern, replacement));
-    }
-    parts.push(m[0]); // math span — unchanged
-    cursor = m.index + m[0].length;
-  }
-
-  if (cursor < text.length) {
-    parts.push(text.slice(cursor).replace(pattern, replacement));
-  }
-
-  return parts.join("");
-};
 
 const splitMarkdownListPrefix = (line: string) => {
   const match = line.match(/^([ \t]*(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+))(.*)$/);
@@ -81,139 +45,11 @@ const splitMarkdownListPrefix = (line: string) => {
   };
 };
 
-const buildParagraphs = (
-  parts: string[],
-  options: { maxParts: number; maxChars: number }
-) => {
-  const paragraphs: string[] = [];
-  let bucket: string[] = [];
-  let bucketChars = 0;
-
-  for (const rawPart of parts) {
-    const part = rawPart.trim();
-    if (!part) continue;
-
-    const forceBreak = LIST_PREFIX_RE.test(part);
-    const projectedChars = bucketChars + (bucket.length > 0 ? 1 : 0) + part.length;
-    const shouldBreak =
-      bucket.length > 0 &&
-      (forceBreak || bucket.length >= options.maxParts || projectedChars > options.maxChars);
-
-    if (shouldBreak) {
-      paragraphs.push(bucket.join(" ").trim());
-      bucket = [];
-      bucketChars = 0;
-    }
-
-    bucket.push(part);
-    bucketChars += (bucketChars > 0 ? 1 : 0) + part.length;
-  }
-
-  if (bucket.length > 0) {
-    paragraphs.push(bucket.join(" ").trim());
-  }
-
-  return paragraphs;
-};
-
-const chunkCompactText = (text: string, chunkSize: number) => {
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    chunks.push(text.slice(start, start + chunkSize).trim());
-    start += chunkSize;
-  }
-  return chunks.filter(Boolean);
-};
-
-export const formatModeAText = (text: string) => {
-  const normalized = text.replace(/\r\n?/g, "\n").trim();
-  if (!normalized) return "";
-
-  if (looksLikeMarkdown(normalized)) {
-    return normalizePreviewMarkdown(normalized);
-  }
-
-  let result = normalized
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/[ \t]{2,}/g, " ");
-
-  result = replaceOutsideMath(result, /([^\n])((?:\(?\d{1,3}[.)]\s+))/g, "$1\n$2");
-  result = replaceOutsideMath(result, /([^\n])((?:[-*+•]\s+))/g, "$1\n$2");
-
-  const sentenceParts = result
-    .replace(SENTENCE_BOUNDARY_RE, "$1\n")
-    .split(/\n+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (sentenceParts.length >= 2) {
-    result = buildParagraphs(sentenceParts, {
-      maxParts: 2,
-      maxChars: 72,
-    }).join("\n\n");
-  }
-
-  const hasParagraphs = result.includes("\n\n");
-  const hasSentenceStops = /[.!?;。！？؛；]/.test(result);
-  const isLongCompactLine =
-    !hasParagraphs &&
-    result.length >= 36 &&
-    !looksLikeMarkdown(result);
-
-  if (isLongCompactLine && !hasSentenceStops) {
-    const clauseParts = result
-      .replace(CLAUSE_BOUNDARY_RE, "$1\n")
-      .split(/\n+/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-
-    if (clauseParts.length >= 2) {
-      result = buildParagraphs(clauseParts, {
-        maxParts: 2,
-        maxChars: 56,
-      }).join("\n\n");
-    } else if (result.length >= 56) {
-      result = chunkCompactText(result, 32).join("\n\n");
-    }
-  }
-
-  return result
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-};
-
-export const formatModeATextForPreview = (text: string) => {
-  const normalized = text.replace(/\r\n?/g, "\n").trim();
-  if (!normalized) return "";
-
-  if (looksLikeMarkdown(normalized)) {
-    return normalizePreviewMarkdown(normalized);
-  }
-
-  let result = normalized
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/[ \t]{2,}/g, " ");
-
-  result = replaceOutsideMath(result, /([^\n])((?:\(?\d{1,3}[.)]\s+))/g, "$1\n$2");
-  result = replaceOutsideMath(result, /([^\n])((?:[-*+•]\s+))/g, "$1\n$2");
-
-  return result
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-};
+export const normalizePlainTextOutput = (text: string) =>
+  text.replace(/\r\n?/g, "\n").trim();
 
 export const normalizeStructuredText = (text: string) =>
-  text
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  normalizePlainTextOutput(text);
 
 export const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" | "senseVoice" | "moonshine" => {
   switch (engine) {
@@ -630,66 +466,6 @@ export const normalizeMathBlocks = (text: string): string => {
   }
 
   return result.join("\n").replace(/\n{3,}/g, "\n\n");
-};
-
-export const normalizePreviewMarkdown = (text: string) => {
-  const normalized = text.replace(/\r\n?/g, "\n").trim();
-  if (!normalized) return "";
-
-  // Use replaceOutsideMath so that list-prefix heuristics never insert line
-  // breaks inside $…$ or $$…$$ math spans (e.g. `- ` as subtraction, `1.` as
-  // a decimal, etc.).
-
-  // --- Inline list-prefix separation ---
-  // When a list prefix immediately follows text on the same line (no newline),
-  // insert a blank line so markdown sees a proper block boundary.
-  let result = replaceOutsideMath(
-    normalized,
-    /([^\n])((?:\(?\d{1,3}[.)]\s+))/g,
-    "$1\n\n$2",
-  );
-  result = replaceOutsideMath(
-    result,
-    /([^\n])((?:[-*+•]\s+))/g,
-    "$1\n\n$2",
-  );
-
-  // --- Single-newline list-prefix separation ---
-  // When a list item follows non-list text with only a single newline,
-  // markdown treats it as a lazy continuation line (CommonMark §5.4) instead
-  // of a new list block.  Upgrade the single newline to a blank line so the
-  // parser sees a proper paragraph → list transition.
-  result = replaceOutsideMath(
-    result,
-    /([^\n])\n(\(?\d{1,3}[.)]\s+)/g,
-    "$1\n\n$2",
-  );
-  result = replaceOutsideMath(
-    result,
-    /([^\n])\n([-*+•]\s+)/g,
-    "$1\n\n$2",
-  );
-
-  // --- Post-list paragraph separation ---
-  // When non-list text follows the last list item with only a single newline,
-  // insert a blank line so markdown ends the list before the next paragraph.
-  // Matches: end-of-list-item-line \n non-list-non-blank-text.
-  result = replaceOutsideMath(
-    result,
-    /(\n(?:\(?\d{1,3}[.)]\s+|[-*+•]\s+)[^\n]+)\n(?!\n)(?!\(?\d{1,3}[.)]\s)(?![-*+•]\s)(?!#{1,6}\s)(?!```)/g,
-    "$1\n\n",
-  );
-
-  result = result.replace(/\n{3,}/g, "\n\n");
-
-  if (!looksLikeMarkdown(result)) {
-    const sentenceBreakCount = (result.match(/[.!?;。！？；]/g) ?? []).length;
-    if (!result.includes("\n\n") && sentenceBreakCount >= 2) {
-      result = replaceOutsideMath(result, /([.!?;。！？；])\s*/g, "$1\n\n");
-    }
-  }
-
-  return result.replace(/\n{3,}/g, "\n\n").trim();
 };
 
 export const buildSelectionFingerprint = (

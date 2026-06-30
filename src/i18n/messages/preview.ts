@@ -28,6 +28,8 @@ export const previewMessages = {
     "preview.attachmentTruncated": "內容已截斷",
     "preview.attachmentReady": "附件已準備完成",
     "preview.attachmentReadFailed": "讀取附件失敗",
+    "preview.documentQuickActionSaved": "文檔已保存到快捷指令",
+    "preview.documentQuickActionAttached": "已附加快捷指令中的文檔",
     "preview.feedbackUp": "有幫助",
     "preview.feedbackDown": "沒幫助",
     "preview.preferenceDisabledIncognito": "Incognito 模式下不可記錄偏好",
@@ -62,6 +64,8 @@ export const previewMessages = {
     "preview.attachmentTruncated": "Content truncated",
     "preview.attachmentReady": "Attachment ready",
     "preview.attachmentReadFailed": "Failed to read attachment",
+    "preview.documentQuickActionSaved": "Document saved to quick actions",
+    "preview.documentQuickActionAttached": "Document from quick action attached",
     "preview.feedbackUp": "Helpful",
     "preview.feedbackDown": "Not helpful",
     "preview.preferenceDisabledIncognito": "Preference learning is disabled in incognito mode",
@@ -95,7 +99,9 @@ export const previewMessages = {
     "preview.askAboutAttachment": "ファイルについて質問を入力…",
     "preview.attachmentTruncated": "内容を省略しました",
     "preview.attachmentReady": "添付の準備ができました",
-    "preview.attachmentReadFailed": "添付の読み込みに失敗しました"
+    "preview.attachmentReadFailed": "添付の読み込みに失敗しました",
+    "preview.documentQuickActionSaved": "ドキュメントをクイックアクションに保存しました",
+    "preview.documentQuickActionAttached": "クイックアクションのドキュメントを添付しました"
   },
   "zh-CN": {
     "preview.title": "NeuroPen 预览",
@@ -125,7 +131,9 @@ export const previewMessages = {
     "preview.askAboutAttachment": "输入你想问的文件问题…",
     "preview.attachmentTruncated": "内容已截断",
     "preview.attachmentReady": "附件已准备完成",
-    "preview.attachmentReadFailed": "读取附件失败"
+    "preview.attachmentReadFailed": "读取附件失败",
+    "preview.documentQuickActionSaved": "文档已保存到快捷指令",
+    "preview.documentQuickActionAttached": "已附加快捷指令中的文档"
   },
   "es-ES": {
     "preview.title": "NeuroPen Vista previa",
@@ -155,7 +163,9 @@ export const previewMessages = {
     "preview.askAboutAttachment": "Escribe tu pregunta sobre el archivo…",
     "preview.attachmentTruncated": "Contenido truncado",
     "preview.attachmentReady": "Adjunto listo",
-    "preview.attachmentReadFailed": "No se pudo leer el adjunto"
+    "preview.attachmentReadFailed": "No se pudo leer el adjunto",
+    "preview.documentQuickActionSaved": "Documento guardado en acciones rápidas",
+    "preview.documentQuickActionAttached": "Documento de acción rápida adjuntado"
   },
   "ko-KR": {
     "preview.title": "NeuroPen 미리보기",
@@ -185,7 +195,9 @@ export const previewMessages = {
     "preview.askAboutAttachment": "파일에 대한 질문을 입력하세요…",
     "preview.attachmentTruncated": "내용이 잘렸습니다",
     "preview.attachmentReady": "첨부가 준비되었습니다",
-    "preview.attachmentReadFailed": "첨부를 읽지 못했습니다"
+    "preview.attachmentReadFailed": "첨부를 읽지 못했습니다",
+    "preview.documentQuickActionSaved": "문서를 빠른 작업에 저장했습니다",
+    "preview.documentQuickActionAttached": "빠른 작업의 문서를 첨부했습니다"
   },
   "de-DE": {
     "preview.title": "NeuroPen Vorschau",
@@ -215,7 +227,9 @@ export const previewMessages = {
     "preview.askAboutAttachment": "Frage zur Datei eingeben…",
     "preview.attachmentTruncated": "Inhalt gekürzt",
     "preview.attachmentReady": "Anhang bereit",
-    "preview.attachmentReadFailed": "Anhang konnte nicht gelesen werden"
+    "preview.attachmentReadFailed": "Anhang konnte nicht gelesen werden",
+    "preview.documentQuickActionSaved": "Dokument in Schnellaktionen gespeichert",
+    "preview.documentQuickActionAttached": "Dokument aus Schnellaktion angehängt"
   },
   "fr-FR": {
     "preview.title": "NeuroPen Aperçu",
@@ -245,7 +259,9 @@ export const previewMessages = {
     "preview.askAboutAttachment": "Posez votre question sur le fichier…",
     "preview.attachmentTruncated": "Contenu tronqué",
     "preview.attachmentReady": "Pièce jointe prête",
-    "preview.attachmentReadFailed": "Échec de lecture de la pièce jointe"
+    "preview.attachmentReadFailed": "Échec de lecture de la pièce jointe",
+    "preview.documentQuickActionSaved": "Document enregistré dans les actions rapides",
+    "preview.documentQuickActionAttached": "Document de l'action rapide joint"
   },
   "ar-SA": {
     "preview.title": "معاينة NeuroPen",
@@ -275,7 +291,9 @@ export const previewMessages = {
     "preview.askAboutAttachment": "اكتب سؤالك حول الملف…",
     "preview.attachmentTruncated": "تم اقتطاع المحتوى",
     "preview.attachmentReady": "المرفق جاهز",
-    "preview.attachmentReadFailed": "تعذر قراءة المرفق"
+    "preview.attachmentReadFailed": "تعذر قراءة المرفق",
+    "preview.documentQuickActionSaved": "تم حفظ المستند في الإجراءات السريعة",
+    "preview.documentQuickActionAttached": "تم إرفاق مستند من الإجراء السريع"
   },
   "ru-RU": {
     "preview.title": "NeuroPen Просмотр",
@@ -305,6 +323,8 @@ export const previewMessages = {
     "preview.askAboutAttachment": "Введите вопрос о файле…",
     "preview.attachmentTruncated": "Содержимое сокращено",
     "preview.attachmentReady": "Вложение готово",
-    "preview.attachmentReadFailed": "Не удалось прочитать вложение"
+    "preview.attachmentReadFailed": "Не удалось прочитать вложение",
+    "preview.documentQuickActionSaved": "Документ сохранен в быстрые действия",
+    "preview.documentQuickActionAttached": "Документ из быстрого действия прикреплен"
   }
 } as const;

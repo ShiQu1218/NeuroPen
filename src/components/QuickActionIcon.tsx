@@ -27,13 +27,36 @@ import {
 } from "../utils/languageVariants";
 import { PREVIEW_DEFAULT_SIZE } from "../utils/previewLayout";
 import { emitPreviewSession, showPreviewWindow } from "../utils/previewWindow";
+import {
+  buildAttachmentInstruction,
+  resolveRetainedDocumentInstruction,
+  type PreviewAttachment,
+} from "../utils/previewAttachments";
 import { clampToMonitorBounds } from "../utils/windowBounds";
 
 const ICON_SIZE = { width: 40, height: 40 };
 const EXPANDED_SIZE = { width: 220, height: 260 };
 
+function toPreviewAttachmentFromCommand(
+  attachment: NonNullable<QuickActionCommand["attachments"]>[number],
+): PreviewAttachment {
+  if (attachment.kind === "image") {
+    return {
+      ...attachment,
+      source: "file",
+    };
+  }
+  return {
+    ...attachment,
+    source: "file",
+  };
+}
+
 export default function QuickActionIcon() {
   const quickActionCommands = useAppStore((s) => s.quickActionCommands);
+  const visibleQuickActionCommands = quickActionCommands.filter(
+    (command) => command.action !== "documentUpload" || (command.attachments?.length ?? 0) > 0,
+  );
   const setQuickActionCommands = useAppStore((s) => s.setQuickActionCommands);
   const setOutputMode = useAppStore((s) => s.setOutputMode);
   const setLlmProvider = useAppStore((s) => s.setLlmProvider);
@@ -113,7 +136,7 @@ export default function QuickActionIcon() {
         modeAStreamOutput?: boolean;
         modeBStreamOutput?: boolean;
         contextAwareTone?: boolean;
-        quickActionCommands?: Array<{ id: string; label: string; instruction: string }>;
+        quickActionCommands?: QuickActionCommand[];
         preferenceLearningEnabled?: boolean;
         appProfiles?: AppProfile[];
       }>(
@@ -269,13 +292,7 @@ export default function QuickActionIcon() {
     return () => clearTimeout(postExpandHoverCheck);
   }, [expanded, scheduleCollapse]);
 
-  const showPreviewAndCallLlm = async (
-    instruction: string,
-    command?: QuickActionCommand,
-    pointer?: { x: number; y: number }
-  ) => {
-    const currentState = useAppStore.getState();
-    const llmOutputMode = "PreviewStream";
+  const resolveSelectedText = async () => {
     let selectedText = stableSelectionRef.current.trim();
     try {
       if (!selectedText) {
@@ -287,6 +304,18 @@ export default function QuickActionIcon() {
     } catch (err) {
       console.error("[QuickAction] Failed to safely get selection:", err);
     }
+    return selectedText;
+  };
+
+  const showPreviewAndCallLlm = async (
+    instruction: string,
+    command?: QuickActionCommand,
+    pointer?: { x: number; y: number },
+    retainedAttachments: PreviewAttachment[] = [],
+  ) => {
+    const currentState = useAppStore.getState();
+    const llmOutputMode = "PreviewStream";
+    const selectedText = await resolveSelectedText();
 
     if (!selectedText) {
       await setQaInteracting(false);
@@ -294,13 +323,19 @@ export default function QuickActionIcon() {
     }
 
     await emit("neuropen://qa-suppress-current-selection", { cooldownMs: 1600 });
+    await mainWindowService.clearConversation().catch((err) => {
+      console.warn("[QuickAction] clear_conversation failed before LLM call:", err);
+    });
+    const attachments = retainedAttachments;
+    const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
+    const instructionToSend = buildAttachmentInstruction(instruction, selectedText, attachments);
     const category = command
       ? buildQuickActionPreferenceCategory(command)
       : buildOtherPreferenceCategory(t("history.preferenceOther"));
     const requestId = generatePreferenceRequestId();
     let b1LanguagePreferences = currentState.preferredLanguage;
     let b1PreferredLanguage = resolveLanguageVariantPromptInstructionForText(
-      `${selectedText}\n${instruction}`,
+      `${selectedText}\n${instructionToSend}`,
       b1LanguagePreferences,
       currentState.customLanguageVariants
     );
@@ -316,7 +351,7 @@ export default function QuickActionIcon() {
             currentState.customLanguageVariants
           );
           b1PreferredLanguage = resolveLanguageVariantPromptInstructionForText(
-            `${selectedText}\n${instruction}`,
+            `${selectedText}\n${instructionToSend}`,
             b1LanguagePreferences,
             currentState.customLanguageVariants
           );
@@ -359,6 +394,7 @@ export default function QuickActionIcon() {
       preferenceCategoryKey: category.key,
       preferenceCategoryLabel: category.label,
       quickActionCommandId: category.quickActionCommandId,
+      attachments,
     });
     const previewX = pointer
       ? Math.round(qaPos.x + pointer.x * scaleFactor - 12)
@@ -385,18 +421,36 @@ export default function QuickActionIcon() {
     );
 
     try {
-      await mainWindowService.callLlm({
-        selectedText,
-        instruction,
-        outputMode: llmOutputMode,
-        provider: currentState.llmProvider,
-        model: currentState.llmModel,
-        preferredLanguage: b1PreferredLanguage,
-        promptMode: "B",
-        promptOverride: b1PromptOverride,
-        streamOutput: currentState.modeBStreamOutput,
-        requestId,
-      });
+      if (imageAttachments.length > 0) {
+        await mainWindowService.callLlmWithImages({
+          instruction: instructionToSend,
+          images: imageAttachments.map((attachment) => ({
+            imageBase64: attachment.base64Data,
+            imageMimeType: attachment.mimeType,
+          })),
+          outputMode: llmOutputMode,
+          provider: currentState.llmProvider,
+          model: currentState.llmModel,
+          preferredLanguage: b1PreferredLanguage,
+          promptMode: "B",
+          promptOverride: b1PromptOverride,
+          streamOutput: currentState.modeBStreamOutput,
+          requestId,
+        });
+      } else {
+        await mainWindowService.callLlm({
+          selectedText,
+          instruction: instructionToSend,
+          outputMode: llmOutputMode,
+          provider: currentState.llmProvider,
+          model: currentState.llmModel,
+          preferredLanguage: b1PreferredLanguage,
+          promptMode: "B",
+          promptOverride: b1PromptOverride,
+          streamOutput: currentState.modeBStreamOutput,
+          requestId,
+        });
+      }
     } catch (err) {
       console.error("[QuickAction] call_llm failed:", err);
       useAppStore.getState().setLlmError(String(err));
@@ -410,6 +464,16 @@ export default function QuickActionIcon() {
     command: QuickActionCommand,
     pointer?: { x: number; y: number }
   ) => {
+    const retainedAttachments = (command.attachments ?? []).map(toPreviewAttachmentFromCommand);
+    if (retainedAttachments.length > 0) {
+      await showPreviewAndCallLlm(
+        resolveRetainedDocumentInstruction(command.instruction),
+        command,
+        pointer,
+        retainedAttachments,
+      );
+      return;
+    }
     await showPreviewAndCallLlm(command.instruction, command, pointer);
   };
 
@@ -470,22 +534,48 @@ export default function QuickActionIcon() {
       >
         {t("quickAction.title")}
       </div>
-      {quickActionCommands.length === 0 ? (
+      {visibleQuickActionCommands.length === 0 ? (
         <p className="px-2 py-1 text-xs text-slate-400 dark:text-zinc-500">{t("quickAction.empty")}</p>
       ) : (
         <div className="max-h-[170px] overflow-y-auto space-y-1">
-          {quickActionCommands.map((command) => (
-            <button
-              key={command.id}
-              className="w-full rounded-xl border border-zinc-200/60 bg-white/80 px-3 py-1.5 text-left transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-              onMouseDown={() => pinSelectionAnchor()}
-              onClick={(e) =>
-                invokeCommand(command, { x: e.clientX, y: e.clientY })
-              }
-            >
-              {command.label}
-            </button>
-          ))}
+          {visibleQuickActionCommands.map((command) => {
+            const retainedAttachmentCount = command.attachments?.length ?? 0;
+            const hasRetainedAttachments = retainedAttachmentCount > 0;
+            return (
+              <button
+                key={command.id}
+                className="flex w-full items-center gap-2 rounded-xl border border-zinc-200/60 bg-white/80 px-3 py-1.5 text-left transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                onMouseDown={() => pinSelectionAnchor()}
+                onClick={(e) =>
+                  invokeCommand(command, { x: e.clientX, y: e.clientY })
+                }
+              >
+                {hasRetainedAttachments && (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                    className="shrink-0 text-zinc-500 dark:text-zinc-300"
+                  >
+                    <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.48-8.48" />
+                  </svg>
+                )}
+                <span className="min-w-0 flex-1 truncate">{command.label}</span>
+                {hasRetainedAttachments && (
+                  <span className="shrink-0 rounded-full bg-zinc-200 px-1.5 text-[10px] leading-4 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-200">
+                    {retainedAttachmentCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
       <div className="mt-1 flex items-center gap-1.5 border-t border-slate-100 pt-2 dark:border-zinc-800">

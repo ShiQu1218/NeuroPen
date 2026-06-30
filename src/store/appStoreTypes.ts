@@ -57,10 +57,30 @@ export interface CustomLanguageVariant {
   promptInstruction: string;
 }
 
+export interface QuickActionTextAttachment {
+  kind: "text";
+  name: string;
+  mimeType: string;
+  textContent: string;
+  truncated: boolean;
+}
+
+export interface QuickActionImageAttachment {
+  kind: "image";
+  name: string;
+  mimeType: string;
+  base64Data: string;
+}
+
+export type QuickActionAttachment = QuickActionTextAttachment | QuickActionImageAttachment;
+export type QuickActionCommandAction = "documentUpload";
+
 export interface QuickActionCommand {
   id: string;
   label: string;
   instruction: string;
+  action?: QuickActionCommandAction;
+  attachments?: QuickActionAttachment[];
 }
 
 const PREVIOUS_DEFAULT_PROMPT_MATH_GUIDANCE = `

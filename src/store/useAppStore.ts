@@ -55,7 +55,7 @@ export type {
   ThemePreference,
   TranslationTarget,
 } from "./appStoreTypes";
-export type { AppProfileMode } from "./appStoreTypes";
+export type { AppProfileMode, QuickActionAttachment } from "./appStoreTypes";
 export { normalizeLlmModelOptions } from "./appStoreDefaults";
 
 const LEGACY_MODE_B_PROMPTS = [

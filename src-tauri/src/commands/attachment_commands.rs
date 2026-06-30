@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-const MAX_TEXT_ATTACHMENT_CHARS: usize = 18_000;
 const MAX_ATTACHMENT_COUNT: usize = 8;
 const MAX_TEXT_ATTACHMENT_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_IMAGE_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
@@ -210,12 +209,11 @@ fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachmen
         if normalized.trim().is_empty() {
             return Err("The PDF did not contain readable text.".to_string());
         }
-        let (text_content, truncated) = truncate_text(normalized, MAX_TEXT_ATTACHMENT_CHARS);
         return Ok(LoadedAttachment::Text {
             name: safe_file_name,
             mime_type: mime_type.to_string(),
-            text_content,
-            truncated,
+            text_content: normalized,
+            truncated: false,
         });
     }
 
@@ -225,12 +223,11 @@ fn parse_attachment(file_name: String, bytes: Vec<u8>) -> Result<LoadedAttachmen
         if normalized.trim().is_empty() {
             return Err("The selected file is empty.".to_string());
         }
-        let (text_content, truncated) = truncate_text(normalized, MAX_TEXT_ATTACHMENT_CHARS);
         return Ok(LoadedAttachment::Text {
             name: safe_file_name,
             mime_type: mime_type.to_string(),
-            text_content,
-            truncated,
+            text_content: normalized,
+            truncated: false,
         });
     }
 
@@ -390,17 +387,6 @@ fn normalize_attachment_text(text: &str) -> String {
     text.replace('\u{0000}', "")
 }
 
-fn truncate_text(text: String, max_chars: usize) -> (String, bool) {
-    let char_count = text.chars().count();
-    if char_count <= max_chars {
-        return (text, false);
-    }
-    // Count Unicode scalar values instead of bytes so multibyte languages are not
-    // cut mid-character before being sent to the LLM.
-    let truncated = text.chars().take(max_chars).collect::<String>();
-    (truncated, true)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,6 +399,26 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("text file is too large"));
+    }
+
+    #[test]
+    fn text_attachment_preserves_content_within_size_limit() {
+        let text = "a".repeat(18_500);
+
+        let result = parse_attachment("long.txt".to_string(), text.clone().into_bytes())
+            .expect("long text under byte limit should parse");
+
+        match result {
+            LoadedAttachment::Text {
+                text_content,
+                truncated,
+                ..
+            } => {
+                assert_eq!(text_content, text);
+                assert!(!truncated);
+            }
+            LoadedAttachment::Image { .. } => panic!("expected text attachment"),
+        }
     }
 
     #[test]

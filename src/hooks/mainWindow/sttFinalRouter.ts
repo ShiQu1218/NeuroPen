@@ -6,8 +6,8 @@ import {
 } from "../../utils/preferenceLearning";
 import {
   applyPunctuationMode,
-  formatModeAText,
   isLikelyUnexpectedEnglishTranslation,
+  normalizePlainTextOutput,
   normalizeStructuredText,
   stripWrappingQuotes,
 } from "../../utils/appText";
@@ -244,7 +244,7 @@ export async function registerSttFinalRouter({
 
         finalText = usedLlmForModeA
           ? normalizeStructuredText(finalText)
-          : formatModeAText(finalText);
+          : normalizePlainTextOutput(finalText);
 
         // A profile can opt a specific app back into direct paste even when the
         // global Mode A behavior is preview-first.

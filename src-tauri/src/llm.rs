@@ -19,15 +19,20 @@
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tauri::Emitter;
 
 mod formatting;
 
+const DEFAULT_HTTP_TIMEOUT_SECS: u64 = 60;
+const LOCAL_OPENAI_COMPATIBLE_TIMEOUT_SECS: u64 = 300;
+const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
+
 /// Shared HTTP client — reuses TCP/TLS connections across LLM calls.
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(Duration::from_secs(DEFAULT_HTTP_TIMEOUT_SECS))
+        .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
         .build()
         .expect("Failed to build HTTP client")
 });
@@ -156,6 +161,58 @@ fn with_provider_headers(
         LlmProvider::OpenRouter => request.header("X-OpenRouter-Title", "NeuroPen"),
         _ => request,
     }
+}
+
+fn is_local_openai_compatible_provider(provider: &LlmProvider) -> bool {
+    matches!(provider, LlmProvider::LlamaCpp | LlmProvider::LmStudio)
+}
+
+fn openai_compatible_request_timeout(provider: &LlmProvider) -> Duration {
+    if is_local_openai_compatible_provider(provider) {
+        Duration::from_secs(LOCAL_OPENAI_COMPATIBLE_TIMEOUT_SECS)
+    } else {
+        Duration::from_secs(DEFAULT_HTTP_TIMEOUT_SECS)
+    }
+}
+
+fn with_openai_compatible_timeout(
+    request: reqwest::RequestBuilder,
+    provider: &LlmProvider,
+) -> reqwest::RequestBuilder {
+    request.timeout(openai_compatible_request_timeout(provider))
+}
+
+fn format_openai_compatible_transport_error(
+    provider: &LlmProvider,
+    url: &str,
+    error: &reqwest::Error,
+) -> String {
+    let provider_name = provider_display_name(provider);
+    if error.is_timeout() {
+        if is_local_openai_compatible_provider(provider) {
+            return format!(
+                "{provider_name} request timed out at {url}. For retained document quick actions, make sure the local server is still loaded and consider using a smaller document context or a model/context setting that can ingest the document."
+            );
+        }
+        return format!("{provider_name} request timed out at {url}: {error}");
+    }
+
+    if error.is_connect() {
+        if is_local_openai_compatible_provider(provider) {
+            return format!(
+                "Could not connect to {provider_name} at {url}. Make sure the local server is running and the model is loaded."
+            );
+        }
+        return format!("Could not connect to {provider_name} at {url}: {error}");
+    }
+
+    if is_local_openai_compatible_provider(provider) {
+        return format!(
+            "{provider_name} request failed at {url}. The local server may have reset the connection while handling the request: {error}"
+        );
+    }
+
+    format!("LLM API request failed for {provider_name} at {url}: {error}")
 }
 
 const AUTO_LANGUAGE: &str = "auto";
@@ -399,15 +456,18 @@ async fn call_openai_compatible(
         ]
     });
 
-    let resp = with_provider_headers(
-        with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+    let resp = with_openai_compatible_timeout(
+        with_provider_headers(
+            with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+            provider,
+        )
+        .header("Content-Type", "application/json")
+        .json(&body),
         provider,
     )
-    .header("Content-Type", "application/json")
-    .json(&body)
     .send()
     .await
-    .map_err(|e| format!("LLM API request failed: {e}"))?;
+    .map_err(|e| format_openai_compatible_transport_error(provider, base_url, &e))?;
 
     let status = resp.status();
     let body = resp
@@ -492,15 +552,18 @@ async fn call_openai_compatible_streaming(
         ]
     });
 
-    let resp = with_provider_headers(
-        with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+    let resp = with_openai_compatible_timeout(
+        with_provider_headers(
+            with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+            provider,
+        )
+        .header("Content-Type", "application/json")
+        .json(&body),
         provider,
     )
-    .header("Content-Type", "application/json")
-    .json(&body)
     .send()
     .await
-    .map_err(|e| format!("LLM API request failed: {e}"))?;
+    .map_err(|e| format_openai_compatible_transport_error(provider, base_url, &e))?;
 
     let status = resp.status();
     if !status.is_success() {
@@ -1261,15 +1324,18 @@ async fn call_openai_compatible_with_images(
         ]
     });
 
-    let resp = with_provider_headers(
-        with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+    let resp = with_openai_compatible_timeout(
+        with_provider_headers(
+            with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+            provider,
+        )
+        .header("Content-Type", "application/json")
+        .json(&body),
         provider,
     )
-    .header("Content-Type", "application/json")
-    .json(&body)
     .send()
     .await
-    .map_err(|e| format!("LLM API request failed: {e}"))?;
+    .map_err(|e| format_openai_compatible_transport_error(provider, base_url, &e))?;
 
     let status = resp.status();
     let body = resp
@@ -1816,6 +1882,18 @@ mod tests {
         assert_eq!(
             default_model(&LlmProvider::OpenRouter),
             "~openai/gpt-latest"
+        );
+    }
+
+    #[test]
+    fn local_openai_compatible_providers_use_extended_timeout() {
+        assert!(
+            openai_compatible_request_timeout(&LlmProvider::LmStudio)
+                > openai_compatible_request_timeout(&LlmProvider::OpenAi)
+        );
+        assert!(
+            openai_compatible_request_timeout(&LlmProvider::LlamaCpp)
+                > openai_compatible_request_timeout(&LlmProvider::OpenAi)
         );
     }
 
