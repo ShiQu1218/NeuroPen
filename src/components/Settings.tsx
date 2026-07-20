@@ -18,10 +18,12 @@ import {
 } from "../store/useAppStore";
 import { mainWindowService, type LoadedAttachment } from "../services/mainWindowService";
 import {
-  getDefaultLlmModel,
-  getDefaultLlmModelOptions,
   isLocalRuntimeLlmProvider,
 } from "../store/appStoreDefaults";
+import {
+  resolveLlmProviderModelState,
+  type LlmSettingsSavedPayload,
+} from "../utils/llmProviderModels";
 import SettingsHistorySection from "./settings/SettingsHistorySection";
 import SettingsQuickActionSection from "./settings/SettingsQuickActionSection";
 import SettingsShortcutsSection from "./settings/SettingsShortcutsSection";
@@ -143,9 +145,6 @@ const MODE_PROMPT_FIELDS: ReadonlyArray<{
     placeholderKey: "settings.llm.modeCPromptPlaceholder",
   },
 ];
-
-const normalizeRuntimeModelCatalog = (models: string[]) =>
-  Array.from(new Set(models.map((model) => model.trim()).filter(Boolean)));
 
 const SECTION_LABEL_KEYS: Record<SettingsSection, TranslationKey> = {
   general: "settings.section.general",
@@ -373,42 +372,26 @@ export default function Settings() {
     provider: LlmProvider,
     preferredModel?: string,
   ) => {
-    const rememberedModel = llmSelectedModelByProvider[provider]?.trim() ?? "";
-    const requestedModel = preferredModel?.trim() || rememberedModel;
     if (isLocalRuntimeLlmProvider(provider)) {
-      const fallbackModel = getDefaultLlmModel(provider);
-      const fallbackOptions = normalizeRuntimeModelCatalog([fallbackModel]);
       setLlmModelsLoading(true);
-      try {
-        const discoveredModels = normalizeRuntimeModelCatalog(
-          await settingsService.listAvailableLlmModels(provider)
-        );
-        const nextOptions = discoveredModels.length > 0 ? discoveredModels : fallbackOptions;
-        const trimmedPreferredModel = requestedModel;
-        const nextModel =
-          trimmedPreferredModel && nextOptions.includes(trimmedPreferredModel)
-            ? trimmedPreferredModel
-            : nextOptions[0] ?? fallbackModel;
-        return { nextModel, nextOptions };
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        setPanelMessage("llm", "error", reason || t("settings.saveError"));
-        const retainedModel = requestedModel || fallbackModel;
-        return {
-          nextModel: retainedModel,
-          nextOptions: normalizeRuntimeModelCatalog([retainedModel, ...fallbackOptions]),
-        };
-      } finally {
+    }
+    try {
+      const resolved = await resolveLlmProviderModelState(provider, {
+        preferredModel,
+        rememberedModel: llmSelectedModelByProvider[provider],
+        modelOptions: llmModelOptionsByProvider[provider],
+      });
+      if (resolved.discoveryStatus === "empty") {
+        setPanelMessage("llm", "error", t("settings.llm.noLocalModels"));
+      } else if (resolved.discoveryError) {
+        setPanelMessage("llm", "error", resolved.discoveryError || t("settings.saveError"));
+      }
+      return resolved;
+    } finally {
+      if (isLocalRuntimeLlmProvider(provider)) {
         setLlmModelsLoading(false);
       }
     }
-
-    const nextModel = requestedModel || getDefaultLlmModel(provider);
-    const nextOptions = normalizeLlmModelOptions(
-      llmModelOptionsByProvider[provider] ?? getDefaultLlmModelOptions(provider),
-      nextModel,
-    );
-    return { nextModel, nextOptions };
   }, [llmModelOptionsByProvider, llmSelectedModelByProvider, setPanelMessage, t]);
 
   const formatBytes = useCallback((bytes?: number) => {
@@ -528,6 +511,38 @@ export default function Settings() {
     };
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    let unlistenSettings: (() => void) | undefined;
+    void listen<LlmSettingsSavedPayload>("neuropen://settings-saved", (event) => {
+      if (disposed) {
+        return;
+      }
+      const payload = event.payload;
+      if (payload.llmProvider) {
+        setLlmProvider(payload.llmProvider);
+      }
+      if (payload.llmModel) {
+        setLlmModel(payload.llmModel);
+        setLlmModelDraft(payload.llmModel);
+      }
+      if (payload.llmModelOptions) {
+        setLlmModelOptions(payload.llmModelOptions);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlistenSettings = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlistenSettings?.();
+    };
+  }, [setLlmModel, setLlmModelOptions, setLlmProvider]);
+
   useEffect(
     () => () => {
       Object.values(statusTimersRef.current).forEach((timer) => {
@@ -550,10 +565,14 @@ export default function Settings() {
 
     let cancelled = false;
     void (async () => {
-      const { nextModel, nextOptions } = await resolveProviderModelState(llmProvider, llmModel);
+      const resolved = await resolveProviderModelState(llmProvider, llmModel);
       if (cancelled) {
         return;
       }
+      if (resolved.discoveryStatus !== "available") {
+        return;
+      }
+      const { nextModel, nextOptions } = resolved;
       if (
         nextModel === llmModel &&
         nextOptions.length === llmModelOptions.length &&
@@ -1052,10 +1071,17 @@ export default function Settings() {
   }, [setPanelMessage, sttTextDrafts.vocabularyTerms, t]);
 
   const handleLlmProviderChange = useCallback(async (value: typeof llmProvider) => {
-    const { nextModel, nextOptions } = await resolveProviderModelState(
+    const resolved = await resolveProviderModelState(
       value,
       llmSelectedModelByProvider[value],
     );
+    if (
+      isLocalRuntimeLlmProvider(value)
+      && resolved.discoveryStatus !== "available"
+    ) {
+      return;
+    }
+    const { nextModel, nextOptions } = resolved;
     await applyResolvedLlmProviderState(value, nextModel, nextOptions);
   }, [applyResolvedLlmProviderState, llmSelectedModelByProvider, resolveProviderModelState]);
 

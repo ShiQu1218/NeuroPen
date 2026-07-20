@@ -106,6 +106,7 @@
     "settings.llm.llamaCppLocal": "llama.cpp (Local)",
     "settings.llm.lmStudioLocal": "LM Studio (Local)",
     "settings.llm.model": "LLM Model",
+    "settings.llm.noLocalModels": "The service is connected, but no models are available. Load a model, then refresh.",
     "settings.llm.modelAdd": "Add to saved list",
     "settings.llm.modelHint": "Type a model name to save it; click a model tag to remove it.",
     "settings.llm.modePrompts": "Workflow Prompt Routing",
