@@ -20,8 +20,8 @@ use tauri::Emitter;
 
 mod api_keys;
 mod models;
-mod sensevoice;
 mod moonshine;
+mod sensevoice;
 
 /// Which STT backend to use.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -67,8 +67,62 @@ static STREAMING_ACTIVE: AtomicBool = AtomicBool::new(false);
 static STREAMING_STOP: AtomicBool = AtomicBool::new(false);
 /// Samples drained by stop_recording that the streaming task still needs.
 static STREAMING_FINAL_SAMPLES: Mutex<Option<Vec<f32>>> = Mutex::new(None);
+/// A transcription owns the capture lifecycle until its final event has been emitted.
+/// This prevents a new recording from reusing global streaming buffers while the
+/// previous session is still finalizing.
+static TRANSCRIPTION_ACTIVE: AtomicBool = AtomicBool::new(false);
 static MODEL_DOWNLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
 static MODEL_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
+
+struct StreamingSessionGuard;
+
+impl Drop for StreamingSessionGuard {
+    fn drop(&mut self) {
+        release_streaming_session();
+    }
+}
+
+struct TranscriptionGuard;
+
+impl Drop for TranscriptionGuard {
+    fn drop(&mut self) {
+        TRANSCRIPTION_ACTIVE.store(false, Ordering::SeqCst);
+    }
+}
+
+fn claim_streaming_session(
+    streaming_active: &AtomicBool,
+    transcription_active: &AtomicBool,
+) -> Result<(), &'static str> {
+    streaming_active
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .map_err(|_| "Streaming already active")?;
+
+    if transcription_active
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        streaming_active.store(false, Ordering::SeqCst);
+        return Err("Previous transcription is still processing");
+    }
+
+    Ok(())
+}
+
+fn claim_non_streaming_transcription(transcription_active: &AtomicBool) -> bool {
+    transcription_active
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+}
+
+fn release_streaming_session() {
+    if let Ok(mut final_samples) = STREAMING_FINAL_SAMPLES.lock() {
+        *final_samples = None;
+    }
+    STREAMING_STOP.store(false, Ordering::SeqCst);
+    STREAMING_ACTIVE.store(false, Ordering::SeqCst);
+    TRANSCRIPTION_ACTIVE.store(false, Ordering::SeqCst);
+}
 
 struct LocalWhisperContextCache {
     model_path: String,
@@ -82,7 +136,8 @@ fn neuropen_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Cannot find home directory")?;
     let dir = home.join(".neuropen");
     if !dir.exists() {
-        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create .neuropen dir: {e}"))?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create .neuropen dir: {e}"))?;
     }
     Ok(dir)
 }
@@ -97,7 +152,10 @@ pub fn list_local_stt_models() -> Result<Vec<LocalSttModel>, String> {
     models::list_local_stt_models()
 }
 
-pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) -> Result<LocalSttModel, String> {
+pub async fn install_local_stt_model(
+    app: tauri::AppHandle,
+    model_id: String,
+) -> Result<LocalSttModel, String> {
     let entry = models::catalog_entry_by_id(&model_id)
         .ok_or_else(|| format!("Unknown local STT model id: {model_id}"))?;
     let install_artifacts = models::install_artifacts(entry)?;
@@ -116,13 +174,16 @@ pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) ->
                 .filter_map(|artifact| artifact.path.metadata().ok().map(|meta| meta.len()))
                 .sum();
             let mut total_bytes: Option<u64> = None;
-            let _ = app.emit("stt://model-download-progress", serde_json::json!({
-                "modelId": model_id,
-                "status": "start",
-                "downloadedBytes": downloaded,
-                "totalBytes": total_bytes,
-                "progressPct": 0.0f64,
-            }));
+            let _ = app.emit(
+                "stt://model-download-progress",
+                serde_json::json!({
+                    "modelId": model_id,
+                    "status": "start",
+                    "downloadedBytes": downloaded,
+                    "totalBytes": total_bytes,
+                    "progressPct": 0.0f64,
+                }),
+            );
 
             for artifact in &install_artifacts {
                 if artifact.path.is_file() {
@@ -157,7 +218,9 @@ pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) ->
                     .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or("artifact");
-                let temp_path = artifact.path.with_file_name(format!("{file_name}.download"));
+                let temp_path = artifact
+                    .path
+                    .with_file_name(format!("{file_name}.download"));
                 let mut file = tokio::fs::File::create(&temp_path)
                     .await
                     .map_err(|e| format!("Failed to create model file: {e}"))?;
@@ -166,13 +229,16 @@ pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) ->
                 while let Some(chunk) = stream.next().await {
                     if MODEL_DOWNLOAD_CANCEL.load(Ordering::SeqCst) {
                         let _ = tokio::fs::remove_file(&temp_path).await;
-                        let _ = app.emit("stt://model-download-progress", serde_json::json!({
-                            "modelId": model_id,
-                            "status": "cancelled",
-                            "downloadedBytes": downloaded,
-                            "totalBytes": total_bytes,
-                            "progressPct": 0.0f64,
-                        }));
+                        let _ = app.emit(
+                            "stt://model-download-progress",
+                            serde_json::json!({
+                                "modelId": model_id,
+                                "status": "cancelled",
+                                "downloadedBytes": downloaded,
+                                "totalBytes": total_bytes,
+                                "progressPct": 0.0f64,
+                            }),
+                        );
                         return Err("Model download cancelled".to_string());
                     }
                     let bytes = chunk.map_err(|e| format!("Failed to read download chunk: {e}"))?;
@@ -184,13 +250,16 @@ pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) ->
                         .filter(|total| *total > 0)
                         .map(|total| ((downloaded as f64 / total as f64) * 100.0).min(100.0))
                         .unwrap_or(0.0);
-                    let _ = app.emit("stt://model-download-progress", serde_json::json!({
-                        "modelId": model_id,
-                        "status": "downloading",
-                        "downloadedBytes": downloaded,
-                        "totalBytes": total_bytes,
-                        "progressPct": progress_pct,
-                    }));
+                    let _ = app.emit(
+                        "stt://model-download-progress",
+                        serde_json::json!({
+                            "modelId": model_id,
+                            "status": "downloading",
+                            "downloadedBytes": downloaded,
+                            "totalBytes": total_bytes,
+                            "progressPct": progress_pct,
+                        }),
+                    );
                 }
 
                 tokio::fs::rename(&temp_path, &artifact.path)
@@ -198,22 +267,28 @@ pub async fn install_local_stt_model(app: tauri::AppHandle, model_id: String) ->
                     .map_err(|e| format!("Failed to finalize model file: {e}"))?;
             }
 
-            let _ = app.emit("stt://model-download-progress", serde_json::json!({
-                "modelId": model_id,
-                "status": "done",
-                "downloadedBytes": downloaded,
-                "totalBytes": total_bytes,
-                "progressPct": 100.0f64,
-            }));
+            let _ = app.emit(
+                "stt://model-download-progress",
+                serde_json::json!({
+                    "modelId": model_id,
+                    "status": "done",
+                    "downloadedBytes": downloaded,
+                    "totalBytes": total_bytes,
+                    "progressPct": 100.0f64,
+                }),
+            );
             Ok(())
         }
         .await;
         MODEL_DOWNLOAD_ACTIVE.store(false, Ordering::SeqCst);
         if let Err(err) = download_result {
-            let _ = app.emit("stt://model-download-progress", serde_json::json!({
-                "modelId": model_id,
-                "status": "error",
-            }));
+            let _ = app.emit(
+                "stt://model-download-progress",
+                serde_json::json!({
+                    "modelId": model_id,
+                    "status": "error",
+                }),
+            );
             return Err(err);
         }
     }
@@ -278,18 +353,23 @@ pub struct SttError {
 /// Starts microphone capture.
 /// Emits `stt://start` immediately.
 pub fn start_recording(app: tauri::AppHandle) -> Result<(), String> {
+    if TRANSCRIPTION_ACTIVE.load(Ordering::SeqCst) || STREAMING_ACTIVE.load(Ordering::SeqCst) {
+        return Err("Previous transcription is still processing".into());
+    }
+
+    // Keep the check and assignment under one lock so concurrent command calls
+    // cannot create two captures and overwrite the first handle.
     {
-        let guard = CAPTURE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+        let mut guard = CAPTURE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+        // Recheck after acquiring the capture lock. A previous recording may
+        // have claimed its final-transcription lease while this call waited.
+        if TRANSCRIPTION_ACTIVE.load(Ordering::SeqCst) || STREAMING_ACTIVE.load(Ordering::SeqCst) {
+            return Err("Previous transcription is still processing".into());
+        }
         if guard.is_some() {
             return Err("Already recording".into());
         }
-    }
-
-    let handle = audio_capture::start()?;
-
-    {
-        let mut guard = CAPTURE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
-        *guard = Some(handle);
+        *guard = Some(audio_capture::start()?);
     }
 
     let _ = app.emit("stt://start", ());
@@ -306,18 +386,25 @@ pub fn start_streaming_stt(
     model_path: String,
     stt_language: String,
 ) -> Result<(), String> {
-    if !is_recording() {
-        return Err("Not recording".into());
-    }
-    if STREAMING_ACTIVE.load(Ordering::SeqCst) {
-        return Err("Streaming already active".into());
-    }
-
-    STREAMING_STOP.store(false, Ordering::SeqCst);
-    STREAMING_ACTIVE.store(true, Ordering::SeqCst);
     {
-        let mut guard = STREAMING_FINAL_SAMPLES.lock().unwrap();
-        *guard = None;
+        // Keep capture validation, lease acquisition, and buffer initialization
+        // together. Otherwise stop_recording can remove CAPTURE after validation
+        // but before STREAMING_ACTIVE is claimed.
+        let guard = CAPTURE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+        if !guard.as_ref().is_some_and(CaptureHandle::is_recording) {
+            return Err("Not recording".into());
+        }
+
+        claim_streaming_session(&STREAMING_ACTIVE, &TRANSCRIPTION_ACTIVE)
+            .map_err(str::to_string)?;
+        STREAMING_STOP.store(false, Ordering::SeqCst);
+        if let Err(error) = STREAMING_FINAL_SAMPLES
+            .lock()
+            .map(|mut final_samples| *final_samples = None)
+        {
+            release_streaming_session();
+            return Err(format!("Streaming buffer lock poisoned: {error}"));
+        }
     }
 
     let api_key = if engine == SttEngine::OpenAi {
@@ -327,6 +414,7 @@ pub fn start_streaming_stt(
     };
 
     tauri::async_runtime::spawn(async move {
+        let _session_guard = StreamingSessionGuard;
         let mut accumulated: Vec<f32> = Vec::new();
         let interval = std::time::Duration::from_millis(2000);
 
@@ -350,7 +438,14 @@ pub fn start_streaming_stt(
             // Transcribe accumulated audio for partial result (need >0.5s of audio)
             let min_samples = TARGET_SAMPLE_RATE as usize / 2;
             if accumulated.len() > min_samples {
-                let result = transcribe_by_engine(&engine, api_key.as_deref(), &model_path, &accumulated, &stt_language).await;
+                let result = transcribe_by_engine(
+                    &engine,
+                    api_key.as_deref(),
+                    &model_path,
+                    &accumulated,
+                    &stt_language,
+                )
+                .await;
                 if let Ok(raw_text) = result {
                     let text = sanitize_transcript_text(&raw_text);
                     if !text.is_empty() {
@@ -372,21 +467,33 @@ pub fn start_streaming_stt(
             let duration_secs = accumulated.len() as f32 / TARGET_SAMPLE_RATE as f32;
             if is_effective_silence(&accumulated) {
                 println!("[stt] Effective silence detected in streaming finalization; skipping transcript");
-                let _ = app.emit("stt://final", SttResult {
-                    text: String::new(),
-                });
-                STREAMING_ACTIVE.store(false, Ordering::SeqCst);
+                let _ = app.emit(
+                    "stt://final",
+                    SttResult {
+                        text: String::new(),
+                    },
+                );
                 return;
             }
-            let result = transcribe_by_engine(&engine, api_key.as_deref(), &model_path, &accumulated, &stt_language).await;
+            let result = transcribe_by_engine(
+                &engine,
+                api_key.as_deref(),
+                &model_path,
+                &accumulated,
+                &stt_language,
+            )
+            .await;
             let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
             match result {
                 Ok(raw_text) => {
                     let text = sanitize_transcript_text(&raw_text);
-                    let _ = app.emit("stt://metrics", serde_json::json!({
-                        "durationMs": stt_duration_ms,
-                        "audioLengthSecs": duration_secs,
-                    }));
+                    let _ = app.emit(
+                        "stt://metrics",
+                        serde_json::json!({
+                            "durationMs": stt_duration_ms,
+                            "audioLengthSecs": duration_secs,
+                        }),
+                    );
                     let _ = app.emit("stt://final", SttResult { text });
                 }
                 Err(e) => {
@@ -395,12 +502,14 @@ pub fn start_streaming_stt(
                 }
             }
         } else {
-            let _ = app.emit("stt://error", SttError {
-                message: "No audio captured".into(),
-            });
+            let _ = app.emit(
+                "stt://error",
+                SttError {
+                    message: "No audio captured".into(),
+                },
+            );
         }
 
-        STREAMING_ACTIVE.store(false, Ordering::SeqCst);
         println!("[stt] Streaming transcription ended");
     });
 
@@ -418,14 +527,26 @@ pub fn stop_recording(
 ) -> Result<(), String> {
     // Always take and stop the capture handle first, so recording is guaranteed to stop
     // even if the API key is missing or other errors occur.
-    let handle = {
+    let stop_plan = {
         let mut guard = CAPTURE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
-        guard.take()
+        let handle = guard.take().ok_or("Not recording")?;
+        if STREAMING_ACTIVE.load(Ordering::SeqCst) {
+            Ok((handle, true, None))
+        } else if claim_non_streaming_transcription(&TRANSCRIPTION_ACTIVE) {
+            // Claim before releasing CAPTURE so a new recording cannot begin
+            // between taking this handle and owning its final transcript.
+            Ok((handle, false, Some(TranscriptionGuard)))
+        } else {
+            Err(handle)
+        }
     };
 
-    let h = match handle {
-        Some(h) => h,
-        None => return Err("Not recording".into()),
+    let (h, streaming_active, non_streaming_lease) = match stop_plan {
+        Ok(plan) => plan,
+        Err(handle) => {
+            handle.stop();
+            return Err("Previous transcription is still processing".into());
+        }
     };
 
     // Drain all buffered audio before stopping the stream
@@ -434,13 +555,20 @@ pub fn stop_recording(
     h.stop();
 
     let _ = app.emit("stt://stop", ());
-    println!("[stt] Recording stopped, {} samples captured", samples.len());
+    println!(
+        "[stt] Recording stopped, {} samples captured",
+        samples.len()
+    );
 
     // If streaming STT is active, hand off remaining samples and signal stop
-    if STREAMING_ACTIVE.load(Ordering::SeqCst) {
+    if streaming_active {
+        if let Err(error) = STREAMING_FINAL_SAMPLES
+            .lock()
+            .map(|mut guard| *guard = Some(samples))
         {
-            let mut guard = STREAMING_FINAL_SAMPLES.lock().unwrap();
-            *guard = Some(samples);
+            // The streaming task must still be allowed to release its lease.
+            STREAMING_STOP.store(true, Ordering::SeqCst);
+            return Err(format!("Streaming buffer lock poisoned: {error}"));
         }
         STREAMING_STOP.store(true, Ordering::SeqCst);
         println!("[stt] Signaled streaming task to finalize");
@@ -449,9 +577,12 @@ pub fn stop_recording(
 
     // ── Non-streaming path (original behavior) ──────────────────────────
     if samples.is_empty() {
-        let _ = app.emit("stt://error", SttError {
-            message: "No audio captured".into(),
-        });
+        let _ = app.emit(
+            "stt://error",
+            SttError {
+                message: "No audio captured".into(),
+            },
+        );
         return Ok(());
     }
 
@@ -472,17 +603,28 @@ pub fn stop_recording(
     println!("[stt] Audio duration: {:.2}s", duration_secs);
     if is_effective_silence(&samples) {
         println!("[stt] Effective silence detected; skipping transcript");
-        let _ = app.emit("stt://final", SttResult {
-            text: String::new(),
-        });
+        let _ = app.emit(
+            "stt://final",
+            SttResult {
+                text: String::new(),
+            },
+        );
         return Ok(());
     }
 
     // Spawn async task to transcribe
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
+        let _transcription_guard = non_streaming_lease;
         let stt_start = std::time::Instant::now();
-        let result = transcribe_by_engine(&engine, api_key.as_deref(), &model_path, &samples, &stt_language).await;
+        let result = transcribe_by_engine(
+            &engine,
+            api_key.as_deref(),
+            &model_path,
+            &samples,
+            &stt_language,
+        )
+        .await;
         let stt_duration_ms = stt_start.elapsed().as_millis() as u64;
         match result {
             Ok(raw_text) => {
@@ -494,10 +636,13 @@ pub fn stop_recording(
                     println!("[stt] Deduped transcript: {:?}", text);
                 }
                 // Feature 13: emit STT duration metric
-                let _ = app_clone.emit("stt://metrics", serde_json::json!({
-                    "durationMs": stt_duration_ms,
-                    "audioLengthSecs": duration_secs,
-                }));
+                let _ = app_clone.emit(
+                    "stt://metrics",
+                    serde_json::json!({
+                        "durationMs": stt_duration_ms,
+                        "audioLengthSecs": duration_secs,
+                    }),
+                );
                 let _ = app_clone.emit("stt://final", SttResult { text });
             }
             Err(e) => {
@@ -556,13 +701,18 @@ async fn transcribe_by_engine(
         SttEngine::SenseVoice => sensevoice::transcribe(model_path, samples, stt_language).await,
         SttEngine::Moonshine => moonshine::transcribe(model_path, samples).await,
         SttEngine::Parakeet => {
-            transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", model_path, samples).await
+            transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", model_path, samples)
+                .await
         }
     }
 }
 
 /// Transcribe audio using local whisper.cpp via whisper-rs.
-async fn transcribe_local(model_path: &str, samples: &[f32], stt_language: &str) -> Result<String, String> {
+async fn transcribe_local(
+    model_path: &str,
+    samples: &[f32],
+    stt_language: &str,
+) -> Result<String, String> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
     let canonical = validate_model_path(model_path)?;
@@ -614,7 +764,9 @@ async fn transcribe_local(model_path: &str, samples: &[f32], stt_language: &str)
             }
         };
 
-        let mut state = ctx.create_state().map_err(|e| format!("State error: {e}"))?;
+        let mut state = ctx
+            .create_state()
+            .map_err(|e| format!("State error: {e}"))?;
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         // Force transcription mode (never auto-translate to English).
         params.set_translate(false);
@@ -652,7 +804,26 @@ fn normalize_template_path(path: &std::path::Path) -> String {
 /// Validate that a path contains no shell metacharacters that could enable injection.
 /// Allows: alphanumeric, '.', '/', '\', '-', '_', ':', ' ' (spaces are safe when quoted).
 fn validate_shell_safe_path(value: &str, field_name: &str) -> Result<(), String> {
-    if value.chars().any(|c| matches!(c, '&' | '|' | ';' | '`' | '$' | '!' | '"' | '\'' | '<' | '>' | '(' | ')' | '{' | '}' | '\n' | '\r')) {
+    if value.chars().any(|c| {
+        matches!(
+            c,
+            '&' | '|'
+                | ';'
+                | '`'
+                | '$'
+                | '!'
+                | '"'
+                | '\''
+                | '<'
+                | '>'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '\n'
+                | '\r'
+        )
+    }) {
         return Err(format!("{field_name} 包含不安全的字元，請移除特殊符號。"));
     }
     Ok(())
@@ -681,7 +852,8 @@ async fn transcribe_external_command(
 
     let temp_dir = neuropen_dir()?.join("temp");
     if !temp_dir.exists() {
-        std::fs::create_dir_all(&temp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
+        std::fs::create_dir_all(&temp_dir)
+            .map_err(|e| format!("Failed to create temp dir: {e}"))?;
     }
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -710,11 +882,15 @@ async fn transcribe_external_command(
     let output = tokio::task::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
-            std::process::Command::new("cmd").args(["/C", &cmdline]).output()
+            std::process::Command::new("cmd")
+                .args(["/C", &cmdline])
+                .output()
         }
         #[cfg(not(target_os = "windows"))]
         {
-            std::process::Command::new("sh").args(["-lc", &cmdline]).output()
+            std::process::Command::new("sh")
+                .args(["-lc", &cmdline])
+                .output()
         }
     })
     .await
@@ -739,86 +915,14 @@ async fn transcribe_external_command(
     Ok(stdout)
 }
 
-/// Detect and remove Whisper hallucination where short text is repeated.
+/// Preserve the model transcript verbatim apart from outer whitespace.
 ///
-/// Handles patterns like:
-///   "12341234"     → "1234"       (exact repeat)
-///   "1234 1234"    → "1234"       (space-separated repeat)
-///   "1234，1234"   → "1234"       (punctuation-separated repeat)
-///   "1234。1234。" → "1234"       (trailing punctuation)
+/// Repetition alone is not evidence of a hallucination: it is common in natural
+/// speech (for example `謝謝`, `拜拜`, and deliberate repeated phrases). The API
+/// path already filters segments using model confidence, which is a safer signal
+/// than deleting text based only on its characters.
 fn deduplicate_transcript(text: &str) -> String {
-    // Strip trailing punctuation/whitespace for comparison
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-
-    // Normalize: remove common Chinese/English punctuation and whitespace for comparison
-    let strip_punct = |s: &str| -> String {
-        s.chars()
-            .filter(|c| !c.is_whitespace() && !"，。、！？,.!?;；：:".contains(*c))
-            .collect()
-    };
-
-    let clean = strip_punct(trimmed);
-    let clean_chars: Vec<char> = clean.chars().collect();
-    let len = clean_chars.len();
-
-    if len < 2 {
-        return trimmed.to_string();
-    }
-
-    // Check if the cleaned string is the same substring repeated 2+ times
-    // Try divisors from len/2 down to 1
-    for sub_len in (1..=len / 2).rev() {
-        if len % sub_len != 0 {
-            continue;
-        }
-        let repeat_count = len / sub_len;
-        if repeat_count < 2 {
-            continue;
-        }
-        let pattern: String = clean_chars[..sub_len].iter().collect();
-        let mut all_match = true;
-        for i in 1..repeat_count {
-            let chunk: String = clean_chars[i * sub_len..(i + 1) * sub_len].iter().collect();
-            if chunk != pattern {
-                all_match = false;
-                break;
-            }
-        }
-        if all_match && repeat_count >= 2 {
-            // Found a repeated pattern — return just the first occurrence
-            // Use the original text to preserve formatting up to the first occurrence
-            // Find where the first occurrence ends in the original text
-            let pattern_chars: Vec<char> = pattern.chars().collect();
-            let orig_chars: Vec<char> = trimmed.chars().collect();
-            let mut matched = 0;
-            let mut end_idx = 0;
-            for (i, &c) in orig_chars.iter().enumerate() {
-                if c.is_whitespace() || "，。、！？,.!?;；：:".contains(c) {
-                    continue;
-                }
-                if c == pattern_chars[matched] {
-                    matched += 1;
-                    if matched == pattern_chars.len() {
-                        end_idx = i + 1;
-                        break;
-                    }
-                }
-            }
-            if end_idx > 0 {
-                let result: String = orig_chars[..end_idx].iter().collect();
-                // Trim trailing punctuation from the extracted portion
-                return result.trim_end_matches(|c: char| {
-                    c.is_whitespace() || "，。、！？,.!?;；：:".contains(c)
-                }).to_string();
-            }
-            return pattern;
-        }
-    }
-
-    trimmed.to_string()
+    text.trim().to_string()
 }
 
 fn estimate_audio_levels(samples: &[f32]) -> (f32, f32) {
@@ -854,9 +958,7 @@ fn sanitize_transcript_text(text: &str) -> String {
     }
 
     let normalized = trimmed
-        .trim_matches(|c: char| {
-            c == '[' || c == ']' || c == '(' || c == ')' || c.is_whitespace()
-        })
+        .trim_matches(|c: char| c == '[' || c == ']' || c == '(' || c == ')' || c.is_whitespace())
         .trim();
     if normalized.is_empty() {
         return String::new();
@@ -938,10 +1040,17 @@ fn normalize_stt_language(language: &str) -> Option<&'static str> {
 }
 
 /// Call OpenAI Whisper API to transcribe audio samples.
-async fn transcribe_openai(api_key: &str, samples: &[f32], stt_language: &str) -> Result<String, String> {
+async fn transcribe_openai(
+    api_key: &str,
+    samples: &[f32],
+    stt_language: &str,
+) -> Result<String, String> {
     let wav_data = encode_wav(samples);
 
-    println!("[stt] Sending {} bytes of WAV to OpenAI Whisper API", wav_data.len());
+    println!(
+        "[stt] Sending {} bytes of WAV to OpenAI Whisper API",
+        wav_data.len()
+    );
 
     let part = reqwest::multipart::Part::bytes(wav_data)
         .file_name("audio.wav")
@@ -977,7 +1086,10 @@ async fn transcribe_openai(api_key: &str, samples: &[f32], stt_language: &str) -
     }
 
     #[cfg(debug_assertions)]
-    println!("[stt] Whisper API raw response: {}", &body[..body.len().min(500)]);
+    println!(
+        "[stt] Whisper API raw response: {}",
+        &body[..body.len().min(500)]
+    );
 
     // Parse verbose_json format: { "text": "...", "segments": [...] }
     let parsed: serde_json::Value =
@@ -1025,32 +1137,32 @@ mod tests {
 
     #[test]
     fn test_dedup_exact_repeat() {
-        assert_eq!(deduplicate_transcript("12341234"), "1234");
+        assert_eq!(deduplicate_transcript("12341234"), "12341234");
     }
 
     #[test]
     fn test_dedup_with_space() {
-        assert_eq!(deduplicate_transcript("1234 1234"), "1234");
+        assert_eq!(deduplicate_transcript("1234 1234"), "1234 1234");
     }
 
     #[test]
     fn test_dedup_chinese() {
-        assert_eq!(deduplicate_transcript("你好你好"), "你好");
+        assert_eq!(deduplicate_transcript("你好你好"), "你好你好");
     }
 
     #[test]
     fn test_dedup_with_punctuation() {
-        assert_eq!(deduplicate_transcript("1234，1234"), "1234");
+        assert_eq!(deduplicate_transcript("1234，1234"), "1234，1234");
     }
 
     #[test]
     fn test_dedup_trailing_period() {
-        assert_eq!(deduplicate_transcript("1234。1234。"), "1234");
+        assert_eq!(deduplicate_transcript("1234。1234。"), "1234。1234。");
     }
 
     #[test]
     fn test_dedup_triple_repeat() {
-        assert_eq!(deduplicate_transcript("abcabcabc"), "abc");
+        assert_eq!(deduplicate_transcript("abcabcabc"), "abcabcabc");
     }
 
     #[test]
@@ -1071,9 +1183,51 @@ mod tests {
     #[test]
     fn test_dedup_chinese_sentence() {
         assert_eq!(
-            deduplicate_transcript("今天天氣很好今天天氣很好"),
-            "今天天氣很好"
+            deduplicate_transcript("今天天氣很好，今天天氣很好"),
+            "今天天氣很好，今天天氣很好"
         );
+    }
+
+    #[test]
+    fn test_dedup_preserves_short_repeated_words() {
+        assert_eq!(deduplicate_transcript("謝謝 謝謝"), "謝謝 謝謝");
+        assert_eq!(deduplicate_transcript("拜拜"), "拜拜");
+    }
+
+    #[test]
+    fn streaming_claim_is_exclusive_until_released() {
+        let streaming = AtomicBool::new(false);
+        let processing = AtomicBool::new(false);
+
+        assert!(claim_streaming_session(&streaming, &processing).is_ok());
+        assert!(claim_streaming_session(&streaming, &processing).is_err());
+
+        streaming.store(false, Ordering::SeqCst);
+        processing.store(false, Ordering::SeqCst);
+        assert!(claim_streaming_session(&streaming, &processing).is_ok());
+    }
+
+    #[test]
+    fn streaming_claim_rolls_back_when_another_transcription_is_active() {
+        let streaming = AtomicBool::new(false);
+        let processing = AtomicBool::new(true);
+
+        assert_eq!(
+            claim_streaming_session(&streaming, &processing),
+            Err("Previous transcription is still processing")
+        );
+        assert!(!streaming.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn non_streaming_claim_is_exclusive_until_finalization() {
+        let processing = AtomicBool::new(false);
+
+        assert!(claim_non_streaming_transcription(&processing));
+        assert!(!claim_non_streaming_transcription(&processing));
+
+        processing.store(false, Ordering::SeqCst);
+        assert!(claim_non_streaming_transcription(&processing));
     }
 
     #[test]

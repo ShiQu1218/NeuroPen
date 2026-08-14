@@ -1,7 +1,7 @@
 use crate::history;
 
 #[tauri::command]
-pub fn history_list() -> Vec<history::HistoryEntry> {
+pub fn history_list() -> Result<Vec<history::HistoryEntry>, String> {
     history::list()
 }
 
@@ -17,7 +17,7 @@ pub fn history_save(
     preference_category_key: Option<String>,
     preference_category_label: Option<String>,
     quick_action_command_id: Option<String>,
-) {
+) -> Result<(), String> {
     history::save(
         &mode,
         &input_text,
@@ -29,25 +29,25 @@ pub fn history_save(
         preference_category_key.as_deref(),
         preference_category_label.as_deref(),
         quick_action_command_id.as_deref(),
-    );
+    )
 }
 
 #[tauri::command]
-pub fn history_delete(id: String) -> bool {
+pub fn history_delete(id: String) -> Result<bool, String> {
     history::delete(&id)
 }
 
 #[tauri::command]
-pub fn history_clear() {
-    history::clear_all();
+pub fn history_clear() -> Result<(), String> {
+    history::clear_all()
 }
 
 #[tauri::command]
-pub fn history_search(query: String) -> Vec<history::HistoryEntry> {
+pub fn history_search(query: String) -> Result<Vec<history::HistoryEntry>, String> {
     history::search(&query)
 }
 
 #[tauri::command]
-pub fn history_toggle_favorite(id: String) -> Option<bool> {
+pub fn history_toggle_favorite(id: String) -> Result<Option<bool>, String> {
     history::toggle_favorite(&id)
 }

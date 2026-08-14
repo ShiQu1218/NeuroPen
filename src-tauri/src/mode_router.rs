@@ -77,28 +77,49 @@ pub fn route_after_stt(transcript: &str, wake_word: &str) -> (AppMode, String) {
 ///   "助理今天天氣如何"  → "今天天氣如何"
 fn strip_wake_word(transcript: &str, wake_word: &str) -> Option<String> {
     let trimmed = transcript.trim();
+    let wake_word = wake_word.trim();
     if trimmed.is_empty() || wake_word.is_empty() {
         return None;
     }
 
-    // Case-insensitive search for the wake word
-    let lower = trimmed.to_lowercase();
+    // Do not use byte offsets from a lowercased string to slice the original:
+    // Unicode case folding can change byte length (for example `İ`), producing
+    // invalid UTF-8 boundaries and panics. Search only original char boundaries.
     let wake_lower = wake_word.to_lowercase();
+    let mut boundaries: Vec<usize> = trimmed.char_indices().map(|(index, _)| index).collect();
+    boundaries.push(trimmed.len());
 
-    if let Some(pos) = lower.find(&wake_lower) {
-        let before = &trimmed[..pos];
-        let after = &trimmed[pos + wake_word.len()..];
-        let cleaned = format!("{}{}", before.trim(), after.trim()).trim().to_string();
-
-        if cleaned.is_empty() {
-            // User only said the wake word — still Mode C but with empty query
-            Some(String::new())
-        } else {
-            Some(cleaned)
+    for start_index in 0..boundaries.len().saturating_sub(1) {
+        let start = boundaries[start_index];
+        for end_index in start_index + 1..boundaries.len() {
+            let end = boundaries[end_index];
+            let candidate = &trimmed[start..end];
+            let candidate_lower = candidate.to_lowercase();
+            if candidate_lower == wake_lower {
+                let before_raw = &trimmed[..start];
+                let after_raw = &trimmed[end..];
+                let before = before_raw.trim_end();
+                let after = after_raw.trim_start();
+                // Preserve one separator only when the removed wake word was
+                // surrounded by whitespace. Adjacent CJK text remains adjacent.
+                let needs_separator = before_raw.chars().last().is_some_and(char::is_whitespace)
+                    || after_raw.chars().next().is_some_and(char::is_whitespace);
+                return Some(if before.is_empty() || after.is_empty() {
+                    format!("{before}{after}")
+                } else if needs_separator {
+                    format!("{before} {after}")
+                } else {
+                    format!("{before}{after}")
+                });
+            }
+            // Lowercase mappings never shrink as more scalar values are added,
+            // so a longer candidate cannot match this wake word.
+            if candidate_lower.len() > wake_lower.len() {
+                break;
+            }
         }
-    } else {
-        None
     }
+    None
 }
 
 /// Build a full RouteResult after STT transcription completes.
@@ -147,6 +168,20 @@ mod tests {
     fn test_strip_wake_word_no_space() {
         let result = strip_wake_word("助理今天天氣如何", "助理");
         assert_eq!(result, Some("今天天氣如何".to_string()));
+    }
+
+    #[test]
+    fn test_strip_wake_word_middle_preserves_word_boundary() {
+        let result = strip_wake_word("hello assistant world", "assistant");
+        assert_eq!(result, Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_strip_wake_word_handles_unicode_case_expansion_before_match() {
+        // Lowercasing `İ` expands it to two scalar values. The old byte offset
+        // from the lowercased string could slice the original at an invalid byte.
+        let result = strip_wake_word("İ 助理 天氣", "助理");
+        assert_eq!(result, Some("İ 天氣".to_string()));
     }
 
     #[test]

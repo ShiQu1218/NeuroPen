@@ -68,6 +68,7 @@ export interface ModeStartPayload {
   selected_text: string | null;
   initial_mode: string;
   hwnd: number;
+  sessionId?: number;
 }
 
 export function createSelectionListenerState(): SelectionListenerState {
@@ -80,6 +81,7 @@ export function createSelectionListenerState(): SelectionListenerState {
     qaHideTimer: null,
     qaResyncTimer: null,
     lastSelectionSnapshot: null,
+    focusSessionId: undefined,
   };
 }
 

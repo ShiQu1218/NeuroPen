@@ -52,8 +52,8 @@ export const createLlmRequestStateReset = (store: AppStoreSnapshot) => (selected
   store.setLastInstruction(instruction);
 };
 
-export const restoreClipboardAfterFailure = async (context: string) => {
-  await mainWindowService.restoreClipboard().catch((restoreErr) => {
+export const restoreClipboardAfterFailure = async (context: string, sessionId?: number) => {
+  await mainWindowService.restoreClipboard(sessionId).catch((restoreErr) => {
     console.warn(`[App] restore_clipboard failed after ${context}:`, restoreErr);
   });
 };

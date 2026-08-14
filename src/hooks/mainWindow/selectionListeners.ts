@@ -129,8 +129,10 @@ export async function registerSelectionListeners({
       selectionState.lastSelectionFingerprint = "";
       selectionState.suppressedSelectionFingerprint = "";
       selectionState.lastSelectionSnapshot = null;
+      selectionState.focusSessionId = undefined;
       clearQaHideTimer();
       clearQaResyncTimer();
+      await emit("neuropen://stable-selection", { text: "", sessionId: undefined });
       await hideWindowByLabel("quick-action");
       return;
     }
@@ -172,11 +174,12 @@ export async function registerSelectionListeners({
         selectionState.lastSelectionFingerprint = "";
         selectionState.suppressedSelectionFingerprint = "";
         selectionState.lastSelectionSnapshot = null;
+        selectionState.focusSessionId = undefined;
+        await emit("neuropen://stable-selection", { text: "", sessionId: undefined });
         await qaWin.hide();
         return;
       }
       store.setSelectedText(selectionText);
-      await emit("neuropen://stable-selection", { text: selectionText });
 
       // Position QA icon below selection end (fallback to cursor).
       const x = typeof snapshot.anchorX === "number" ? snapshot.anchorX : snapshot.cursorX;
@@ -185,20 +188,35 @@ export async function registerSelectionListeners({
       if (selectionState.suppressedSelectionFingerprint) {
         if (currentFingerprint === selectionState.suppressedSelectionFingerprint) {
           selectionState.lastSelectionFingerprint = currentFingerprint;
+          await emit("neuropen://stable-selection", {
+            text: selectionText,
+            sessionId: selectionState.focusSessionId,
+          });
           return;
         }
         selectionState.suppressedSelectionFingerprint = "";
       }
       if (currentFingerprint === selectionState.lastSelectionFingerprint) {
+        await emit("neuropen://stable-selection", {
+          text: selectionText,
+          sessionId: selectionState.focusSessionId,
+        });
         return;
       }
-      // Lock target window (without touching clipboard) once per unique selection.
+      // Lock and cache the target once per unique selection. The returned
+      // session id travels with this QA surface instead of using a later lock.
       try {
-        await mainWindowService.lockWindow();
+        const focus = await mainWindowService.lockWindow();
+        selectionState.focusSessionId = focus.sessionId;
         selectionState.lastSelectionFingerprint = currentFingerprint;
       } catch (err) {
+        selectionState.focusSessionId = undefined;
         console.warn("[App] lock_window failed:", err);
       }
+      await emit("neuropen://stable-selection", {
+        text: selectionText,
+        sessionId: selectionState.focusSessionId,
+      });
       await qaWin.setSize(new LogicalSize(40, 40));
       const qaSize = await qaWin.outerSize();
       const clampedQaPos = await clampToMonitorBounds(
@@ -212,7 +230,7 @@ export async function registerSelectionListeners({
       await emit("neuropen://qa-show");
       // Keep the editor active so its native text selection remains usable
       // even after the non-focusable quick-action window is shown.
-      await mainWindowService.restoreFocus().catch((err) => {
+      await mainWindowService.restoreFocus(selectionState.focusSessionId).catch((err) => {
         console.warn("[App] restore_focus after qa show failed:", err);
         return false;
       });
@@ -223,7 +241,9 @@ export async function registerSelectionListeners({
       selectionState.lastSelectionFingerprint = "";
       selectionState.suppressedSelectionFingerprint = "";
       selectionState.lastSelectionSnapshot = null;
+      selectionState.focusSessionId = undefined;
       useAppStore.getState().setSelectedText("");
+      await emit("neuropen://stable-selection", { text: "", sessionId: undefined });
       await qaWin.hide().catch(() => { });
     };
 

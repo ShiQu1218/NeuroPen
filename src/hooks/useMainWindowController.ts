@@ -60,6 +60,10 @@ export function useMainWindowController() {
     let recordingStartupInFlight = false;
     let releaseRequestedDuringStartup = false;
     let recordingStopInFlight = false;
+    // Keep the target captured for this recording separate from the selection
+    // watcher's latest lock. A later QA selection must not retarget its final STT.
+    let recordingFocusSessionId: number | undefined;
+    const pendingFinalFocusSessionIds: number[] = [];
 
     const safeRegister: SafeRegister = async (event, handler) => {
       const u = await listen(event, handler);
@@ -76,6 +80,15 @@ export function useMainWindowController() {
       const store = useAppStore.getState();
       if (!store.isRecording || recordingStopInFlight) return;
       recordingStopInFlight = true;
+      // The backend may emit stt://final or stt://error before this invoke
+      // resolves. Queue the captured target before awaiting so that event always
+      // consumes the right recording, rather than leaving a stale token for the
+      // next final result.
+      const stoppedFocusSessionId = recordingFocusSessionId;
+      recordingFocusSessionId = undefined;
+      if (stoppedFocusSessionId !== undefined) {
+        pendingFinalFocusSessionIds.push(stoppedFocusSessionId);
+      }
       try {
         const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
         await mainWindowService.stopRecording(
@@ -86,6 +99,14 @@ export function useMainWindowController() {
         store.setIsRecording(false);
         setStatusMsg(tLive("status.recognizing"));
       } catch (err) {
+        // A final/error event may already have consumed this entry. Remove only
+        // this recording's still-pending token so a newer final cannot inherit it.
+        if (stoppedFocusSessionId !== undefined) {
+          const pendingIndex = pendingFinalFocusSessionIds.indexOf(stoppedFocusSessionId);
+          if (pendingIndex !== -1) {
+            pendingFinalFocusSessionIds.splice(pendingIndex, 1);
+          }
+        }
         console.error("[App] stop_recording failed:", err);
         store.setSttError(String(err));
         store.setIsRecording(false);
@@ -109,7 +130,10 @@ export function useMainWindowController() {
       return false;
     };
 
-    const startRecordingCapture = async (sttEngine: ReturnType<typeof normalizeSttEngine>) => {
+    const startRecordingCapture = async (
+      sttEngine: ReturnType<typeof normalizeSttEngine>,
+      focusSessionId?: number,
+    ) => {
       const store = useAppStore.getState();
       // Avoid opening the microphone at all if the key was released while an
       // earlier preparation step (for example API-key validation) was pending.
@@ -118,6 +142,10 @@ export function useMainWindowController() {
       }
       try {
         await mainWindowService.startRecording();
+        // Commit this token only after native capture accepted the start. A
+        // rejected newer hotkey must not retarget a still-pending final result.
+        recordingFocusSessionId = focusSessionId;
+        mainWindowService.setActiveFocusSession(focusSessionId);
         // Partial STT is best-effort UI feedback; final routing still comes from the
         // stop-recording transcription path even if streaming startup fails.
         void mainWindowService.startStreamingStt(
@@ -162,6 +190,8 @@ export function useMainWindowController() {
         selectedText?: string;
         instruction?: string;
         requestId?: string;
+        sourceRequestId?: string;
+        sessionId?: number;
         preferenceCategoryKey?: string;
         preferenceCategoryLabel?: string;
         quickActionCommandId?: string;
@@ -177,6 +207,16 @@ export function useMainWindowController() {
           quickActionCommandId: event.payload.quickActionCommandId,
         });
         store.setCurrentFeedbackRating(null);
+        const requestId = event.payload.requestId?.trim();
+        if (requestId && (event.payload.sourceRequestId || event.payload.sessionId)) {
+          void mainWindowService
+            .bindFocusSession(
+              requestId,
+              event.payload.sourceRequestId ? undefined : event.payload.sessionId,
+              event.payload.sourceRequestId,
+            )
+            .catch((err) => console.warn("[App] bind focus session failed:", err));
+        }
       });
 
       await safeRegister<SettingsSavedPayload>(
@@ -245,13 +285,13 @@ export function useMainWindowController() {
           if (has_selection && selected_text && store.selectionEnabled) {
             await prepareSelectionRecording(selected_text);
             if (await ensureSttReady(sttEngine)) {
-              await startRecordingCapture(sttEngine);
+              await startRecordingCapture(sttEngine, event.payload.sessionId);
             }
           } else {
             store.setCurrentMode("A");
             setStatusMsg(tLive("status.recordingReleaseToStop"));
             if (await ensureSttReady(sttEngine)) {
-              await startRecordingCapture(sttEngine);
+              await startRecordingCapture(sttEngine, event.payload.sessionId);
             }
           }
         } finally {
@@ -293,6 +333,7 @@ export function useMainWindowController() {
         t: tLive,
         setStatusMsg,
         setSttError,
+        takeFocusSessionId: () => pendingFinalFocusSessionIds.shift(),
       });
 
       await safeRegister<{ text: string; outputMode: "DirectInject" | "PreviewStream"; requestId?: string }>(
@@ -338,6 +379,7 @@ export function useMainWindowController() {
       await safeRegister<{ message: string }>("stt://error", (event) => {
         console.error("[App] stt://error:", event.payload.message);
         const store = useAppStore.getState();
+        pendingFinalFocusSessionIds.shift();
         store.setSttError(event.payload.message);
         store.setIsRecording(false);
         setStatusMsg(tLive("status.sttError", { reason: event.payload.message }));

@@ -5,13 +5,26 @@ fn llm_api_key_for_provider(provider: &llm::LlmProvider) -> Result<String, Strin
         provider,
         llm::LlmProvider::Ollama | llm::LlmProvider::LlamaCpp | llm::LlmProvider::LmStudio
     ) {
-        if stt::has_api_key() {
-            return Ok(stt::get_api_key().unwrap_or_default());
-        }
         return Ok(String::new());
     }
 
     stt::get_api_key()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_providers_do_not_read_the_cloud_api_key() {
+        for provider in [
+            llm::LlmProvider::Ollama,
+            llm::LlmProvider::LlamaCpp,
+            llm::LlmProvider::LmStudio,
+        ] {
+            assert_eq!(llm_api_key_for_provider(&provider), Ok(String::new()));
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]

@@ -84,6 +84,7 @@ export default function QuickActionIcon() {
   const fadeRaf = useRef<number | null>(null);
   const dragLockUntil = useRef(0);
   const stableSelectionRef = useRef("");
+  const stableFocusSessionIdRef = useRef<number | undefined>(undefined);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const setWindowFocusable = useCallback(async (focusable: boolean, focus = false) => {
     const win = getCurrentWindow();
@@ -104,10 +105,11 @@ export default function QuickActionIcon() {
     let unlistenQaShow: (() => void) | null = null;
     let unlistenSettings: (() => void) | null = null;
     void (async () => {
-      unlistenSelection = await listen<{ text: string }>(
+      unlistenSelection = await listen<{ text: string; sessionId?: number }>(
         "neuropen://stable-selection",
         (event) => {
           stableSelectionRef.current = event.payload.text ?? "";
+          stableFocusSessionIdRef.current = event.payload.sessionId;
         }
       );
       unlistenQaShow = await listen("neuropen://qa-show", () => {
@@ -361,11 +363,16 @@ export default function QuickActionIcon() {
         // ignore — profile resolution is best-effort
       }
     }
+    const focusSessionId = stableFocusSessionIdRef.current;
+    if (focusSessionId) {
+      await mainWindowService.bindFocusSession(requestId, focusSessionId);
+    }
     await emit("neuropen://llm-session-context", {
       mode: "B1",
       selectedText,
       instruction,
       requestId,
+      sessionId: focusSessionId,
       preferenceCategoryKey: category.key,
       preferenceCategoryLabel: category.label,
       quickActionCommandId: category.quickActionCommandId,

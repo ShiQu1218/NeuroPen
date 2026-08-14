@@ -98,6 +98,18 @@ const normalizePersistedAppProfiles = (
     }));
 };
 
+const PERSISTED_APP_STATE_VERSION = 1;
+
+const isLegacyTtsPitch = (value: unknown) =>
+  typeof value === "string" && /^[+-]?\d+(?:\.\d+)?hz$/i.test(value.trim());
+
+const normalizePersistedTtsPitch = (value: unknown, fallback: string) => {
+  if (isLegacyTtsPitch(value)) {
+    return "";
+  }
+  return typeof value === "string" ? value : fallback;
+};
+
 const normalizePersistedProviderModelOptions = (value: unknown): Partial<Record<LlmProvider, string[]>> => {
   if (!value || typeof value !== "object") {
     return {};
@@ -549,7 +561,7 @@ export const useAppStore = create<AppState>()(
         ttsEnabled: false,
         ttsVoice: "",
         ttsRate: "+0%",
-        ttsPitch: "+0Hz",
+        ttsPitch: "",
         modeAPrompt: DEFAULT_MODE_A_PROMPT,
         modeBPrompt: DEFAULT_MODE_B_PROMPT,
         modeCPrompt: DEFAULT_MODE_C_PROMPT,
@@ -856,6 +868,7 @@ export const useAppStore = create<AppState>()(
             ...migratedSelectedModelsByProvider,
             [nextProvider]: nextModel,
           },
+          ttsPitch: normalizePersistedTtsPitch(persisted.ttsPitch, currentState.ttsPitch),
           preferenceLearningEnabled:
             typeof persisted.preferenceLearningEnabled === "boolean"
               ? persisted.preferenceLearningEnabled
@@ -872,6 +885,14 @@ export const useAppStore = create<AppState>()(
             normalizedCustomVariants
           ),
         };
+      },
+      version: PERSISTED_APP_STATE_VERSION,
+      migrate: (persistedState, version) => {
+        const persisted = (persistedState ?? {}) as PersistedAppState;
+        if (version < PERSISTED_APP_STATE_VERSION && isLegacyTtsPitch(persisted.ttsPitch)) {
+          return { ...persisted, ttsPitch: "" };
+        }
+        return persisted;
       },
       // Only persist user preferences, not runtime state
       partialize: pickPersistedAppState,

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use ort::{session::Session, value::Tensor};
-use rustfft::{FftPlanner, num_complex::Complex32};
+use rustfft::{num_complex::Complex32, FftPlanner};
 
 use super::validate_model_path;
 
@@ -32,7 +32,11 @@ struct SenseVoiceSessionCache {
 
 static SESSION_CACHE: Mutex<Option<SenseVoiceSessionCache>> = Mutex::new(None);
 
-pub async fn transcribe(model_path: &str, samples: &[f32], stt_language: &str) -> Result<String, String> {
+pub async fn transcribe(
+    model_path: &str,
+    samples: &[f32],
+    stt_language: &str,
+) -> Result<String, String> {
     let (cache_key, model_file, tokens_file) = resolve_sensevoice_paths(model_path)?;
     let samples = samples.to_vec();
     let stt_language = stt_language.to_string();
@@ -88,11 +92,9 @@ pub async fn transcribe(model_path: &str, samples: &[f32], stt_language: &str) -
             features.into_boxed_slice(),
         ))
         .map_err(|e| format!("Failed to create SenseVoice features tensor: {e}"))?;
-        let features_length_tensor = Tensor::from_array((
-            [1usize],
-            vec![num_frames as i32].into_boxed_slice(),
-        ))
-        .map_err(|e| format!("Failed to create SenseVoice features length tensor: {e}"))?;
+        let features_length_tensor =
+            Tensor::from_array(([1usize], vec![num_frames as i32].into_boxed_slice()))
+                .map_err(|e| format!("Failed to create SenseVoice features length tensor: {e}"))?;
         let language_tensor = Tensor::from_array((
             [1usize],
             vec![resolve_language_id(&cached.metadata, &stt_language)].into_boxed_slice(),
@@ -148,7 +150,11 @@ fn resolve_sensevoice_paths(model_path: &str) -> Result<(String, PathBuf, PathBu
     if !tokens_file.is_file() {
         return Err("找不到 SenseVoice tokens.txt。".into());
     }
-    Ok((base_dir.to_string_lossy().to_string(), model_file, tokens_file))
+    Ok((
+        base_dir.to_string_lossy().to_string(),
+        model_file,
+        tokens_file,
+    ))
 }
 
 fn find_existing_file(candidates: &[PathBuf], not_found_message: &str) -> Result<PathBuf, String> {
@@ -186,7 +192,10 @@ fn read_metadata(session: &Session) -> Result<SenseVoiceMetadata, String> {
     })
 }
 
-fn read_metadata_i32(metadata: &ort::session::ModelMetadata<'_>, key: &str) -> Result<Option<i32>, String> {
+fn read_metadata_i32(
+    metadata: &ort::session::ModelMetadata<'_>,
+    key: &str,
+) -> Result<Option<i32>, String> {
     metadata
         .custom(key)
         .map(|value| parse_optional_metadata_i32(&value, key))
@@ -271,24 +280,17 @@ fn resolve_language_id(metadata: &SenseVoiceMetadata, language: &str) -> i32 {
 
 fn compute_features(samples: &[f32], metadata: &SenseVoiceMetadata) -> Vec<f32> {
     let frames = compute_log_mel_filterbank(samples, metadata.normalize_samples);
-    if frames.len() < metadata.window_size || metadata.neg_mean.is_empty() {
+    if frames.is_empty()
+        || metadata.window_size == 0
+        || metadata.window_shift == 0
+        || metadata.neg_mean.is_empty()
+    {
         return Vec::new();
     }
 
     let feat_dim = 80usize;
     let out_feat_dim = feat_dim * metadata.window_size;
-    let out_num_frames = (frames.len() - metadata.window_size) / metadata.window_shift + 1;
-    let mut out = vec![0.0f32; out_num_frames * out_feat_dim];
-
-    for frame_index in 0..out_num_frames {
-        let input_start = frame_index * metadata.window_shift;
-        let output_start = frame_index * out_feat_dim;
-        for window_offset in 0..metadata.window_size {
-            let frame = &frames[input_start + window_offset];
-            let dest = output_start + window_offset * feat_dim;
-            out[dest..dest + feat_dim].copy_from_slice(frame);
-        }
-    }
+    let mut out = apply_lfr(&frames, metadata.window_size, metadata.window_shift);
 
     if metadata.neg_mean.len() != out_feat_dim || metadata.inv_stddev.len() != out_feat_dim {
         return Vec::new();
@@ -301,6 +303,39 @@ fn compute_features(samples: &[f32], metadata: &SenseVoiceMetadata) -> Vec<f32> 
     }
 
     out
+}
+
+/// Apply SenseVoice's low-frame-rate (LFR) stacking with boundary replication.
+///
+/// The model expects `(m - 1) / 2` copies of the first frame before the input,
+/// then enough copies of the final frame to yield `ceil(T / n)` output frames.
+/// Without this padding, short clips are discarded and the first/last windows are
+/// shifted relative to the model's training preprocessing.
+fn apply_lfr(frames: &[[f32; 80]], window_size: usize, window_shift: usize) -> Vec<f32> {
+    if frames.is_empty() || window_size == 0 || window_shift == 0 {
+        return Vec::new();
+    }
+
+    const FEAT_DIM: usize = 80;
+    let output_frames = frames.len().div_ceil(window_shift);
+    let output_dim = FEAT_DIM * window_size;
+    let left_padding = (window_size - 1) / 2;
+    let last_frame = frames.len() - 1;
+    let mut output = vec![0.0f32; output_frames * output_dim];
+
+    for output_index in 0..output_frames {
+        for window_offset in 0..window_size {
+            let input_index = output_index
+                .saturating_mul(window_shift)
+                .saturating_add(window_offset)
+                .saturating_sub(left_padding)
+                .min(last_frame);
+            let destination = output_index * output_dim + window_offset * FEAT_DIM;
+            output[destination..destination + FEAT_DIM].copy_from_slice(&frames[input_index]);
+        }
+    }
+
+    output
 }
 
 fn compute_log_mel_filterbank(samples: &[f32], normalize_samples: bool) -> Vec<[f32; 80]> {
@@ -325,7 +360,9 @@ fn compute_log_mel_filterbank(samples: &[f32], normalize_samples: bool) -> Vec<[
     let num_frames = ((scaled.len().saturating_sub(1)) / HOP_LEN).max(1);
     let mel_filters = build_mel_filterbank(SAMPLE_RATE, FFT_SIZE, MEL_BINS);
     let hamming: Vec<f32> = (0..FRAME_LEN)
-        .map(|i| 0.54 - 0.46 * ((2.0 * std::f32::consts::PI * i as f32) / (FRAME_LEN - 1) as f32).cos())
+        .map(|i| {
+            0.54 - 0.46 * ((2.0 * std::f32::consts::PI * i as f32) / (FRAME_LEN - 1) as f32).cos()
+        })
         .collect();
     let mut planner = FftPlanner::<f32>::new();
     let fft = planner.plan_fft_forward(FFT_SIZE);
@@ -480,6 +517,35 @@ fn decode_logits(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lfr_replicates_boundary_frames_and_uses_ceiling_frame_count() {
+        let frames: Vec<[f32; 80]> = (0..7)
+            .map(|index| {
+                let mut frame = [0.0; 80];
+                frame[0] = index as f32;
+                frame
+            })
+            .collect();
+
+        let lfr = apply_lfr(&frames, 7, 6);
+        assert_eq!(lfr.len(), 2 * 7 * 80);
+
+        let first_window: Vec<f32> = (0..7).map(|offset| lfr[offset * 80]).collect();
+        let second_window: Vec<f32> = (0..7).map(|offset| lfr[7 * 80 + offset * 80]).collect();
+        assert_eq!(first_window, vec![0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(second_window, vec![3.0, 4.0, 5.0, 6.0, 6.0, 6.0, 6.0]);
+    }
+
+    #[test]
+    fn lfr_pads_short_inputs_instead_of_dropping_them() {
+        let mut frame = [0.0; 80];
+        frame[0] = 42.0;
+
+        let lfr = apply_lfr(&[frame], 7, 6);
+        assert_eq!(lfr.len(), 7 * 80);
+        assert!(lfr.chunks_exact(80).all(|feature| feature[0] == 42.0));
+    }
 
     #[test]
     fn decode_skips_sensevoice_prefix_tokens() {

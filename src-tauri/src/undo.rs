@@ -34,6 +34,16 @@ pub fn record_injection(hwnd: isize, injected: String) {
     }
 }
 
+/// Drops any pending direct-injection undo record.
+///
+/// Replace flows can overwrite a selection, so backspacing the previous record
+/// afterwards would delete unrelated user content.
+pub fn clear_last_injection() {
+    if let Ok(mut guard) = LAST_INJECTION.lock() {
+        *guard = None;
+    }
+}
+
 /// Reverts the last recorded injection by simulating Backspace keys.
 /// Returns `Ok(true)` if an undo was performed, `Ok(false)` if nothing to undo.
 pub fn undo_last_injection() -> Result<bool, String> {
@@ -43,9 +53,10 @@ pub fn undo_last_injection() -> Result<bool, String> {
         .take();
 
     match record {
-        Some(rec) => {
-            // Verify focus hasn't changed — avoid sending backspaces to the wrong window.
-            if !crate::window_focus::verify_focus_unchanged() {
+        Some(mut rec) => {
+            // Verify the record's original target rather than the latest global
+            // lock. A newer session may have captured another HWND meanwhile.
+            if !crate::window_focus::is_foreground_hwnd(rec.hwnd) {
                 // Put the record back so undo can be retried after refocusing.
                 if let Ok(mut guard) = LAST_INJECTION.lock() {
                     *guard = Some(rec);
@@ -54,18 +65,20 @@ pub fn undo_last_injection() -> Result<bool, String> {
             }
 
             let char_count = rec.injected.chars().count();
-            println!(
-                "[undo] Undoing {} chars for HWND {}",
-                char_count, rec.hwnd
-            );
+            println!("[undo] Undoing {} chars for HWND {}", char_count, rec.hwnd);
 
-            #[cfg(target_os = "windows")]
-            {
-                simulate_backspaces(char_count)?;
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = char_count;
+            if let Err(failure) = simulate_backspaces(char_count, rec.hwnd) {
+                // Backspace removes from the end of the injected text. Keep the
+                // untouched prefix so a retry after refocusing cannot delete more
+                // text than remains from this injection.
+                let remaining_count = char_count.saturating_sub(failure.removed);
+                if remaining_count > 0 {
+                    rec.injected = rec.injected.chars().take(remaining_count).collect();
+                    if let Ok(mut guard) = LAST_INJECTION.lock() {
+                        *guard = Some(rec);
+                    }
+                }
+                return Err(failure.message);
             }
 
             Ok(true)
@@ -77,16 +90,30 @@ pub fn undo_last_injection() -> Result<bool, String> {
     }
 }
 
+struct UndoFailure {
+    removed: usize,
+    message: String,
+}
+
 /// Simulate N Backspace keystrokes via SendInput.
 #[cfg(target_os = "windows")]
-fn simulate_backspaces(count: usize) -> Result<(), String> {
+fn simulate_backspaces(count: usize, hwnd: isize) -> Result<(), UndoFailure> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     };
 
     const VK_BACK: u16 = 0x08;
 
+    let mut removed = 0;
     for _ in 0..count {
+        // The target can change during a long undo. Check immediately before
+        // every key so remaining Backspaces never continue in the new window.
+        if !crate::window_focus::is_foreground_hwnd(hwnd) {
+            return Err(UndoFailure {
+                removed,
+                message: "焦點視窗已變更，已停止復原。請切回原視窗後再試。".into(),
+            });
+        }
         let inputs = [
             INPUT {
                 r#type: INPUT_KEYBOARD,
@@ -116,11 +143,27 @@ fn simulate_backspaces(count: usize) -> Result<(), String> {
 
         let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
         if sent != inputs.len() as u32 {
-            return Err("SendInput failed for Backspace".into());
+            // A key-down may already have reached the target even if the
+            // matching key-up did not. Treat it as consumed to avoid a retry
+            // deleting one extra character.
+            if sent > 0 {
+                removed += 1;
+            }
+            return Err(UndoFailure {
+                removed,
+                message: "SendInput failed for Backspace".into(),
+            });
         }
+        removed += 1;
         // Small delay between keystrokes to avoid overwhelming the target app
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
 
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn simulate_backspaces(count: usize, _hwnd: isize) -> Result<(), UndoFailure> {
+    let _ = count;
     Ok(())
 }

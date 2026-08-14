@@ -238,6 +238,22 @@ fn perform_if_request_active<T>(
     Some(operation())
 }
 
+/// Direct injection must stay bound to the focus session captured when the
+/// request began. Falling back to the latest clipboard session can paste an
+/// older completion into a newer foreground window.
+fn focus_session_for_direct_injection(request_id: Option<&str>) -> Result<u64, String> {
+    let request_id = request_id
+        .map(str::trim)
+        .filter(|request_id| !request_id.is_empty())
+        .ok_or_else(|| {
+            "Direct injection requires a request id with a focus session.".to_string()
+        })?;
+
+    crate::window_focus::request_session_id(request_id).ok_or_else(|| {
+        "Direct injection request is no longer bound to a focus session.".to_string()
+    })
+}
+
 async fn wait_for_request_cancellation(mut receiver: watch::Receiver<bool>) {
     if *receiver.borrow() {
         return;
@@ -392,15 +408,27 @@ fn default_model(provider: &LlmProvider) -> &'static str {
     }
 }
 
-fn with_optional_bearer_auth(
+fn is_local_provider(provider: &LlmProvider) -> bool {
+    matches!(
+        provider,
+        LlmProvider::Ollama | LlmProvider::LlamaCpp | LlmProvider::LmStudio
+    )
+}
+
+fn provider_uses_bearer_auth(provider: &LlmProvider, api_key: &str) -> bool {
+    !is_local_provider(provider) && !api_key.trim().is_empty()
+}
+
+fn with_provider_bearer_auth(
     request: reqwest::RequestBuilder,
+    provider: &LlmProvider,
     api_key: &str,
 ) -> reqwest::RequestBuilder {
     let trimmed = api_key.trim();
-    if trimmed.is_empty() {
-        request
-    } else {
+    if provider_uses_bearer_auth(provider, trimmed) {
         request.header("Authorization", format!("Bearer {trimmed}"))
+    } else {
+        request
     }
 }
 
@@ -709,7 +737,7 @@ async fn call_openai_compatible(
 
     let resp = with_openai_compatible_timeout(
         with_provider_headers(
-            with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+            with_provider_bearer_auth(HTTP_CLIENT.post(base_url), provider, api_key),
             provider,
         )
         .header("Content-Type", "application/json")
@@ -796,6 +824,32 @@ fn handle_openai_stream_data(
     !request_is_cancelled(cancellation)
 }
 
+/// Buffers raw response bytes until a complete newline-delimited record is
+/// available. Decoding only complete records prevents a UTF-8 character split
+/// across HTTP chunks from being replaced with U+FFFD.
+fn take_complete_stream_lines(pending: &mut Vec<u8>) -> Result<Vec<String>, String> {
+    let mut lines = Vec::new();
+    while let Some(newline_idx) = pending.iter().position(|byte| *byte == b'\n') {
+        let line_bytes = pending.drain(..=newline_idx).collect::<Vec<_>>();
+        let line_bytes = &line_bytes[..newline_idx];
+        let line = std::str::from_utf8(line_bytes)
+            .map_err(|error| format!("LLM stream contained invalid UTF-8: {error}"))?;
+        lines.push(line.trim().to_string());
+    }
+    Ok(lines)
+}
+
+fn take_remaining_stream_line(pending: &mut Vec<u8>) -> Result<Option<String>, String> {
+    if pending.is_empty() {
+        return Ok(None);
+    }
+
+    let line_bytes = std::mem::take(pending);
+    let line = std::str::from_utf8(&line_bytes)
+        .map_err(|error| format!("LLM stream contained invalid UTF-8: {error}"))?;
+    Ok(Some(line.trim().to_string()))
+}
+
 async fn call_openai_compatible_streaming(
     provider: &LlmProvider,
     base_url: &str,
@@ -821,7 +875,7 @@ async fn call_openai_compatible_streaming(
 
     let resp = with_openai_compatible_timeout(
         with_provider_headers(
-            with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+            with_provider_bearer_auth(HTTP_CLIENT.post(base_url), provider, api_key),
             provider,
         )
         .header("Content-Type", "application/json")
@@ -842,7 +896,7 @@ async fn call_openai_compatible_streaming(
     }
 
     let mut stream = resp.bytes_stream();
-    let mut pending = String::new();
+    let mut pending = Vec::new();
     let mut full_output = String::new();
 
     while let Some(item) = stream.next().await {
@@ -850,10 +904,8 @@ async fn call_openai_compatible_streaming(
             return Err(LLM_REQUEST_CANCELLED.to_string());
         }
         let bytes = item.map_err(|e| format!("LLM stream read failed: {e}"))?;
-        pending.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(newline_idx) = pending.find('\n') {
-            let line = pending[..newline_idx].trim().to_string();
-            pending.drain(..=newline_idx);
+        pending.extend_from_slice(&bytes);
+        for line in take_complete_stream_lines(&mut pending)? {
             if !line.starts_with("data:") {
                 continue;
             }
@@ -864,14 +916,12 @@ async fn call_openai_compatible_streaming(
         }
     }
 
-    for line in pending.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("data:") {
-            continue;
-        }
-        let data = trimmed["data:".len()..].trim();
-        if !handle_openai_stream_data(data, app, &mut full_output, request_id, cancellation) {
-            return Err(LLM_REQUEST_CANCELLED.to_string());
+    if let Some(line) = take_remaining_stream_line(&mut pending)? {
+        if line.starts_with("data:") {
+            let data = line["data:".len()..].trim();
+            if !handle_openai_stream_data(data, app, &mut full_output, request_id, cancellation) {
+                return Err(LLM_REQUEST_CANCELLED.to_string());
+            }
         }
     }
 
@@ -1062,7 +1112,7 @@ async fn call_ollama_streaming(
     }
 
     let mut stream = resp.bytes_stream();
-    let mut pending = String::new();
+    let mut pending = Vec::new();
     let mut full_output = String::new();
 
     while let Some(item) = stream.next().await {
@@ -1070,10 +1120,8 @@ async fn call_ollama_streaming(
             return Err(LLM_REQUEST_CANCELLED.to_string());
         }
         let bytes = item.map_err(|e| format!("Ollama stream read failed: {e}"))?;
-        pending.push_str(&String::from_utf8_lossy(&bytes));
-        while let Some(newline_idx) = pending.find('\n') {
-            let line = pending[..newline_idx].trim().to_string();
-            pending.drain(..=newline_idx);
+        pending.extend_from_slice(&bytes);
+        for line in take_complete_stream_lines(&mut pending)? {
             if line.is_empty() {
                 continue;
             }
@@ -1089,18 +1137,16 @@ async fn call_ollama_streaming(
         }
     }
 
-    for line in pending.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let parsed: serde_json::Value = match serde_json::from_str(trimmed) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        if let Some(token) = parsed["message"]["content"].as_str() {
-            if !emit_token_chunk(app, &mut full_output, token, request_id, cancellation) {
-                return Err(LLM_REQUEST_CANCELLED.to_string());
+    if let Some(line) = take_remaining_stream_line(&mut pending)? {
+        if !line.is_empty() {
+            let parsed: serde_json::Value = match serde_json::from_str(&line) {
+                Ok(value) => value,
+                Err(_) => serde_json::Value::Null,
+            };
+            if let Some(token) = parsed["message"]["content"].as_str() {
+                if !emit_token_chunk(app, &mut full_output, token, request_id, cancellation) {
+                    return Err(LLM_REQUEST_CANCELLED.to_string());
+                }
             }
         }
     }
@@ -1217,10 +1263,11 @@ fn parse_ollama_model_names(body: &str) -> Result<Vec<String>, String> {
 }
 
 async fn list_openai_compatible_models(
+    provider: &LlmProvider,
     models_url: &str,
     api_key: &str,
 ) -> Result<Vec<String>, String> {
-    let resp = with_optional_bearer_auth(HTTP_CLIENT.get(models_url), api_key)
+    let resp = with_provider_bearer_auth(HTTP_CLIENT.get(models_url), provider, api_key)
         .send()
         .await
         .map_err(|e| format!("Model catalog request failed: {e}"))?;
@@ -1269,7 +1316,7 @@ pub async fn list_available_models(
                     provider_display_name(provider)
                 )
             })?;
-            list_openai_compatible_models(models_url, api_key).await
+            list_openai_compatible_models(provider, models_url, api_key).await
         }
         _ => Err(format!(
             "Model discovery is only supported for local providers, but {} was requested.",
@@ -1573,7 +1620,9 @@ pub async fn call_llm(
 
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
         let injection_result = perform_if_request_active(cancellation, || {
-            crate::injection::inject_text_with_undo(&full_output, true)
+            let session_id = focus_session_for_direct_injection(request_id.as_deref())?;
+            crate::injection::inject_text_with_undo_for_session(&full_output, true, session_id)
+                .map_err(|error| error.to_string())
         });
         let Some(injection_result) = injection_result else {
             return Ok(());
@@ -1710,7 +1759,7 @@ async fn call_openai_compatible_with_images(
 
     let resp = with_openai_compatible_timeout(
         with_provider_headers(
-            with_optional_bearer_auth(HTTP_CLIENT.post(base_url), api_key),
+            with_provider_bearer_auth(HTTP_CLIENT.post(base_url), provider, api_key),
             provider,
         )
         .header("Content-Type", "application/json")
@@ -2111,8 +2160,11 @@ pub async fn call_llm_with_images(
     }
 
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
-        let injection_result =
-            perform_if_request_active(cancellation, || crate::injection::inject_text(&full_output));
+        let injection_result = perform_if_request_active(cancellation, || {
+            let session_id = focus_session_for_direct_injection(request_id.as_deref())?;
+            crate::injection::inject_text_for_session(&full_output, session_id)
+                .map_err(|error| error.to_string())
+        });
         let Some(injection_result) = injection_result else {
             return Ok(());
         };
@@ -2189,6 +2241,12 @@ pub fn clear_conversation() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn direct_injection_requires_a_bound_request_focus_session() {
+        assert!(focus_session_for_direct_injection(None).is_err());
+        assert!(focus_session_for_direct_injection(Some(" ")).is_err());
+    }
 
     #[test]
     fn consumes_cancellation_that_arrives_before_request_registration() {
@@ -2389,6 +2447,46 @@ mod tests {
             openai_compatible_request_timeout(&LlmProvider::LlamaCpp)
                 > openai_compatible_request_timeout(&LlmProvider::OpenAi)
         );
+    }
+
+    #[test]
+    fn local_providers_never_use_bearer_auth() {
+        for provider in [
+            LlmProvider::Ollama,
+            LlmProvider::LlamaCpp,
+            LlmProvider::LmStudio,
+        ] {
+            assert!(!provider_uses_bearer_auth(&provider, "cloud-api-key"));
+        }
+        assert!(provider_uses_bearer_auth(
+            &LlmProvider::OpenAi,
+            "cloud-api-key"
+        ));
+    }
+
+    #[test]
+    fn stream_line_buffer_preserves_utf8_split_across_chunks() {
+        let mut pending = b"data: {\"choices\":[{\"delta\":{\"content\":\"".to_vec();
+        let character = "你".as_bytes();
+        pending.extend_from_slice(&character[..1]);
+        assert!(take_complete_stream_lines(&mut pending)
+            .expect("partial character is not decoded yet")
+            .is_empty());
+
+        pending.extend_from_slice(&character[1..]);
+        pending.extend_from_slice(b"\"}}]}\n");
+        assert_eq!(
+            take_complete_stream_lines(&mut pending).expect("complete record should decode"),
+            vec!["data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}".to_string()]
+        );
+    }
+
+    #[test]
+    fn stream_line_buffer_rejects_invalid_utf8_in_complete_record() {
+        let mut pending = b"data: \xFF\n".to_vec();
+        let error = take_complete_stream_lines(&mut pending)
+            .expect_err("invalid UTF-8 must not be silently replaced");
+        assert!(error.contains("invalid UTF-8"));
     }
 
     #[test]

@@ -8,21 +8,22 @@ pub async fn preference_rate_result(
 }
 
 #[tauri::command]
-pub fn preference_list_summaries() -> Vec<preference_learning::PreferenceSummaryView> {
+pub fn preference_list_summaries() -> Result<Vec<preference_learning::PreferenceSummaryView>, String>
+{
     preference_learning::list_summaries()
 }
 
 #[tauri::command]
-pub fn preference_get_summary(category_key: String) -> Option<String> {
+pub fn preference_get_summary(category_key: String) -> Result<Option<String>, String> {
     preference_learning::get_summary(&category_key)
 }
 
 #[tauri::command]
-pub fn preference_clear_summary(category_key: String) -> bool {
+pub fn preference_clear_summary(category_key: String) -> Result<bool, String> {
     preference_learning::clear_summary(&category_key)
 }
 
 #[tauri::command]
-pub fn preference_clear_all() {
-    preference_learning::clear_all();
+pub fn preference_clear_all() -> Result<(), String> {
+    preference_learning::clear_all()
 }

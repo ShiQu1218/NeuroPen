@@ -4,6 +4,14 @@ import type {
   PreferenceSummaryView,
 } from "../utils/preferenceLearning";
 
+let activeFocusSessionId: number | undefined;
+
+const captureFocusSession = async (command: "trigger_hotkey" | "lock_window") => {
+  const focus = await invoke<{ hwnd: number; sessionId: number }>(command);
+  activeFocusSessionId = focus.sessionId;
+  return focus;
+};
+
 export interface RegisteredHotkeys {
   triggerHotkey: string;
   triggerPersisted: boolean;
@@ -155,8 +163,12 @@ export const mainWindowService = {
   setAudioDevice: (name: string) => invoke<void>("set_audio_device", { name }),
   stopRecording: (engine: string, modelPath: string, sttLanguage: string) =>
     invoke<void>("stop_recording", { engine, modelPath, sttLanguage }),
-  triggerHotkey: () => invoke<void>("trigger_hotkey"),
-  lockWindow: () => invoke<{ hwnd: number }>("lock_window"),
+  triggerHotkey: () => captureFocusSession("trigger_hotkey"),
+  lockWindow: () => captureFocusSession("lock_window"),
+  setActiveFocusSession: (sessionId?: number) => {
+    activeFocusSessionId = sessionId;
+  },
+  getActiveFocusSession: () => activeFocusSessionId,
   hasSttApiKey: () => invoke<boolean>("has_stt_api_key"),
   startRecording: () => invoke<void>("start_recording"),
   startStreamingStt: (engine: string, modelPath: string) =>
@@ -186,13 +198,20 @@ export const mainWindowService = {
   callLlmWithImages: (payload: LlmImagesCallPayload) =>
     invoke<void>("call_llm_with_images", payload),
   callLlmText: (payload: LlmTextCallPayload) => invoke<string>("call_llm_text", payload),
-  verifyFocus: () => invoke<boolean>("verify_focus"),
-  restoreFocus: () => invoke<boolean>("restore_focus"),
-  restoreClipboard: () => invoke<void>("restore_clipboard"),
-  injectText: (text: string, recordForUndo: boolean) =>
+  bindFocusSession: (requestId: string, sessionId?: number, sourceRequestId?: string) =>
+    invoke<void>("bind_focus_session", { requestId, sessionId, sourceRequestId }),
+  verifyFocus: (sessionId?: number, requestId?: string) =>
+    invoke<boolean>("verify_focus", { sessionId, requestId }),
+  restoreFocus: (sessionId?: number, requestId?: string) =>
+    invoke<boolean>("restore_focus", { sessionId, requestId }),
+  restoreClipboard: (sessionId?: number, requestId?: string) =>
+    invoke<void>("restore_clipboard", { sessionId, requestId }),
+  injectText: (text: string, recordForUndo: boolean, sessionId?: number, requestId?: string) =>
     invoke<void>("inject_text", {
       text,
       recordForUndo,
+      sessionId,
+      requestId,
     }),
   historySave: (payload: HistorySavePayload) => invoke<void>("history_save", payload),
   preferenceRateResult: (payload: PreferenceRatePayload) =>

@@ -30,4 +30,5 @@ export interface SelectionListenerState {
   qaHideTimer: ReturnType<typeof setTimeout> | null;
   qaResyncTimer: ReturnType<typeof setTimeout> | null;
   lastSelectionSnapshot: SelectionSnapshot | null;
+  focusSessionId?: number;
 }

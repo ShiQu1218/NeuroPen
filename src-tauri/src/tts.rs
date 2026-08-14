@@ -11,21 +11,30 @@
 use crate::tts_models;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
-use std::io::{Cursor, Write};
+use std::io::{Cursor, Read, Write};
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
 pub use crate::tts_models::LocalTtsModel;
 
 static TTS_PLAYING: AtomicBool = AtomicBool::new(false);
+static TTS_SESSION: AtomicU64 = AtomicU64::new(0);
+static TTS_OUTPUT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 static MODEL_DOWNLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
 static MODEL_DOWNLOAD_CANCEL: AtomicBool = AtomicBool::new(false);
 
-/// Stop signal shared between playback thread and stop command.
-static TTS_STOP: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+#[derive(Clone)]
+struct ActiveTtsSession {
+    session_id: u64,
+    stop_flag: Arc<AtomicBool>,
+}
+
+/// The current session is replaced atomically with its cancellation token so
+/// an older task can never become active after a newer session has started.
+static ACTIVE_TTS_SESSION: Lazy<Mutex<Option<ActiveTtsSession>>> = Lazy::new(|| Mutex::new(None));
 
 /// Default per-language Piper model lookup inside `~/.neuropen/piper/`.
 const MODEL_MAP: &[(&str, &str)] = &[
@@ -153,10 +162,37 @@ fn parse_speaker_id(value: Option<&str>) -> Result<Option<u32>, String> {
     let Some(value) = value.map(str::trim).filter(|entry| !entry.is_empty()) else {
         return Ok(None);
     };
-    value
+
+    // Older preferences stored a pitch value with an Hz suffix, but Piper
+    // expects a numeric speaker id. Neutral legacy pitch means no override;
+    // any non-neutral Hz value must be re-entered as a numeric speaker id.
+    let (numeric, has_hz_suffix) = match value
+        .strip_suffix("Hz")
+        .or_else(|| value.strip_suffix("hz"))
+    {
+        Some(numeric) => (numeric.trim(), true),
+        None => (value, false),
+    };
+
+    if has_hz_suffix {
+        if numeric
+            .parse::<f64>()
+            .is_ok_and(|legacy_pitch| legacy_pitch == 0.0)
+        {
+            return Ok(None);
+        }
+        return Err(format!(
+            "Piper speaker id must be a non-negative integer without Hz: {value}"
+        ));
+    }
+
+    let numeric = numeric.strip_prefix('+').unwrap_or(numeric);
+
+    let speaker_id = numeric
         .parse::<u32>()
-        .map(Some)
-        .map_err(|_| format!("Invalid Piper speaker id: {value}"))
+        .map_err(|_| format!("Invalid Piper speaker id: {value}"))?;
+
+    Ok(Some(speaker_id))
 }
 
 pub fn is_playing() -> bool {
@@ -164,7 +200,58 @@ pub fn is_playing() -> bool {
 }
 
 pub fn stop_playback() {
-    TTS_STOP.store(true, Ordering::SeqCst);
+    let active = ACTIVE_TTS_SESSION
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(session) = active.as_ref() {
+        session.stop_flag.store(true, Ordering::SeqCst);
+    }
+}
+
+fn begin_tts_session(on_start: impl FnOnce()) -> (u64, Arc<AtomicBool>) {
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let mut active = ACTIVE_TTS_SESSION
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let session_id = TTS_SESSION.fetch_add(1, Ordering::SeqCst) + 1;
+
+    if let Some(previous) = active.replace(ActiveTtsSession {
+        session_id,
+        stop_flag: stop_flag.clone(),
+    }) {
+        previous.stop_flag.store(true, Ordering::SeqCst);
+    }
+
+    TTS_PLAYING.store(true, Ordering::SeqCst);
+    on_start();
+    (session_id, stop_flag)
+}
+
+fn finish_tts_session(
+    session_id: u64,
+    stop_flag: &Arc<AtomicBool>,
+    on_finish: impl FnOnce(),
+) -> bool {
+    let mut active = ACTIVE_TTS_SESSION
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let is_current_session = active.as_ref().is_some_and(|current| {
+        current.session_id == session_id && Arc::ptr_eq(&current.stop_flag, stop_flag)
+    });
+    if !is_current_session {
+        return false;
+    }
+
+    *active = None;
+    TTS_PLAYING.store(false, Ordering::SeqCst);
+    on_finish();
+    true
+}
+
+fn next_tts_output_path() -> PathBuf {
+    let tmp_dir = std::env::temp_dir().join("neuropen_tts");
+    let sequence = TTS_OUTPUT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    tmp_dir.join(format!("tts_{}_{}.wav", std::process::id(), sequence))
 }
 
 pub fn list_local_tts_models() -> Result<Vec<LocalTtsModel>, String> {
@@ -348,36 +435,52 @@ pub async fn speak(
         return Ok(());
     }
 
-    TTS_STOP.store(true, Ordering::SeqCst);
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-    TTS_STOP.store(false, Ordering::SeqCst);
-
     let model_path = resolve_model_path(voice_override, &text)?;
     let length_scale = parse_length_scale(rate.as_deref());
     let speaker_id = parse_speaker_id(pitch.as_deref())?;
 
-    let _ = app.emit("tts://start", ());
-    TTS_PLAYING.store(true, Ordering::SeqCst);
-
-    let stop_flag = TTS_STOP.clone();
+    let (session_id, stop_flag) = begin_tts_session(|| {
+        let _ = app.emit("tts://start", ());
+    });
     let app_clone = app.clone();
+    let task_stop_flag = stop_flag.clone();
 
-    let result = tokio::task::spawn_blocking(move || {
-        synthesize_and_play(&text, &model_path, length_scale, speaker_id, stop_flag)
+    let result = match tokio::task::spawn_blocking(move || {
+        synthesize_and_play(&text, &model_path, length_scale, speaker_id, task_stop_flag)
     })
     .await
-    .map_err(|e| format!("TTS task panicked: {e}"))?;
-
-    TTS_PLAYING.store(false, Ordering::SeqCst);
+    {
+        Ok(result) => result,
+        Err(error) => {
+            let message = format!("TTS task panicked: {error}");
+            let is_current_session = finish_tts_session(session_id, &stop_flag, || {
+                let _ = app_clone.emit("tts://error", serde_json::json!({ "message": message }));
+            });
+            if is_current_session {
+                return Err(message);
+            }
+            return Ok(());
+        }
+    };
 
     match result {
         Ok(()) => {
-            let _ = app_clone.emit("tts://done", ());
+            finish_tts_session(session_id, &stop_flag, || {
+                let _ = app_clone.emit("tts://done", ());
+            });
             Ok(())
         }
         Err(e) => {
-            let _ = app_clone.emit("tts://error", serde_json::json!({ "message": e }));
-            Err(e)
+            let is_current_session = finish_tts_session(session_id, &stop_flag, || {
+                let _ = app_clone.emit("tts://error", serde_json::json!({ "message": e }));
+            });
+            if is_current_session {
+                Err(e)
+            } else {
+                // A newer request deliberately replaced this one; do not make
+                // its caller fall back to browser TTS or overwrite newer UI state.
+                Ok(())
+            }
         }
     }
 }
@@ -389,9 +492,12 @@ fn synthesize_and_play(
     speaker_id: Option<u32>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let tmp_dir = std::env::temp_dir().join("neuropen_tts");
-    let _ = std::fs::create_dir_all(&tmp_dir);
-    let tmp_file = tmp_dir.join(format!("tts_{}.wav", std::process::id()));
+    let tmp_file = next_tts_output_path();
+    let tmp_dir = tmp_file
+        .parent()
+        .ok_or_else(|| "Failed to create TTS temporary directory".to_string())?;
+    std::fs::create_dir_all(tmp_dir)
+        .map_err(|error| format!("Failed to create TTS temporary directory: {error}"))?;
 
     let mut cmd = std::process::Command::new("piper");
     cmd.arg("--model")
@@ -413,18 +519,24 @@ fn synthesize_and_play(
         .map_err(|e| format!("Failed to run Piper (is `piper` installed and on PATH?): {e}"))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(text.as_bytes())
-            .map_err(|e| format!("Failed to send text to Piper: {e}"))?;
+        if let Err(error) = stdin.write_all(text.as_bytes()) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&tmp_file);
+            return Err(format!("Failed to send text to Piper: {error}"));
+        }
     }
 
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed to wait for Piper: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Piper failed: {stderr}"));
+    let cancelled = match wait_for_piper_or_stop(&mut child, &stop_flag) {
+        Ok(cancelled) => cancelled,
+        Err(error) => {
+            let _ = std::fs::remove_file(&tmp_file);
+            return Err(error);
+        }
+    };
+    if cancelled {
+        let _ = std::fs::remove_file(&tmp_file);
+        return Ok(());
     }
 
     if stop_flag.load(Ordering::Relaxed) {
@@ -432,8 +544,13 @@ fn synthesize_and_play(
         return Ok(());
     }
 
-    let wav_data =
-        std::fs::read(&tmp_file).map_err(|e| format!("Failed to read Piper output: {e}"))?;
+    let wav_data = match std::fs::read(&tmp_file) {
+        Ok(data) => data,
+        Err(error) => {
+            let _ = std::fs::remove_file(&tmp_file);
+            return Err(format!("Failed to read Piper output: {error}"));
+        }
+    };
     let _ = std::fs::remove_file(&tmp_file);
 
     if wav_data.is_empty() {
@@ -441,6 +558,45 @@ fn synthesize_and_play(
     }
 
     play_wav_bytes(&wav_data, stop_flag)
+}
+
+/// Wait for Piper without making cancellation wait for synthesis to finish.
+/// `wait_with_output` cannot be interrupted because it consumes the child, so
+/// polling the child lets `tts_stop` terminate a long-running synthesis.
+fn wait_for_piper_or_stop(
+    child: &mut std::process::Child,
+    stop_flag: &AtomicBool,
+) -> Result<bool, String> {
+    loop {
+        if stop_flag.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Ok(true);
+        }
+
+        match child
+            .try_wait()
+            .map_err(|error| format!("Failed to wait for Piper: {error}"))?
+        {
+            Some(status) => {
+                if status.success() {
+                    return Ok(false);
+                }
+
+                let mut stderr = Vec::new();
+                if let Some(mut pipe) = child.stderr.take() {
+                    let _ = pipe.read_to_end(&mut stderr);
+                }
+                let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                return Err(if stderr.is_empty() {
+                    format!("Piper failed with status {status}")
+                } else {
+                    format!("Piper failed: {stderr}")
+                });
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(25)),
+        }
+    }
 }
 
 fn play_wav_bytes(data: &[u8], stop_flag: Arc<AtomicBool>) -> Result<(), String> {
@@ -463,4 +619,53 @@ fn play_wav_bytes(data: &[u8], stop_flag: Arc<AtomicBool>) -> Result<(), String>
     }
     sink.sleep_until_end();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_speaker_id_accepts_persisted_neutral_pitch() {
+        assert_eq!(parse_speaker_id(Some("+0Hz")), Ok(None));
+        assert_eq!(parse_speaker_id(Some("0Hz")), Ok(None));
+        assert_eq!(parse_speaker_id(Some("0")), Ok(Some(0)));
+        assert_eq!(parse_speaker_id(Some("+12")), Ok(Some(12)));
+    }
+
+    #[test]
+    fn parse_speaker_id_rejects_invalid_or_negative_values() {
+        assert!(parse_speaker_id(Some("-1")).is_err());
+        assert!(parse_speaker_id(Some("+1.5Hz")).is_err());
+        assert!(parse_speaker_id(Some("+12Hz")).is_err());
+        assert!(parse_speaker_id(Some("voice-a")).is_err());
+    }
+
+    #[test]
+    fn tts_output_paths_are_unique_per_synthesis() {
+        assert_ne!(next_tts_output_path(), next_tts_output_path());
+    }
+
+    #[test]
+    fn only_the_current_tts_session_can_finish_playback() {
+        let (first_session_id, first_stop_flag) = begin_tts_session(|| {});
+        let (second_session_id, second_stop_flag) = begin_tts_session(|| {});
+        let stale_finish_called = Arc::new(AtomicBool::new(false));
+        let stale_finish_callback = stale_finish_called.clone();
+
+        assert!(first_stop_flag.load(Ordering::SeqCst));
+        assert!(!finish_tts_session(
+            first_session_id,
+            &first_stop_flag,
+            || stale_finish_callback.store(true, Ordering::SeqCst)
+        ));
+        assert!(!stale_finish_called.load(Ordering::SeqCst));
+        assert!(is_playing());
+        assert!(finish_tts_session(
+            second_session_id,
+            &second_stop_flag,
+            || {}
+        ));
+        assert!(!is_playing());
+    }
 }

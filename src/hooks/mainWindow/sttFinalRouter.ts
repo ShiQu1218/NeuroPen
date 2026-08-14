@@ -34,6 +34,7 @@ interface RegisterSttFinalRouterParams {
   t: TranslateFn;
   setStatusMsg: StatusSetter;
   setSttError: ErrorSetter;
+  takeFocusSessionId: () => number | undefined;
 }
 
 export async function registerSttFinalRouter({
@@ -41,11 +42,15 @@ export async function registerSttFinalRouter({
   t,
   setStatusMsg,
   setSttError,
+  takeFocusSessionId,
 }: RegisterSttFinalRouterParams) {
   await safeRegister<{ text: string }>("stt://final", async (event) => {
     // This is the main mode handoff: raw final STT arrives here and then branches
     // into direct injection, selected-text editing, or assistant-preview flows.
     const transcript = event.payload.text;
+    // Consume the session that was queued when this recording stopped. A newer
+    // recording may already have started by the time this async event runs.
+    const focusSessionId = takeFocusSessionId();
     if (import.meta.env.DEV) console.log("[App] stt://final:", transcript);
     if (!transcript.trim()) {
       setStatusMsg(t("status.noValidSpeech"));
@@ -56,6 +61,12 @@ export async function registerSttFinalRouter({
     const store = useAppStore.getState();
     store.setTranscript(transcript);
     const resetLlmRequestState = createLlmRequestStateReset(store);
+    const bindRequestFocus = async (requestId: string) => {
+      if (!focusSessionId) {
+        throw new Error("輸入目標工作階段已遺失，請重新開始操作");
+      }
+      await mainWindowService.bindFocusSession(requestId, focusSessionId);
+    };
 
     try {
       const result = await mainWindowService.routeTranscript(
@@ -77,6 +88,7 @@ export async function registerSttFinalRouter({
       if (mode === "A") {
         const modeACategory = buildOtherPreferenceCategory(t("history.preferenceOther"));
         const modeARequestId = generatePreferenceRequestId();
+        await bindRequestFocus(modeARequestId);
         let finalText = applyPunctuationMode(result.transcript, store.punctuationMode);
         let usedLlmForModeA = false;
         let postInjectWarning = "";
@@ -288,20 +300,20 @@ export async function registerSttFinalRouter({
         }
 
         setStatusMsg(t("status.injectingText"));
-        const ok = await mainWindowService.verifyFocus();
+        const ok = await mainWindowService.verifyFocus(focusSessionId);
         if (!ok) {
           setStatusMsg(t("status.focusChangedCancelInject"));
-          await mainWindowService.restoreClipboard();
+          await mainWindowService.restoreClipboard(focusSessionId);
           return;
         }
         try {
-          await mainWindowService.injectText(finalText, true);
+          await mainWindowService.injectText(finalText, true, focusSessionId);
         } catch (err) {
-          await restoreClipboardAfterFailure("Mode A inject failure");
+          await restoreClipboardAfterFailure("Mode A inject failure", focusSessionId);
           throw err;
         }
         await new Promise((r) => setTimeout(r, 150));
-        await mainWindowService.restoreClipboard();
+        await mainWindowService.restoreClipboard(focusSessionId);
 
         saveHistoryIfAllowed(store, {
           mode: "A",
@@ -330,6 +342,7 @@ export async function registerSttFinalRouter({
         const effectiveB2 = resolveEffectiveProfile(store, windowTitle, "B2");
         const modeB2Category = buildOtherPreferenceCategory(t("history.preferenceOther"));
         const modeB2RequestId = generatePreferenceRequestId();
+        await bindRequestFocus(modeB2RequestId);
         const modeBPromptOverride = buildPromptOverride(
           store.modeBPrompt,
           effectiveB2.promptAppendix,
@@ -374,7 +387,7 @@ export async function registerSttFinalRouter({
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           store.setLlmError(reason);
-          await restoreClipboardAfterFailure("Mode B2 failure");
+          await restoreClipboardAfterFailure("Mode B2 failure", focusSessionId);
           setRouteFailureStatus(setStatusMsg, t, reason);
         } finally {
           store.setIsLlmLoading(false);
@@ -389,6 +402,7 @@ export async function registerSttFinalRouter({
         const effectiveC = resolveEffectiveProfile(store, windowTitle, "C");
         const modeCCategory = buildOtherPreferenceCategory(t("history.preferenceOther"));
         const modeCRequestId = generatePreferenceRequestId();
+        await bindRequestFocus(modeCRequestId);
         const modeCPromptOverride = buildPromptOverride(
           store.modeCPrompt,
           effectiveC.promptAppendix,
@@ -434,14 +448,14 @@ export async function registerSttFinalRouter({
             requestId: modeCRequestId,
           });
           if (effectiveOutputModeC === "DirectInject") {
-            await mainWindowService.restoreClipboard();
+            await mainWindowService.restoreClipboard(focusSessionId);
             setStatusMsg(t("status.textInjected"));
             setReadyStatus(setStatusMsg, t, 2000);
           }
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           store.setLlmError(reason);
-          await restoreClipboardAfterFailure("Mode C failure");
+          await restoreClipboardAfterFailure("Mode C failure", focusSessionId);
           setRouteFailureStatus(setStatusMsg, t, reason);
         } finally {
           store.setIsLlmLoading(false);

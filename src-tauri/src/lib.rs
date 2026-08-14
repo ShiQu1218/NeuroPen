@@ -60,8 +60,10 @@ pub struct SelectionInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FocusInfo {
     pub hwnd: isize,
+    pub session_id: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,6 +91,10 @@ struct RuntimeSttConfig {
 }
 
 static RUNTIME_STT_CONFIG: Mutex<Option<RuntimeSttConfig>> = Mutex::new(None);
+/// Covers the runtime registration plus persistence/rollback sequence for all
+/// mutable shortcuts. The plugin-level lock handles register state; this outer
+/// lock also prevents a second command from persisting an interleaved value.
+static HOTKEY_COMMAND_LOCK: Mutex<()> = Mutex::new(());
 #[cfg(target_os = "windows")]
 static SINGLE_INSTANCE_GUARD: Mutex<Option<std::net::TcpListener>> = Mutex::new(None);
 
@@ -142,19 +148,25 @@ fn acquire_single_instance_lock() -> Result<(), String> {
 /// Lock the current foreground window and cache clipboard.
 #[tauri::command]
 fn trigger_hotkey() -> Result<FocusInfo, String> {
-    window_focus::lock_foreground_window();
-    let hwnd = window_focus::get_locked_hwnd();
-    clipboard::cache_clipboard()?;
-    Ok(FocusInfo { hwnd })
+    let lock = window_focus::lock_foreground_window();
+    clipboard::cache_clipboard_for_session(lock.session_id)?;
+    Ok(FocusInfo {
+        hwnd: lock.hwnd,
+        session_id: lock.session_id,
+    })
 }
 
-/// Lock the current foreground window WITHOUT touching the clipboard.
-/// Used by the QA selection flow where clipboard caching is not needed.
+/// Lock the current foreground window and cache the clipboard for the resulting
+/// selection/preview session. A rich clipboard is recorded as non-restorable;
+/// later paste then fails safely rather than erasing it.
 #[tauri::command]
-fn lock_window() -> FocusInfo {
-    window_focus::lock_foreground_window();
-    let hwnd = window_focus::get_locked_hwnd();
-    FocusInfo { hwnd }
+fn lock_window() -> Result<FocusInfo, String> {
+    let lock = window_focus::lock_foreground_window();
+    clipboard::cache_clipboard_for_session(lock.session_id)?;
+    Ok(FocusInfo {
+        hwnd: lock.hwnd,
+        session_id: lock.session_id,
+    })
 }
 
 /// Read current text selection via UI Automation.
@@ -182,8 +194,15 @@ fn read_selection_clipboard() -> Result<String, String> {
 
 /// Inject text into the locked foreground window.
 #[tauri::command]
-fn inject_text(text: String, record_for_undo: bool) -> Result<(), String> {
-    injection::inject_text_with_undo(&text, record_for_undo).map_err(|e| e.to_string())
+fn inject_text(
+    text: String,
+    record_for_undo: bool,
+    session_id: Option<u64>,
+    request_id: Option<String>,
+) -> Result<(), String> {
+    let session_id = resolve_focus_session(session_id, request_id.as_deref())?;
+    injection::inject_text_with_undo_for_session(&text, record_for_undo, session_id)
+        .map_err(|e| e.to_string())
 }
 
 /// Undo the last direct injection (Alt+Z handler).
@@ -194,14 +213,22 @@ fn undo_injection() -> Result<bool, String> {
 
 /// Verify that the foreground window hasn't changed since locking.
 #[tauri::command]
-fn verify_focus() -> bool {
-    window_focus::verify_focus_unchanged()
+fn verify_focus(session_id: Option<u64>, request_id: Option<String>) -> bool {
+    request_id
+        .as_deref()
+        .filter(|request_id| !request_id.trim().is_empty())
+        .map(window_focus::verify_focus_for_request)
+        .unwrap_or_else(|| window_focus::verify_focus_for_session(session_id))
 }
 
 /// Restore focus to the locked foreground window (for Replace from Preview Window).
 #[tauri::command]
-fn restore_focus() -> bool {
-    window_focus::restore_focus()
+fn restore_focus(session_id: Option<u64>, request_id: Option<String>) -> bool {
+    request_id
+        .as_deref()
+        .filter(|request_id| !request_id.trim().is_empty())
+        .map(window_focus::restore_focus_for_request)
+        .unwrap_or_else(|| window_focus::restore_focus_for_session(session_id))
 }
 
 /// Get current foreground window title.
@@ -221,13 +248,43 @@ fn get_cursor_position() -> CursorInfo {
 /// Write text to clipboard (for "Copy" button in Preview Window).
 #[tauri::command]
 fn copy_to_clipboard(text: String) -> Result<(), String> {
-    clipboard::write_clipboard(&text)
+    clipboard::replace_clipboard_intentionally(&text)
 }
 
 /// Restore clipboard to its original content.
 #[tauri::command]
-fn restore_clipboard() -> Result<(), String> {
-    clipboard::restore_clipboard()
+fn restore_clipboard(session_id: Option<u64>, request_id: Option<String>) -> Result<(), String> {
+    let session_id =
+        if let Some(request_id) = request_id.as_deref().filter(|id| !id.trim().is_empty()) {
+            Some(
+                window_focus::request_session_id(request_id)
+                    .ok_or_else(|| "找不到此請求的輸入目標，已略過剪貼簿還原".to_string())?,
+            )
+        } else {
+            session_id
+        };
+    clipboard::restore_clipboard_for_session(session_id)
+}
+
+/// Associate a preview/LLM request with the exact focus-lock session that
+/// created it. A late request cannot resolve to a newer foreground window.
+#[tauri::command]
+fn bind_focus_session(
+    request_id: String,
+    session_id: Option<u64>,
+    source_request_id: Option<String>,
+) -> Result<(), String> {
+    window_focus::bind_request_to_session(&request_id, session_id, source_request_id.as_deref())
+}
+
+fn resolve_focus_session(session_id: Option<u64>, request_id: Option<&str>) -> Result<u64, String> {
+    if let Some(request_id) = request_id.filter(|id| !id.trim().is_empty()) {
+        return window_focus::request_session_id(request_id)
+            .ok_or_else(|| "找不到此請求的輸入目標，請重新開始".to_string());
+    }
+    session_id
+        .or_else(clipboard::cached_session_id)
+        .ok_or_else(|| "找不到輸入目標工作階段，請重新開始".to_string())
 }
 
 /// Start microphone audio capture.
@@ -384,44 +441,125 @@ fn route_on_trigger(has_selection: bool) -> mode_router::AppMode {
 /// Change the global trigger hotkey at runtime.
 #[tauri::command]
 fn change_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
+    let _transaction = HOTKEY_COMMAND_LOCK
+        .lock()
+        .map_err(|error| format!("Hotkey command lock poisoned: {error}"))?;
     let normalized = hotkey_str.trim();
+    let (previous, _) = hotkey::current_trigger_hotkey();
     if normalized.is_empty() {
         hotkey::clear_trigger(&app)?;
-        return hotkey::persist_trigger_hotkey("");
+        if let Err(error) = hotkey::persist_trigger_hotkey("") {
+            let rollback = restore_trigger_hotkey(&app, &previous);
+            return Err(format_hotkey_persist_error("trigger", error, rollback));
+        }
+        return Ok(());
     }
     let (modifiers, code) = hotkey::parse_hotkey(normalized)?;
     hotkey::change_trigger(&app, modifiers, code)?;
-    hotkey::persist_trigger_hotkey(normalized)
+    if let Err(error) = hotkey::persist_trigger_hotkey(normalized) {
+        let rollback = restore_trigger_hotkey(&app, &previous);
+        return Err(format_hotkey_persist_error("trigger", error, rollback));
+    }
+    Ok(())
 }
 
 /// Change the screenshot hotkey at runtime.
 #[tauri::command]
 fn change_screenshot_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
+    let _transaction = HOTKEY_COMMAND_LOCK
+        .lock()
+        .map_err(|error| format!("Hotkey command lock poisoned: {error}"))?;
     let normalized = hotkey_str.trim();
+    let (previous, _) = hotkey::current_screenshot_hotkey();
     if normalized.is_empty() {
         hotkey::clear_screenshot(&app)?;
-        hotkey::persist_screenshot_hotkey("")?;
+        if let Err(error) = hotkey::persist_screenshot_hotkey("") {
+            let rollback = restore_screenshot_hotkey(&app, &previous);
+            return Err(format_hotkey_persist_error("screenshot", error, rollback));
+        }
         return Ok(());
     }
     let (modifiers, code) = hotkey::parse_hotkey(normalized)?;
     hotkey::change_screenshot(&app, modifiers, code)?;
-    hotkey::persist_screenshot_hotkey(normalized)?;
+    if let Err(error) = hotkey::persist_screenshot_hotkey(normalized) {
+        let rollback = restore_screenshot_hotkey(&app, &previous);
+        return Err(format_hotkey_persist_error("screenshot", error, rollback));
+    }
     Ok(())
 }
 
 /// Change the assistant dialog hotkey at runtime.
 #[tauri::command]
 fn change_dialog_hotkey(app: tauri::AppHandle, hotkey_str: String) -> Result<(), String> {
+    let _transaction = HOTKEY_COMMAND_LOCK
+        .lock()
+        .map_err(|error| format!("Hotkey command lock poisoned: {error}"))?;
     let normalized = hotkey_str.trim();
+    let (previous, _) = hotkey::current_dialog_hotkey();
     if normalized.is_empty() {
         hotkey::clear_dialog(&app)?;
-        hotkey::persist_dialog_hotkey("")?;
+        if let Err(error) = hotkey::persist_dialog_hotkey("") {
+            let rollback = restore_dialog_hotkey(&app, &previous);
+            return Err(format_hotkey_persist_error("dialog", error, rollback));
+        }
         return Ok(());
     }
     let (modifiers, code) = hotkey::parse_hotkey(normalized)?;
     hotkey::change_dialog(&app, modifiers, code)?;
-    hotkey::persist_dialog_hotkey(normalized)?;
+    if let Err(error) = hotkey::persist_dialog_hotkey(normalized) {
+        let rollback = restore_dialog_hotkey(&app, &previous);
+        return Err(format_hotkey_persist_error("dialog", error, rollback));
+    }
     Ok(())
+}
+
+fn format_hotkey_persist_error(
+    kind: &str,
+    persist_error: String,
+    rollback: Result<(), String>,
+) -> String {
+    match rollback {
+        Ok(()) => format!(
+            "Failed to persist {kind} hotkey; the runtime registration was restored: {persist_error}"
+        ),
+        Err(rollback_error) => format!(
+            "Failed to persist {kind} hotkey ({persist_error}) and failed to restore runtime registration: {rollback_error}"
+        ),
+    }
+}
+
+fn restore_trigger_hotkey(app: &tauri::AppHandle, previous: &str) -> Result<(), String> {
+    restore_hotkey(app, previous, hotkey::change_trigger, hotkey::clear_trigger)
+}
+
+fn restore_screenshot_hotkey(app: &tauri::AppHandle, previous: &str) -> Result<(), String> {
+    restore_hotkey(
+        app,
+        previous,
+        hotkey::change_screenshot,
+        hotkey::clear_screenshot,
+    )
+}
+
+fn restore_dialog_hotkey(app: &tauri::AppHandle, previous: &str) -> Result<(), String> {
+    restore_hotkey(app, previous, hotkey::change_dialog, hotkey::clear_dialog)
+}
+
+fn restore_hotkey(
+    app: &tauri::AppHandle,
+    previous: &str,
+    change: fn(
+        &tauri::AppHandle,
+        Option<tauri_plugin_global_shortcut::Modifiers>,
+        tauri_plugin_global_shortcut::Code,
+    ) -> Result<(), String>,
+    clear: fn(&tauri::AppHandle) -> Result<(), String>,
+) -> Result<(), String> {
+    if previous.trim().is_empty() {
+        return clear(app);
+    }
+    let (modifiers, code) = hotkey::parse_hotkey(previous)?;
+    change(app, modifiers, code)
 }
 
 #[tauri::command]
@@ -521,6 +659,7 @@ pub fn run() {
             get_cursor_position,
             copy_to_clipboard,
             restore_clipboard,
+            bind_focus_session,
             load_attachment,
             load_attachments_from_paths,
             pick_attachments,
@@ -649,9 +788,16 @@ pub fn run() {
                     return;
                 }
 
-                // Lock window & cache clipboard
-                window_focus::lock_foreground_window();
-                let _ = clipboard::cache_clipboard();
+                // Lock window & cache clipboard. If the clipboard contains a
+                // non-restorable rich format, do not start a flow that could
+                // later overwrite it.
+                let focus_lock = window_focus::lock_foreground_window();
+                if let Err(error) = clipboard::cache_clipboard_for_session(focus_lock.session_id) {
+                    eprintln!("[event] Cannot start hotkey session: {error}");
+                    let _ = handle_press
+                        .emit("neuropen://status", serde_json::json!({ "message": error }));
+                    return;
+                }
 
                 // Check selection
                 let sel = selection::get_selected_text();
@@ -668,7 +814,8 @@ pub fn run() {
                         "has_selection": has_selection,
                         "selected_text": selected_text,
                         "initial_mode": initial_mode,
-                        "hwnd": window_focus::get_locked_hwnd(),
+                        "hwnd": focus_lock.hwnd,
+                        "sessionId": focus_lock.session_id,
                     }),
                 );
             });

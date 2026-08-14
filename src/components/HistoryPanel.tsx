@@ -63,6 +63,7 @@ export default function HistoryPanel() {
   const incognito = useAppStore((state) => state.incognito);
   const quickActionCommands = useAppStore((state) => state.quickActionCommands);
   const stableSelectionRef = useRef("");
+  const stableFocusSessionIdRef = useRef<number | undefined>(undefined);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -85,8 +86,9 @@ export default function HistoryPanel() {
   useEffect(() => {
     let disposed = false;
     let unlistenSelection: (() => void) | undefined;
-    void listen<{ text: string }>("neuropen://stable-selection", (event) => {
+    void listen<{ text: string; sessionId?: number }>("neuropen://stable-selection", (event) => {
       stableSelectionRef.current = event.payload.text?.trim() ?? "";
+      stableFocusSessionIdRef.current = event.payload.sessionId;
     }).then((dispose) => {
       if (disposed) {
         dispose();
@@ -101,22 +103,29 @@ export default function HistoryPanel() {
   }, []);
 
   const resolveCurrentSelection = async () => {
+    const sessionId = stableFocusSessionIdRef.current;
     let selectedText = stableSelectionRef.current.trim() || useAppStore.getState().selectedText.trim();
-    if (selectedText) {
-      return selectedText;
+    // Applying history must retain the exact selection lock. If this panel did
+    // not receive a stable target session, do not fall back to a newer window.
+    if (!sessionId) {
+      return { text: "", sessionId: undefined };
     }
     try {
       // History may be opened after the original selection was made, so this
       // window never received the stable-selection event. Restore the target
       // window locked by the selection watcher before asking UI Automation.
-      const restored = await mainWindowService.restoreFocus();
+      const restored = await mainWindowService.restoreFocus(sessionId);
       if (!restored) {
-        return "";
+        return { text: "", sessionId: undefined };
       }
       await new Promise((resolve) => window.setTimeout(resolve, 50));
       const selection = await invoke<{ has_selection: boolean; text: string | null }>("get_selection");
       if (selection.has_selection && selection.text) {
         selectedText = selection.text.trim();
+      } else {
+        // A cleared native selection must invalidate the older stable snapshot;
+        // otherwise Replace degrades into an insertion in the old target.
+        selectedText = "";
       }
     } catch (err) {
       console.error("[History] get_selection failed:", err);
@@ -125,7 +134,7 @@ export default function HistoryPanel() {
         await getCurrentWindow().setFocus().catch(() => { });
       }
     }
-    return selectedText;
+    return { text: selectedText, sessionId };
   };
 
   const handleDelete = async (id: string) => {
@@ -237,9 +246,10 @@ export default function HistoryPanel() {
     // A History button takes focus before this handler runs. Use the stable
     // selection snapshot emitted by the main window, then fall back to a live
     // native read only when no snapshot is available.
-    const selectedText = await resolveCurrentSelection();
+    const target = await resolveCurrentSelection();
+    const selectedText = target.text;
 
-    if (!selectedText) {
+    if (!selectedText || !target.sessionId) {
       setActionMessage(t("history.selectionRequired"));
       return;
     }
@@ -253,11 +263,20 @@ export default function HistoryPanel() {
     });
     state.setCurrentFeedbackRating(null);
 
+    try {
+      await mainWindowService.bindFocusSession(requestId, target.sessionId);
+    } catch (err) {
+      console.warn("[History] bind focus session failed:", err);
+      setActionMessage(t("history.selectionRequired"));
+      return;
+    }
+
     await emit("neuropen://llm-session-context", {
       mode: "B1",
       selectedText,
       instruction: entry.instruction,
       requestId,
+      sessionId: target.sessionId,
       preferenceCategoryKey: category.key,
       preferenceCategoryLabel: category.label,
     });

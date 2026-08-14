@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::ErrorKind;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -50,6 +51,14 @@ struct PreferenceLearningStore {
     summaries: Vec<PreferenceSummaryEntry>,
     #[serde(default)]
     pending_feedback: Vec<PreferenceFeedbackEntry>,
+    /// Incremented when all categories are cleared so in-flight analysis from
+    /// an earlier store generation can never restore removed data.
+    #[serde(default)]
+    generation: u64,
+    /// Per-category revisions guard against an async analysis result applying
+    /// over feedback or a clear operation that happened after its snapshot.
+    #[serde(default)]
+    category_versions: HashMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,6 +100,8 @@ struct AnalysisSnapshot {
     existing_summary: Option<String>,
     feedback_entries: Vec<PreferenceFeedbackEntry>,
     request_ids: HashSet<String>,
+    store_generation: u64,
+    category_version: u64,
     analysis_provider: LlmProvider,
     analysis_model: String,
     app_language: String,
@@ -117,27 +128,66 @@ fn lock_store() -> std::sync::MutexGuard<'static, Option<PreferenceLearningStore
 
 fn ensure_loaded(
     guard: &mut Option<PreferenceLearningStore>,
-) -> &mut PreferenceLearningStore {
+) -> Result<&mut PreferenceLearningStore, String> {
     if guard.is_none() {
-        *guard = Some(load_from_disk());
+        *guard = Some(load_from_disk()?);
     }
-    guard.get_or_insert_with(PreferenceLearningStore::default)
+    Ok(guard.get_or_insert_with(PreferenceLearningStore::default))
 }
 
-fn load_from_disk() -> PreferenceLearningStore {
+fn load_from_disk() -> Result<PreferenceLearningStore, String> {
+    history::recover_atomic_write(&PREFERENCE_FILE)
+        .map_err(|error| format!("Failed to recover preference learning data: {error}"))?;
     match fs::read_to_string(&*PREFERENCE_FILE) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-        Err(_) => PreferenceLearningStore::default(),
+        Ok(text) => serde_json::from_str(&text)
+            .map_err(|error| format!("Failed to parse preference learning data: {error}")),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(PreferenceLearningStore::default()),
+        Err(error) => Err(format!("Failed to read preference learning data: {error}")),
     }
 }
 
-fn save_to_disk(store: &PreferenceLearningStore) {
+fn save_to_disk(store: &PreferenceLearningStore) -> Result<(), String> {
     if let Some(parent) = PREFERENCE_FILE.parent() {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to create preference learning directory: {error}"))?;
     }
-    if let Ok(text) = serde_json::to_string_pretty(store) {
-        let _ = fs::write(&*PREFERENCE_FILE, text);
+    let text = serde_json::to_string_pretty(store)
+        .map_err(|error| format!("Failed to serialize preference learning data: {error}"))?;
+    history::atomic_write_file(&PREFERENCE_FILE, text.as_bytes())
+        .map_err(|error| format!("Failed to save preference learning data: {error}"))
+}
+
+fn persist_mutation<T, R>(
+    state: &mut T,
+    mutate: impl FnOnce(&mut T) -> R,
+    persist: impl FnOnce(&T) -> Result<(), String>,
+) -> Result<R, String>
+where
+    T: Clone,
+{
+    let previous = state.clone();
+    let result = mutate(state);
+    if let Err(error) = persist(state) {
+        *state = previous;
+        return Err(error);
     }
+    Ok(result)
+}
+
+fn category_version(store: &PreferenceLearningStore, category_key: &str) -> u64 {
+    store
+        .category_versions
+        .get(category_key)
+        .copied()
+        .unwrap_or_default()
+}
+
+fn bump_category_version(store: &mut PreferenceLearningStore, category_key: &str) {
+    let version = store
+        .category_versions
+        .entry(category_key.to_string())
+        .or_default();
+    *version = version.wrapping_add(1);
 }
 
 fn unique_id() -> String {
@@ -193,6 +243,7 @@ fn upsert_pending_feedback(
         .iter_mut()
         .find(|entry| entry.request_id == request_id)
     {
+        let previous_category_key = existing.category_key.clone();
         existing.timestamp = timestamp;
         existing.mode = payload.mode.trim().to_string();
         existing.input_text = payload.input_text.clone();
@@ -212,8 +263,14 @@ fn upsert_pending_feedback(
             .to_string();
         existing.category_key = category_key;
         existing.category_label = category_label;
-        existing.quick_action_command_id = normalize_optional(payload.quick_action_command_id.as_deref());
+        existing.quick_action_command_id =
+            normalize_optional(payload.quick_action_command_id.as_deref());
         existing.rating = payload.rating;
+        let updated_category_key = existing.category_key.clone();
+        if previous_category_key != updated_category_key {
+            bump_category_version(store, &previous_category_key);
+        }
+        bump_category_version(store, &updated_category_key);
         return Ok(());
     }
 
@@ -242,6 +299,12 @@ fn upsert_pending_feedback(
         quick_action_command_id: normalize_optional(payload.quick_action_command_id.as_deref()),
         rating: payload.rating,
     });
+    let category_key = store
+        .pending_feedback
+        .last()
+        .map(|entry| entry.category_key.clone())
+        .unwrap_or_default();
+    bump_category_version(store, &category_key);
 
     Ok(())
 }
@@ -273,18 +336,23 @@ fn build_analysis_snapshot(
     let latest_feedback = feedback_entries.iter().max_by_key(|entry| entry.timestamp);
     Some(AnalysisSnapshot {
         category_key: category_key.to_string(),
-        category_label: payload
-            .category_label
-            .trim()
-            .to_string(),
+        category_label: payload.category_label.trim().to_string(),
         quick_action_command_id: normalize_optional(payload.quick_action_command_id.as_deref())
             .or_else(|| latest_feedback.and_then(|entry| entry.quick_action_command_id.clone()))
-            .or_else(|| existing_summary.as_ref().and_then(|summary| summary.quick_action_command_id.clone())),
-        existing_summary: existing_summary.as_ref().map(|summary| summary.summary.clone()),
+            .or_else(|| {
+                existing_summary
+                    .as_ref()
+                    .and_then(|summary| summary.quick_action_command_id.clone())
+            }),
+        existing_summary: existing_summary
+            .as_ref()
+            .map(|summary| summary.summary.clone()),
         request_ids: feedback_entries
             .iter()
             .map(|entry| entry.request_id.clone())
             .collect::<HashSet<_>>(),
+        store_generation: store.generation,
+        category_version: category_version(store, category_key),
         feedback_entries,
         analysis_provider: payload.analysis_provider.clone(),
         analysis_model: payload.analysis_model.trim().to_string(),
@@ -399,11 +467,7 @@ async fn analyze_snapshot(snapshot: &AnalysisSnapshot) -> Result<String, String>
         snapshot.analysis_provider,
         LlmProvider::Ollama | LlmProvider::LlamaCpp | LlmProvider::LmStudio
     ) {
-        if stt::has_api_key() {
-            stt::get_api_key().unwrap_or_default()
-        } else {
-            String::new()
-        }
+        String::new()
     } else {
         stt::get_api_key()?
     };
@@ -427,9 +491,16 @@ fn apply_analysis_result(
     store: &mut PreferenceLearningStore,
     snapshot: &AnalysisSnapshot,
     summary: String,
-) {
+) -> bool {
+    if store.generation != snapshot.store_generation
+        || category_version(store, &snapshot.category_key) != snapshot.category_version
+    {
+        return false;
+    }
+
     store.pending_feedback.retain(|entry| {
-        entry.category_key != snapshot.category_key || !snapshot.request_ids.contains(&entry.request_id)
+        entry.category_key != snapshot.category_key
+            || !snapshot.request_ids.contains(&entry.request_id)
     });
 
     if let Some(existing) = store
@@ -441,24 +512,33 @@ fn apply_analysis_result(
         existing.quick_action_command_id = snapshot.quick_action_command_id.clone();
         existing.summary = summary;
         existing.updated_at = unix_now();
-        return;
+    } else {
+        store.summaries.push(PreferenceSummaryEntry {
+            category_key: snapshot.category_key.clone(),
+            category_label: snapshot.category_label.clone(),
+            quick_action_command_id: snapshot.quick_action_command_id.clone(),
+            summary,
+            updated_at: unix_now(),
+        });
     }
 
-    store.summaries.push(PreferenceSummaryEntry {
-        category_key: snapshot.category_key.clone(),
-        category_label: snapshot.category_label.clone(),
-        quick_action_command_id: snapshot.quick_action_command_id.clone(),
-        summary,
-        updated_at: unix_now(),
-    });
+    bump_category_version(store, &snapshot.category_key);
+    true
 }
 
 pub async fn rate_result(payload: PreferenceRatePayload) -> Result<(), String> {
     let snapshot = {
         let mut guard = lock_store();
-        let store = ensure_loaded(&mut guard);
-        upsert_pending_feedback(store, &payload)?;
-        save_to_disk(store);
+        let store = ensure_loaded(&mut guard)?;
+        let previous = store.clone();
+        if let Err(error) = upsert_pending_feedback(store, &payload) {
+            *store = previous;
+            return Err(error);
+        }
+        if let Err(error) = save_to_disk(store) {
+            *store = previous;
+            return Err(error);
+        }
         build_analysis_snapshot(store, &payload)
     };
 
@@ -469,7 +549,7 @@ pub async fn rate_result(payload: PreferenceRatePayload) -> Result<(), String> {
         Some(payload.category_key.as_str()),
         Some(payload.category_label.as_str()),
         payload.quick_action_command_id.as_deref(),
-    );
+    )?;
 
     let Some(snapshot) = snapshot else {
         return Ok(());
@@ -478,9 +558,14 @@ pub async fn rate_result(payload: PreferenceRatePayload) -> Result<(), String> {
     match analyze_snapshot(&snapshot).await {
         Ok(summary) => {
             let mut guard = lock_store();
-            let store = ensure_loaded(&mut guard);
-            apply_analysis_result(store, &snapshot, summary);
-            save_to_disk(store);
+            let store = ensure_loaded(&mut guard)?;
+            let previous = store.clone();
+            if apply_analysis_result(store, &snapshot, summary) {
+                if let Err(error) = save_to_disk(store) {
+                    *store = previous;
+                    return Err(error);
+                }
+            }
         }
         Err(error) => {
             eprintln!(
@@ -493,17 +578,22 @@ pub async fn rate_result(payload: PreferenceRatePayload) -> Result<(), String> {
     Ok(())
 }
 
-pub fn list_summaries() -> Vec<PreferenceSummaryView> {
+pub fn list_summaries() -> Result<Vec<PreferenceSummaryView>, String> {
     let mut guard = lock_store();
-    let store = ensure_loaded(&mut guard);
+    let store = ensure_loaded(&mut guard)?;
 
     let mut pending_counts = HashMap::<String, usize>::new();
     let mut pending_labels = HashMap::<String, (String, Option<String>)>::new();
     for entry in &store.pending_feedback {
-        *pending_counts.entry(entry.category_key.clone()).or_insert(0) += 1;
+        *pending_counts
+            .entry(entry.category_key.clone())
+            .or_insert(0) += 1;
         pending_labels.insert(
             entry.category_key.clone(),
-            (entry.category_label.clone(), entry.quick_action_command_id.clone()),
+            (
+                entry.category_label.clone(),
+                entry.quick_action_command_id.clone(),
+            ),
         );
     }
 
@@ -546,51 +636,64 @@ pub fn list_summaries() -> Vec<PreferenceSummaryView> {
             .cmp(&right.category_label.to_lowercase())
             .then_with(|| left.category_key.cmp(&right.category_key))
     });
-    items
+    Ok(items)
 }
 
-pub fn get_summary(category_key: &str) -> Option<String> {
+pub fn get_summary(category_key: &str) -> Result<Option<String>, String> {
     let trimmed = category_key.trim();
     if trimmed.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let mut guard = lock_store();
-    let store = ensure_loaded(&mut guard);
-    store
+    let store = ensure_loaded(&mut guard)?;
+    Ok(store
         .summaries
         .iter()
         .find(|entry| entry.category_key == trimmed)
-        .map(|entry| entry.summary.clone())
+        .map(|entry| entry.summary.clone()))
 }
 
-pub fn clear_summary(category_key: &str) -> bool {
+pub fn clear_summary(category_key: &str) -> Result<bool, String> {
     let trimmed = category_key.trim();
     if trimmed.is_empty() {
-        return false;
+        return Ok(false);
     }
 
     let mut guard = lock_store();
-    let store = ensure_loaded(&mut guard);
-    let before_summaries = store.summaries.len();
-    let before_pending = store.pending_feedback.len();
-    store
-        .summaries
-        .retain(|entry| entry.category_key != trimmed);
-    store
-        .pending_feedback
-        .retain(|entry| entry.category_key != trimmed);
-    let changed = store.summaries.len() != before_summaries || store.pending_feedback.len() != before_pending;
-    if changed {
-        save_to_disk(store);
-    }
-    changed
+    let store = ensure_loaded(&mut guard)?;
+    persist_mutation(
+        store,
+        |store| {
+            let before_summaries = store.summaries.len();
+            let before_pending = store.pending_feedback.len();
+            store
+                .summaries
+                .retain(|entry| entry.category_key != trimmed);
+            store
+                .pending_feedback
+                .retain(|entry| entry.category_key != trimmed);
+            bump_category_version(store, trimmed);
+            store.summaries.len() != before_summaries
+                || store.pending_feedback.len() != before_pending
+        },
+        |store| save_to_disk(store),
+    )
 }
 
-pub fn clear_all() {
+pub fn clear_all() -> Result<(), String> {
     let mut guard = lock_store();
-    *guard = Some(PreferenceLearningStore::default());
-    save_to_disk(&PreferenceLearningStore::default());
+    let store = ensure_loaded(&mut guard)?;
+    persist_mutation(
+        store,
+        |store| {
+            store.summaries.clear();
+            store.pending_feedback.clear();
+            store.category_versions.clear();
+            store.generation = store.generation.wrapping_add(1);
+        },
+        |store| save_to_disk(store),
+    )
 }
 
 #[cfg(test)]
@@ -628,7 +731,10 @@ mod tests {
         upsert_pending_feedback(&mut store, &payload_b).expect("second payload should insert");
 
         assert_eq!(store.pending_feedback.len(), 2);
-        assert_eq!(store.pending_feedback[0].category_key, "quickAction:cmd-1:a");
+        assert_eq!(
+            store.pending_feedback[0].category_key,
+            "quickAction:cmd-1:a"
+        );
         assert_eq!(store.pending_feedback[1].category_key, "other");
     }
 
@@ -645,7 +751,8 @@ mod tests {
 
         let payload = sample_payload(category_key, "req-9");
         upsert_pending_feedback(&mut store, &payload).expect("tenth payload should insert");
-        let snapshot = build_analysis_snapshot(&store, &payload).expect("tenth item should trigger analysis");
+        let snapshot =
+            build_analysis_snapshot(&store, &payload).expect("tenth item should trigger analysis");
         assert_eq!(snapshot.feedback_entries.len(), 10);
         assert!(snapshot.existing_summary.is_none());
     }
@@ -670,9 +777,13 @@ mod tests {
         let mut ninth = sample_payload("other", "req-8");
         ninth.category_label = "Other".to_string();
         upsert_pending_feedback(&mut store, &ninth).expect("ninth update payload should insert");
-        let snapshot = build_analysis_snapshot(&store, &ninth).expect("ninth new record should trigger re-analysis");
+        let snapshot = build_analysis_snapshot(&store, &ninth)
+            .expect("ninth new record should trigger re-analysis");
         assert_eq!(snapshot.feedback_entries.len(), 9);
-        assert_eq!(snapshot.existing_summary.as_deref(), Some("Prefer concise direct answers."));
+        assert_eq!(
+            snapshot.existing_summary.as_deref(),
+            Some("Prefer concise direct answers.")
+        );
     }
 
     #[test]
@@ -691,6 +802,8 @@ mod tests {
                 .iter()
                 .map(|entry| entry.request_id.clone())
                 .collect(),
+            store_generation: store.generation,
+            category_version: category_version(&store, "other"),
             analysis_provider: LlmProvider::OpenAi,
             analysis_model: "gpt-4o-mini".to_string(),
             app_language: "zh-TW".to_string(),
@@ -703,7 +816,11 @@ mod tests {
             updated_at: unix_now(),
         });
 
-        apply_analysis_result(&mut store, &snapshot, "New summary".to_string());
+        assert!(apply_analysis_result(
+            &mut store,
+            &snapshot,
+            "New summary".to_string()
+        ));
 
         assert!(store.pending_feedback.is_empty());
         assert_eq!(store.summaries.len(), 1);
@@ -711,8 +828,93 @@ mod tests {
     }
 
     #[test]
+    fn stale_analysis_snapshot_does_not_overwrite_new_feedback() {
+        let mut store = PreferenceLearningStore::default();
+        let payload = sample_payload("other", "req-1");
+        upsert_pending_feedback(&mut store, &payload).expect("payload should insert");
+        let snapshot = AnalysisSnapshot {
+            category_key: "other".to_string(),
+            category_label: "Other".to_string(),
+            quick_action_command_id: None,
+            existing_summary: None,
+            feedback_entries: store.pending_feedback.clone(),
+            request_ids: store
+                .pending_feedback
+                .iter()
+                .map(|entry| entry.request_id.clone())
+                .collect(),
+            store_generation: store.generation,
+            category_version: category_version(&store, "other"),
+            analysis_provider: LlmProvider::OpenAi,
+            analysis_model: "gpt-4o-mini".to_string(),
+            app_language: "zh-TW".to_string(),
+        };
+        let next_payload = sample_payload("other", "req-2");
+        upsert_pending_feedback(&mut store, &next_payload)
+            .expect("new feedback should update the category version");
+
+        assert!(!apply_analysis_result(
+            &mut store,
+            &snapshot,
+            "Stale summary".to_string()
+        ));
+        assert_eq!(store.pending_feedback.len(), 2);
+        assert!(store.summaries.is_empty());
+    }
+
+    #[test]
+    fn cleared_store_generation_rejects_in_flight_analysis() {
+        let mut store = PreferenceLearningStore::default();
+        let payload = sample_payload("other", "req-1");
+        upsert_pending_feedback(&mut store, &payload).expect("payload should insert");
+        let snapshot = AnalysisSnapshot {
+            category_key: "other".to_string(),
+            category_label: "Other".to_string(),
+            quick_action_command_id: None,
+            existing_summary: None,
+            feedback_entries: store.pending_feedback.clone(),
+            request_ids: store
+                .pending_feedback
+                .iter()
+                .map(|entry| entry.request_id.clone())
+                .collect(),
+            store_generation: store.generation,
+            category_version: category_version(&store, "other"),
+            analysis_provider: LlmProvider::OpenAi,
+            analysis_model: "gpt-4o-mini".to_string(),
+            app_language: "zh-TW".to_string(),
+        };
+        store.pending_feedback.clear();
+        store.category_versions.clear();
+        store.generation = store.generation.wrapping_add(1);
+
+        assert!(!apply_analysis_result(
+            &mut store,
+            &snapshot,
+            "Stale summary".to_string()
+        ));
+        assert!(store.summaries.is_empty());
+    }
+
+    #[test]
+    fn failed_persistence_rolls_back_memory_mutation() {
+        let mut state = vec!["before".to_string()];
+        let result = persist_mutation(
+            &mut state,
+            |state| state.push("after".to_string()),
+            |_| Err("disk full".to_string()),
+        );
+
+        assert_eq!(result, Err("disk full".to_string()));
+        assert_eq!(state, vec!["before".to_string()]);
+    }
+
+    #[test]
     fn normalize_summary_limits_word_count() {
-        let summary = (0..550).map(|index| format!("word{index}")).collect::<Vec<_>>().join(" ");
+        let summary = (0..550)
+            .map(|index| format!("word{index}"))
+            .collect::<Vec<_>>()
+            .join(" ");
         let normalized = normalize_summary(&summary);
         assert_eq!(normalized.split_whitespace().count(), MAX_SUMMARY_WORDS);
     }

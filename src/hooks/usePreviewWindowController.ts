@@ -287,6 +287,7 @@ export function usePreviewWindowController() {
         ? buildQuickActionPreferenceCategory(categoryCommand)
         : buildOtherPreferenceCategory(t("history.preferenceOther"));
       const requestId = generatePreferenceRequestId();
+      const sourceRequestId = session.requestId.trim();
       const learnedSummary =
         state.preferenceLearningEnabled
           ? await mainWindowService.preferenceGetSummary(category.key).catch(() => null)
@@ -341,11 +342,17 @@ export function usePreviewWindowController() {
         };
       });
       try {
+        // Refinements inherit the original request target. Do not bind them to
+        // whatever window was most recently selected while this preview stayed open.
+        if (sourceRequestId) {
+          await mainWindowService.bindFocusSession(requestId, undefined, sourceRequestId);
+        }
         await emit("neuropen://llm-session-context", {
           mode: sourceMode,
           selectedText,
           instruction: input,
           requestId,
+          sourceRequestId: sourceRequestId || undefined,
           preferenceCategoryKey: category.key,
           preferenceCategoryLabel: category.label,
           quickActionCommandId: category.quickActionCommandId,
@@ -754,6 +761,7 @@ export function usePreviewWindowController() {
     if (
       state.isLlmLoading ||
       !output.trim() ||
+      !previewSession?.requestId.trim() ||
       isDragInteractionLocked() ||
       replaceInFlightRef.current
     ) {
@@ -762,27 +770,39 @@ export function usePreviewWindowController() {
 
     replaceInFlightRef.current = true;
     try {
-      const restored = await invoke<boolean>("restore_focus");
+      const requestId = previewSession.requestId.trim();
+      const restored = await mainWindowService.restoreFocus(undefined, requestId);
       if (!restored) {
         setLlmError(t("preview.replaceNoTarget"));
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 100));
-      const focusOk = await invoke<boolean>("verify_focus");
+      const focusOk = await mainWindowService.verifyFocus(undefined, requestId);
       if (!focusOk) {
         setLlmError(t("preview.replaceFocusChanged"));
-        await invoke("restore_clipboard");
+        await mainWindowService.restoreClipboard(undefined, requestId);
         return;
       }
-      await invoke("inject_text", { text: output, recordForUndo: true });
+      // Replace may overwrite a selection, therefore it must not create a
+      // backspace-only undo record.
+      try {
+        await mainWindowService.injectText(output, false, undefined, requestId);
+      } catch (error) {
+        // A failed paste can still have replaced the clipboard temporarily.
+        // Restore it without masking the injection error shown to the caller.
+        await mainWindowService.restoreClipboard(undefined, requestId).catch((restoreError) => {
+          console.warn("[Preview] restore clipboard after Replace failure:", restoreError);
+        });
+        throw error;
+      }
       await new Promise((resolve) => setTimeout(resolve, 150));
-      await invoke("restore_clipboard");
+      await mainWindowService.restoreClipboard(undefined, requestId);
       showToast(t("preview.replaceSuccess"), 900);
       await setPreviewFocusable(true, true);
     } finally {
       replaceInFlightRef.current = false;
     }
-  }, [isDragInteractionLocked, setLlmError, setPreviewFocusable, showToast, t]);
+  }, [isDragInteractionLocked, previewSession?.requestId, setLlmError, setPreviewFocusable, showToast, t]);
 
   const handleClose = useCallback(async () => {
     const closingGeneration = previewSessionGenerationRef.current + 1;
