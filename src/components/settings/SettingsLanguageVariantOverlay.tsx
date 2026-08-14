@@ -69,6 +69,7 @@ export default function SettingsLanguageVariantOverlay({
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        event.preventDefault();
         onClose();
       }
     };

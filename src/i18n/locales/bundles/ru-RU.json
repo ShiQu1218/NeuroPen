@@ -352,6 +352,7 @@
     "history.favorite": "В избранное",
     "history.unfavorite": "Из избранного",
     "history.noInstruction": "Нет доступной инструкции для этой записи",
+    "history.selectionRequired": "Сначала выделите текст в другом приложении, затем примените эту инструкцию.",
     "history.filterAll": "Все",
     "history.filterFavorites": "Избранное",
     "quickAction.title": "Быстрые действия",

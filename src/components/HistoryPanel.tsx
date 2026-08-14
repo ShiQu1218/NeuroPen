@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useI18n } from "../i18n";
 import { mainWindowService } from "../services/mainWindowService";
 import { useAppStore } from "../store/useAppStore";
@@ -56,10 +57,12 @@ export default function HistoryPanel() {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterTab>("all");
+  const [actionMessage, setActionMessage] = useState("");
   const { t } = useI18n();
   const preferenceLearningEnabled = useAppStore((state) => state.preferenceLearningEnabled);
   const incognito = useAppStore((state) => state.incognito);
   const quickActionCommands = useAppStore((state) => state.quickActionCommands);
+  const stableSelectionRef = useRef("");
 
   const loadHistory = useCallback(async () => {
     try {
@@ -78,6 +81,52 @@ export default function HistoryPanel() {
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenSelection: (() => void) | undefined;
+    void listen<{ text: string }>("neuropen://stable-selection", (event) => {
+      stableSelectionRef.current = event.payload.text?.trim() ?? "";
+    }).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlistenSelection = dispose;
+    });
+    return () => {
+      disposed = true;
+      unlistenSelection?.();
+    };
+  }, []);
+
+  const resolveCurrentSelection = async () => {
+    let selectedText = stableSelectionRef.current.trim() || useAppStore.getState().selectedText.trim();
+    if (selectedText) {
+      return selectedText;
+    }
+    try {
+      // History may be opened after the original selection was made, so this
+      // window never received the stable-selection event. Restore the target
+      // window locked by the selection watcher before asking UI Automation.
+      const restored = await mainWindowService.restoreFocus();
+      if (!restored) {
+        return "";
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+      const selection = await invoke<{ has_selection: boolean; text: string | null }>("get_selection");
+      if (selection.has_selection && selection.text) {
+        selectedText = selection.text.trim();
+      }
+    } catch (err) {
+      console.error("[History] get_selection failed:", err);
+    } finally {
+      if (!selectedText) {
+        await getCurrentWindow().setFocus().catch(() => { });
+      }
+    }
+    return selectedText;
+  };
 
   const handleDelete = async (id: string) => {
     await invoke("history_delete", { id });
@@ -180,22 +229,20 @@ export default function HistoryPanel() {
   const handleApplyToSelection = async (entry: HistoryEntry) => {
     if (!entry.instruction) return;
 
+    setActionMessage("");
     const state = useAppStore.getState();
     const category = buildOtherPreferenceCategory(t("history.preferenceOther"));
     const requestId = generatePreferenceRequestId();
 
-    // Get current selection
-    let selectedText = "";
-    try {
-      const sel = await invoke<{ has_selection: boolean; text: string | null }>("get_selection");
-      if (sel.has_selection && sel.text) {
-        selectedText = sel.text;
-      }
-    } catch (err) {
-      console.error("[History] get_selection failed:", err);
-    }
+    // A History button takes focus before this handler runs. Use the stable
+    // selection snapshot emitted by the main window, then fall back to a live
+    // native read only when no snapshot is available.
+    const selectedText = await resolveCurrentSelection();
 
-    if (!selectedText) return;
+    if (!selectedText) {
+      setActionMessage(t("history.selectionRequired"));
+      return;
+    }
 
     state.setLastSelectedText(selectedText);
     state.setLastInstruction(entry.instruction);
@@ -262,7 +309,7 @@ export default function HistoryPanel() {
     }
   };
 
-  const handleAddToQuickAction = (entry: HistoryEntry) => {
+  const handleAddToQuickAction = async (entry: HistoryEntry) => {
     if (!entry.instruction) return;
 
     const state = useAppStore.getState();
@@ -279,7 +326,13 @@ export default function HistoryPanel() {
       instruction: entry.instruction,
     };
 
-    state.setQuickActionCommands([...existing, newCommand]);
+    const nextCommands = [...existing, newCommand];
+    state.setQuickActionCommands(nextCommands);
+    try {
+      await emit("neuropen://settings-saved", { quickActionCommands: nextCommands });
+    } catch (err) {
+      console.error("[History] quick-action settings sync failed:", err);
+    }
   };
 
   const handleRate = async (entry: HistoryEntry, rating: PreferenceFeedbackRating) => {
@@ -359,6 +412,12 @@ export default function HistoryPanel() {
           {t("history.filterFavorites")}
         </button>
       </div>
+
+      {actionMessage ? (
+        <p role="alert" className="mx-3 mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+          {actionMessage}
+        </p>
+      ) : null}
 
       {/* Entry list */}
       <div className="flex-1 overflow-auto">

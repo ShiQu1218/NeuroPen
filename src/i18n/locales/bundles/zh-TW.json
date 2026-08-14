@@ -387,6 +387,7 @@
     "history.favorite": "收藏",
     "history.unfavorite": "取消收藏",
     "history.noInstruction": "此紀錄沒有可用的指令",
+    "history.selectionRequired": "請先在其他應用程式選取文字，再套用此指令。",
     "history.filterAll": "全部",
     "history.filterFavorites": "收藏",
     "history.feedbackUp": "有幫助",

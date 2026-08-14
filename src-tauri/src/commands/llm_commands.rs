@@ -167,3 +167,9 @@ pub async fn list_available_llm_models(provider: llm::LlmProvider) -> Result<Vec
 pub fn clear_conversation() {
     llm::clear_conversation();
 }
+
+/// Stop the in-flight generation associated with a preview request id.
+#[tauri::command]
+pub fn cancel_llm_request(request_id: String) -> bool {
+    llm::cancel_llm_request(&request_id)
+}

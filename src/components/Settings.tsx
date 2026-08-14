@@ -118,6 +118,9 @@ interface TtsTextDrafts {
 
 const EMPTY_PANEL_MESSAGE: PanelMessage = { tone: "", message: "" };
 const EMPTY_BUSY_MESSAGE = { type: "" as const, message: "" };
+type SettingsSavedPayload = LlmSettingsSavedPayload & {
+  quickActionCommands?: QuickActionCommand[];
+};
 const DEFAULT_MODE_PROMPTS = {
   modeAPrompt: DEFAULT_MODE_A_PROMPT,
   modeBPrompt: DEFAULT_MODE_B_PROMPT,
@@ -514,7 +517,7 @@ export default function Settings() {
   useEffect(() => {
     let disposed = false;
     let unlistenSettings: (() => void) | undefined;
-    void listen<LlmSettingsSavedPayload>("neuropen://settings-saved", (event) => {
+    void listen<SettingsSavedPayload>("neuropen://settings-saved", (event) => {
       if (disposed) {
         return;
       }
@@ -529,6 +532,9 @@ export default function Settings() {
       if (payload.llmModelOptions) {
         setLlmModelOptions(payload.llmModelOptions);
       }
+      if (payload.quickActionCommands) {
+        setQuickActionCommands(payload.quickActionCommands);
+      }
     }).then((dispose) => {
       if (disposed) {
         dispose();
@@ -541,7 +547,18 @@ export default function Settings() {
       disposed = true;
       unlistenSettings?.();
     };
-  }, [setLlmModel, setLlmModelOptions, setLlmProvider]);
+  }, [setLlmModel, setLlmModelOptions, setLlmProvider, setQuickActionCommands]);
+
+  useEffect(() => {
+    // A command added from History is persisted immediately and broadcast to
+    // other windows. Preserve any in-progress edits while bringing that new
+    // command into this form's draft so a later Save cannot drop it again.
+    setQuickActionDraftCommands((draft) => {
+      const draftIds = new Set(draft.map((command) => command.id));
+      const addedCommands = quickActionCommands.filter((command) => !draftIds.has(command.id));
+      return addedCommands.length > 0 ? [...draft, ...addedCommands] : draft;
+    });
+  }, [quickActionCommands]);
 
   useEffect(
     () => () => {
@@ -2068,6 +2085,10 @@ export default function Settings() {
                 onPromptDraftChange={(patch) => handleProfilePromptDraftChange(activeProfile.id, patch)}
                 onSavePromptFields={() => handleSaveProfilePrompts(activeProfile.id)}
                 onOpenLanguageVariantPicker={() => setLanguageVariantOverlay({ scope: "profile", profileId: activeProfile.id })}
+                isChildOverlayOpen={
+                  languageVariantOverlay?.scope === "profile" &&
+                  languageVariantOverlay.profileId === activeProfile.id
+                }
                 t={t}
               />
             )}

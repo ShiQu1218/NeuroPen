@@ -352,6 +352,7 @@
     "history.favorite": "Favorito",
     "history.unfavorite": "Quitar de favoritos",
     "history.noInstruction": "No hay instrucción disponible para esta entrada",
+    "history.selectionRequired": "Selecciona texto en otra aplicación antes de aplicar esta instrucción.",
     "history.filterAll": "Todo",
     "history.filterFavorites": "Favoritos",
     "quickAction.title": "Acciones rápidas",

@@ -33,6 +33,7 @@ interface SettingsAppProfileEditorOverlayProps {
   onPromptDraftChange: (patch: { toneHint?: string; promptAppendix?: string }) => void;
   onSavePromptFields: () => void | Promise<void>;
   onOpenLanguageVariantPicker: () => void;
+  isChildOverlayOpen: boolean;
   t: (key: TranslationKey, params?: Record<string, string>) => string;
 }
 
@@ -51,6 +52,7 @@ export default function SettingsAppProfileEditorOverlay({
   onPromptDraftChange,
   onSavePromptFields,
   onOpenLanguageVariantPicker,
+  isChildOverlayOpen,
   t,
 }: SettingsAppProfileEditorOverlayProps) {
   const [keywordInput, setKeywordInput] = useState("");
@@ -58,13 +60,14 @@ export default function SettingsAppProfileEditorOverlay({
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !isChildOverlayOpen) {
+        event.preventDefault();
         onClose();
       }
     };
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
+  }, [isChildOverlayOpen, onClose]);
 
   const languageSummary = getLanguageVariantSelectionSummary(
     profile.preferredLanguage,

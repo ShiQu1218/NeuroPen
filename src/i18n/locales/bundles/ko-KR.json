@@ -352,6 +352,7 @@
     "history.favorite": "즐겨찾기",
     "history.unfavorite": "즐겨찾기 해제",
     "history.noInstruction": "이 항목에 사용 가능한 명령이 없습니다",
+    "history.selectionRequired": "이 지시를 적용하기 전에 다른 앱에서 텍스트를 선택하세요.",
     "history.filterAll": "전체",
     "history.filterFavorites": "즐겨찾기",
     "quickAction.title": "빠른 작업",

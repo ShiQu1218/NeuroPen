@@ -53,7 +53,13 @@ export function useMainWindowController() {
     let cancelled = false;
     const unlisten: Array<() => void> = [];
     const selectionState = createSelectionListenerState();
-    let pendingHotkeyReleaseAt = 0;
+    // The native hotkey events and microphone startup are asynchronous. Keep the
+    // physical press state separate from the store so a release that happens
+    // during initialization is still honoured after a slow device/API startup.
+    let hotkeyHeld = false;
+    let recordingStartupInFlight = false;
+    let releaseRequestedDuringStartup = false;
+    let recordingStopInFlight = false;
 
     const safeRegister: SafeRegister = async (event, handler) => {
       const u = await listen(event, handler);
@@ -68,7 +74,8 @@ export function useMainWindowController() {
       // Keep every stop path here so hotkey release, early aborts, and failures
       // all reset recording state and status text the same way.
       const store = useAppStore.getState();
-      if (!store.isRecording) return;
+      if (!store.isRecording || recordingStopInFlight) return;
+      recordingStopInFlight = true;
       try {
         const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
         await mainWindowService.stopRecording(
@@ -77,14 +84,14 @@ export function useMainWindowController() {
           normalizeSttLanguage(store.sttLanguage),
         );
         store.setIsRecording(false);
-        pendingHotkeyReleaseAt = 0;
         setStatusMsg(tLive("status.recognizing"));
       } catch (err) {
         console.error("[App] stop_recording failed:", err);
         store.setSttError(String(err));
         store.setIsRecording(false);
-        pendingHotkeyReleaseAt = 0;
         setStatusMsg(tLive("status.stopRecordingFailed"));
+      } finally {
+        recordingStopInFlight = false;
       }
     };
 
@@ -96,7 +103,6 @@ export function useMainWindowController() {
       if (hasKey) {
         return true;
       }
-      pendingHotkeyReleaseAt = 0;
       const store = useAppStore.getState();
       store.setSttError(tLive("error.sttApiKeyRequired"));
       setStatusMsg(tLive("status.setupSttApiKey"));
@@ -105,6 +111,11 @@ export function useMainWindowController() {
 
     const startRecordingCapture = async (sttEngine: ReturnType<typeof normalizeSttEngine>) => {
       const store = useAppStore.getState();
+      // Avoid opening the microphone at all if the key was released while an
+      // earlier preparation step (for example API-key validation) was pending.
+      if (!hotkeyHeld || releaseRequestedDuringStartup) {
+        return;
+      }
       try {
         await mainWindowService.startRecording();
         // Partial STT is best-effort UI feedback; final routing still comes from the
@@ -114,19 +125,17 @@ export function useMainWindowController() {
           sttEngine !== "openAi" ? store.sttModelPath : "",
         ).catch((err) => console.warn("[App] streaming STT start failed:", err));
         store.setIsRecording(true);
-        // If the key was released while startup was still in flight, stop immediately
-        // after capture begins so the press-and-hold interaction still feels correct.
-        if (pendingHotkeyReleaseAt > 0 && Date.now() - pendingHotkeyReleaseAt < 800) {
+        // Do not time-limit this latch: starting some audio devices can take longer
+        // than the old 800 ms grace period. Once released, capture must stop even
+        // when startup finishes much later.
+        if (!hotkeyHeld || releaseRequestedDuringStartup) {
           await stopRecordingNow();
-        } else {
-          pendingHotkeyReleaseAt = 0;
         }
       } catch (err) {
         console.error("[App] start_recording failed:", err);
         store.setSttError(String(err));
         store.setIsRecording(false);
         setStatusMsg(tLive("status.recordingStartFailed"));
-        pendingHotkeyReleaseAt = 0;
       }
     };
 
@@ -177,6 +186,32 @@ export function useMainWindowController() {
         }
       );
 
+      await safeRegister<{ requestId?: string }>(
+        "neuropen://cancel-preview-request",
+        (event) => {
+          const requestId = event.payload.requestId?.trim();
+          if (!requestId) {
+            return;
+          }
+
+          // Ask the backend to drop the matching network task even when this
+          // window has already advanced to another request. Its registry also
+          // records an early cancellation if the invoke has not registered yet.
+          void mainWindowService.cancelLlmRequest(requestId).catch((err) => {
+            console.warn("[App] cancel preview request failed:", err);
+          });
+
+          const store = useAppStore.getState();
+          if (requestId !== store.currentRequestId) {
+            return;
+          }
+          store.setLlmOutput("");
+          store.setIsLlmLoading(false);
+          store.setLlmError("");
+          store.clearCurrentRequestContext();
+        }
+      );
+
       await registerSelectionListeners({
         safeRegister,
         selectionState,
@@ -187,7 +222,7 @@ export function useMainWindowController() {
         const store = useAppStore.getState();
 
         // Already recording → ignore (key repeat)
-        if (store.isRecording) {
+        if (store.isRecording || recordingStartupInFlight) {
           return;
         }
         if (!store.sttEnabled) {
@@ -196,30 +231,43 @@ export function useMainWindowController() {
           return;
         }
 
-        // ── New session ──
-        const { has_selection, selected_text } = event.payload;
-        if (import.meta.env.DEV) console.log("[App] neuropen://mode-start", event.payload);
+        hotkeyHeld = true;
+        releaseRequestedDuringStartup = false;
+        recordingStartupInFlight = true;
+        try {
+          // ── New session ──
+          const { has_selection, selected_text } = event.payload;
+          if (import.meta.env.DEV) console.log("[App] neuropen://mode-start", event.payload);
 
-        resetSession();
-        const sttEngine = normalizeSttEngine(store.sttEngine);
+          resetSession();
+          const sttEngine = normalizeSttEngine(store.sttEngine);
 
-        if (has_selection && selected_text && store.selectionEnabled) {
-          await prepareSelectionRecording(selected_text);
-          if (await ensureSttReady(sttEngine)) {
-            await startRecordingCapture(sttEngine);
+          if (has_selection && selected_text && store.selectionEnabled) {
+            await prepareSelectionRecording(selected_text);
+            if (await ensureSttReady(sttEngine)) {
+              await startRecordingCapture(sttEngine);
+            }
+          } else {
+            store.setCurrentMode("A");
+            setStatusMsg(tLive("status.recordingReleaseToStop"));
+            if (await ensureSttReady(sttEngine)) {
+              await startRecordingCapture(sttEngine);
+            }
           }
-        } else {
-          store.setCurrentMode("A");
-          setStatusMsg(tLive("status.recordingReleaseToStop"));
-          if (await ensureSttReady(sttEngine)) {
-            await startRecordingCapture(sttEngine);
+        } finally {
+          recordingStartupInFlight = false;
+          if (!useAppStore.getState().isRecording) {
+            releaseRequestedDuringStartup = false;
           }
         }
       });
 
       // ── 2. hotkey RELEASE → stop recording ──
       await safeRegister("neuropen://hotkey-release", async () => {
-        pendingHotkeyReleaseAt = Date.now();
+        hotkeyHeld = false;
+        if (recordingStartupInFlight) {
+          releaseRequestedDuringStartup = true;
+        }
         console.log("[App] hotkey released → stopping recording");
         await stopRecordingNow();
       });
@@ -251,50 +299,32 @@ export function useMainWindowController() {
         "llm://result",
         (event) => {
           const store = useAppStore.getState();
-          if (
-            event.payload.requestId &&
-            store.currentRequestId &&
-            event.payload.requestId !== store.currentRequestId
-          ) {
+          const requestId = event.payload.requestId?.trim();
+          if (!requestId || requestId !== store.currentRequestId) {
             return;
           }
-          if (event.payload.outputMode !== "DirectInject") {
-            return;
-          }
-          // Direct inject skips preview token updates, so keep the final output in
-          // store long enough for the shared history-save handler to persist it.
+          // The backend emits a final result for both output modes. Keep it in the
+          // main-window store so PreviewStream sessions can be persisted even
+          // though incremental tokens belong to the Preview window.
           store.setLlmOutput(event.payload.text);
+
+          if (event.payload.text.trim() && !store.incognito && store.historyEnabled) {
+            const mode = store.currentMode || "C";
+            void mainWindowService.historySave({
+              mode,
+              inputText: store.lastSelectedText || "",
+              instruction: store.lastInstruction || "",
+              output: event.payload.text,
+              provider: store.llmProvider,
+              model: store.llmModel,
+              requestId,
+              preferenceCategoryKey: store.currentPreferenceCategoryKey || undefined,
+              preferenceCategoryLabel: store.currentPreferenceCategoryLabel || undefined,
+              quickActionCommandId: store.currentQuickActionCommandId || undefined,
+            });
+          }
         }
       );
-
-      // ── 3.5. History save on LLM done (Feature 3) ──
-      await safeRegister<{ requestId?: string }>("llm://done", (event) => {
-        const s = useAppStore.getState();
-        if (
-          event.payload?.requestId &&
-          s.currentRequestId &&
-          event.payload.requestId !== s.currentRequestId
-        ) {
-          return;
-        }
-        if (s.llmOutput.trim() && !s.incognito && s.historyEnabled) {
-          // Preview sessions can finish without direct injection, so persist the
-          // generated result here when the backend signals completion.
-          const mode = s.currentMode || "C";
-          void mainWindowService.historySave({
-            mode,
-            inputText: s.lastSelectedText || "",
-            instruction: s.lastInstruction || "",
-            output: s.llmOutput,
-            provider: s.llmProvider,
-            model: s.llmModel,
-            requestId: s.currentRequestId || undefined,
-            preferenceCategoryKey: s.currentPreferenceCategoryKey || undefined,
-            preferenceCategoryLabel: s.currentPreferenceCategoryLabel || undefined,
-            quickActionCommandId: s.currentQuickActionCommandId || undefined,
-          });
-        }
-      });
 
       // ── 3.6. STT metrics (Feature 13) ──
       await safeRegister<{ durationMs: number; audioLengthSecs: number }>(

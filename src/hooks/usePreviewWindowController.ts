@@ -126,6 +126,9 @@ export function usePreviewWindowController() {
   const inputRef = useRef<HTMLInputElement>(null);
   const toastTimerRef = useRef<number | null>(null);
   const keyboardCopyBlockedUntilRef = useRef(0);
+  const previewSessionGenerationRef = useRef(0);
+  const requestLaunchGenerationRef = useRef<number | null>(null);
+  const replaceInFlightRef = useRef(false);
   const { t } = useI18n();
 
   const llmOutput = useAppStore((state) => state.llmOutput);
@@ -192,6 +195,7 @@ export function usePreviewWindowController() {
 
   usePreviewEventSync({
     fallbackTtsActiveRef,
+    sessionGenerationRef: previewSessionGenerationRef,
     setAnimKey,
     setPreviewSession,
   });
@@ -221,6 +225,7 @@ export function usePreviewWindowController() {
       return false;
     }
     setPreviewSession((current) => ({
+      generation: current?.generation ?? previewSessionGenerationRef.current,
       type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
       selectedText: current?.selectedText ?? "",
       sourceMode: current?.sourceMode ?? "C",
@@ -245,17 +250,37 @@ export function usePreviewWindowController() {
     ) => {
       const state = useAppStore.getState();
       const input = instruction.trim();
-      if (!input) return;
-      const selectedText = previewSession?.type === "text" ? previewSession.selectedText : "";
-      const sourceMode = previewSession?.sourceMode ?? "C";
-      const attachments = options?.attachments ?? previewSession?.attachments ?? [];
+      if (
+        !input ||
+        state.isLlmLoading ||
+        requestLaunchGenerationRef.current === previewSessionGenerationRef.current
+      ) {
+        return;
+      }
+
+      const sessionGeneration = previewSessionGenerationRef.current;
+      const session = previewSession;
+      if (!session || session.generation !== sessionGeneration) {
+        return;
+      }
+      const isCurrentSession = () => previewSessionGenerationRef.current === sessionGeneration;
+      const finishLaunch = () => {
+        if (requestLaunchGenerationRef.current === sessionGeneration) {
+          requestLaunchGenerationRef.current = null;
+        }
+      };
+      requestLaunchGenerationRef.current = sessionGeneration;
+
+      const selectedText = session.type === "text" ? session.selectedText : "";
+      const sourceMode = session.sourceMode;
+      const attachments = options?.attachments ?? session.attachments;
       const attachmentsSnapshot = attachments;
       const imageAttachments = attachments.filter((attachment) => attachment.kind === "image");
       const instructionToSend = buildAttachmentInstruction(input, selectedText, attachments);
       const { promptMode, promptOverride: basePrompt } = resolvePromptForPreviewMode(sourceMode);
       const streamOutput = resolveStreamingForPreviewMode(sourceMode);
-      const sessionCommand = previewSession?.quickActionCommandId
-        ? state.quickActionCommands.find((command) => command.id === previewSession.quickActionCommandId)
+      const sessionCommand = session.quickActionCommandId
+        ? state.quickActionCommands.find((command) => command.id === session.quickActionCommandId)
         : undefined;
       const categoryCommand = options?.command ?? sessionCommand;
       const category = categoryCommand
@@ -266,18 +291,26 @@ export function usePreviewWindowController() {
         state.preferenceLearningEnabled
           ? await mainWindowService.preferenceGetSummary(category.key).catch(() => null)
           : null;
+      // The session can be replaced or closed while preference data is loading.
+      // Do not let that stale continuation launch or alter a newer request.
+      if (!isCurrentSession()) {
+        finishLaunch();
+        return;
+      }
       const promptOverride = composePromptOverride(
         basePrompt,
-        previewSession?.promptAppendix ?? "",
+        session.promptAppendix,
         learnedSummary ?? "",
       );
       const preferredLanguage =
-        previewSession?.preferredLanguage.trim() ||
+        session.preferredLanguage.trim() ||
         resolveLanguageVariantPromptInstructionForText(
           `${selectedText}\n${instructionToSend}`,
           state.preferredLanguage,
           state.customLanguageVariants
         );
+      const isCurrentRequest = () =>
+        isCurrentSession() && useAppStore.getState().currentRequestId === requestId;
       // Attachments are one-shot context for the current question. Clear them once
       // the request is launched so follow-up refinements do not resend stale files.
       state.setCurrentRequestContext({
@@ -288,6 +321,9 @@ export function usePreviewWindowController() {
       });
       state.setCurrentFeedbackRating(null);
       setPreviewSession((current) => {
+        if (!isCurrentSession()) {
+          return current;
+        }
         const next = clearPreviewAttachments(current);
         if (!next) {
           return next;
@@ -304,15 +340,29 @@ export function usePreviewWindowController() {
           feedbackRating: null,
         };
       });
-      await emit("neuropen://llm-session-context", {
-        mode: sourceMode,
-        selectedText,
-        instruction: input,
-        requestId,
-        preferenceCategoryKey: category.key,
-        preferenceCategoryLabel: category.label,
-        quickActionCommandId: category.quickActionCommandId,
-      });
+      try {
+        await emit("neuropen://llm-session-context", {
+          mode: sourceMode,
+          selectedText,
+          instruction: input,
+          requestId,
+          preferenceCategoryKey: category.key,
+          preferenceCategoryLabel: category.label,
+          quickActionCommandId: category.quickActionCommandId,
+        });
+      } catch (err) {
+        if (isCurrentRequest()) {
+          const reason = err instanceof Error ? err.message : String(err);
+          setIsLlmLoading(false);
+          setLlmError(reason);
+        }
+        finishLaunch();
+        return;
+      }
+      if (!isCurrentRequest()) {
+        finishLaunch();
+        return;
+      }
       setLlmOutput("");
       setIsLlmLoading(true);
       setLlmError("");
@@ -348,12 +398,15 @@ export function usePreviewWindowController() {
           });
         }
       } catch (err) {
+        if (!isCurrentRequest()) {
+          return;
+        }
         const reason = err instanceof Error ? err.message : String(err);
         if (attachmentsSnapshot.length > 0) {
           // Restore one-shot attachments when the request fails so the user can
           // retry without re-picking files or losing screenshot context.
           setPreviewSession((current) => {
-            if (!current || current.attachments.length > 0) {
+            if (!isCurrentRequest() || !current || current.attachments.length > 0) {
               return current;
             }
             return {
@@ -366,7 +419,10 @@ export function usePreviewWindowController() {
         setLlmError(reason);
       } finally {
         // Fallback: if backend done/error event is missed, ensure UI exits loading state.
-        setIsLlmLoading(false);
+        if (isCurrentRequest()) {
+          setIsLlmLoading(false);
+        }
+        finishLaunch();
       }
     },
     [previewSession, resolvePromptForPreviewMode, resolveStreamingForPreviewMode, setIsLlmLoading, setLlmError, setLlmOutput, t]
@@ -488,6 +544,7 @@ export function usePreviewWindowController() {
       const previewAttachments = retainedAttachments.map(toPreviewAttachmentFromCommand);
       const nextAttachments = dedupeAttachments([...(previewSession?.attachments ?? []), ...previewAttachments]);
       setPreviewSession((current) => ({
+        generation: current?.generation ?? previewSessionGenerationRef.current,
         type: current?.type === "screenshot" ? "text" : (current?.type ?? "text"),
         selectedText: current?.selectedText ?? "",
         sourceMode: current?.sourceMode ?? "C",
@@ -692,47 +749,93 @@ export function usePreviewWindowController() {
   }, [llmOutput, showToast, t]);
 
   const handleReplace = useCallback(async () => {
-    const restored = await invoke<boolean>("restore_focus");
-    if (!restored) {
-      setLlmError(t("preview.replaceNoTarget"));
+    const state = useAppStore.getState();
+    const output = state.llmOutput;
+    if (
+      state.isLlmLoading ||
+      !output.trim() ||
+      isDragInteractionLocked() ||
+      replaceInFlightRef.current
+    ) {
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const focusOk = await invoke<boolean>("verify_focus");
-    if (!focusOk) {
-      setLlmError(t("preview.replaceFocusChanged"));
+
+    replaceInFlightRef.current = true;
+    try {
+      const restored = await invoke<boolean>("restore_focus");
+      if (!restored) {
+        setLlmError(t("preview.replaceNoTarget"));
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const focusOk = await invoke<boolean>("verify_focus");
+      if (!focusOk) {
+        setLlmError(t("preview.replaceFocusChanged"));
+        await invoke("restore_clipboard");
+        return;
+      }
+      await invoke("inject_text", { text: output, recordForUndo: true });
+      await new Promise((resolve) => setTimeout(resolve, 150));
       await invoke("restore_clipboard");
-      return;
+      showToast(t("preview.replaceSuccess"), 900);
+      await setPreviewFocusable(true, true);
+    } finally {
+      replaceInFlightRef.current = false;
     }
-    await invoke("inject_text", { text: llmOutput, recordForUndo: true });
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    await invoke("restore_clipboard");
-    showToast(t("preview.replaceSuccess"), 900);
-    await setPreviewFocusable(true, true);
-  }, [llmOutput, setLlmError, setPreviewFocusable, showToast, t]);
+  }, [isDragInteractionLocked, setLlmError, setPreviewFocusable, showToast, t]);
 
   const handleClose = useCallback(async () => {
-    stopFallbackTts();
-    await invoke("tts_stop").catch(() => { });
-    await invoke("clear_conversation");
-    await setPreviewFocusable(false);
-    await resetPreviewWindowSize();
-    await getCurrentWindow().hide();
+    const closingGeneration = previewSessionGenerationRef.current + 1;
+    previewSessionGenerationRef.current = closingGeneration;
+    const state = useAppStore.getState();
+    const requestId = state.currentRequestId.trim();
+
+    // Clear the active request before the first await so late stream events from
+    // the hidden session have no matching context to update.
+    state.clearCurrentRequestContext();
     setLlmOutput("");
     setIsLlmLoading(false);
     setLlmError("");
     setRefinementInput("");
     setToastMessage("");
     setPreviewSession(null);
-    useAppStore.getState().clearCurrentRequestContext();
+
+    if (requestId) {
+      void emit("neuropen://cancel-preview-request", { requestId }).catch((err) => {
+        console.warn("[Preview] cancel active request failed:", err);
+      });
+    }
+    stopFallbackTts();
+    await invoke("tts_stop").catch(() => { });
+    if (previewSessionGenerationRef.current !== closingGeneration) return;
+    await invoke("clear_conversation").catch((err) => {
+      console.warn("[Preview] clear_conversation failed while closing:", err);
+    });
+    if (previewSessionGenerationRef.current !== closingGeneration) return;
+    await setPreviewFocusable(false);
+    if (previewSessionGenerationRef.current !== closingGeneration) return;
+    await resetPreviewWindowSize().catch((err) => {
+      console.warn("[Preview] reset size failed while closing:", err);
+    });
+    if (previewSessionGenerationRef.current !== closingGeneration) return;
+    await getCurrentWindow().hide();
   }, [setIsLlmLoading, setLlmError, setLlmOutput, setPreviewFocusable, stopFallbackTts]);
 
   const handleRefinement = useCallback(async () => {
     const input = refinementInput.trim();
-    if (!input) return;
+    const session = previewSession;
+    if (
+      !input ||
+      useAppStore.getState().isLlmLoading ||
+      !session ||
+      session.generation !== previewSessionGenerationRef.current ||
+      requestLaunchGenerationRef.current === previewSessionGenerationRef.current
+    ) {
+      return;
+    }
     setRefinementInput("");
     await runPreviewInstruction(input);
-  }, [refinementInput, runPreviewInstruction]);
+  }, [previewSession, refinementInput, runPreviewInstruction]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -760,13 +863,17 @@ export function usePreviewWindowController() {
         return;
       }
       if (event.ctrlKey && event.key === "Enter") {
+        // The refinement input handles its own Ctrl+Enter so it cannot submit a
+        // follow-up and replace text in the same keypress.
+        if (isEditableTarget) {
+          return;
+        }
         event.preventDefault();
+        const state = useAppStore.getState();
+        if (state.isLlmLoading || !state.llmOutput.trim() || isDragInteractionLocked()) {
+          return;
+        }
         void handleReplace();
-        return;
-      }
-      if (event.key === "Tab" && !event.shiftKey) {
-        event.preventDefault();
-        inputRef.current?.focus();
         return;
       }
       if (event.ctrlKey && event.key === "t") {
@@ -796,7 +903,7 @@ export function usePreviewWindowController() {
     handleSaveDocumentQuickAction,
     handleStartDrag,
     handleTtsToggle,
-    hasOutput: llmOutput.length > 0,
+    hasOutput: llmOutput.trim().length > 0,
     inputRef,
     isFileDragActive,
     isDragInteractionLocked,

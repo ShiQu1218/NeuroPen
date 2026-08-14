@@ -19,14 +19,25 @@
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, Instant},
+};
 use tauri::Emitter;
+use tokio::sync::watch;
 
 mod formatting;
 
 const DEFAULT_HTTP_TIMEOUT_SECS: u64 = 60;
 const LOCAL_OPENAI_COMPATIBLE_TIMEOUT_SECS: u64 = 300;
 const HTTP_CONNECT_TIMEOUT_SECS: u64 = 10;
+const LLM_REQUEST_CANCELLED: &str = "LLM request cancelled";
+const PENDING_CANCELLATION_TTL: Duration = Duration::from_secs(30);
 
 /// Shared HTTP client — reuses TCP/TLS connections across LLM calls.
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
@@ -36,6 +47,227 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .build()
         .expect("Failed to build HTTP client")
 });
+
+/// Cancellation is keyed by the frontend request id so closing or replacing a
+/// preview can drop the matching network future without affecting a newer one.
+struct LlmRequestCancellation {
+    cancelled: AtomicBool,
+    cancel_tx: watch::Sender<bool>,
+    created_at: Instant,
+    side_effect_gate: Mutex<()>,
+    // Keep one receiver alive so `send(true)` also works before the request task
+    // starts waiting on a cloned receiver.
+    _cancel_rx: watch::Receiver<bool>,
+}
+
+impl LlmRequestCancellation {
+    fn new() -> Self {
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        Self {
+            cancelled: AtomicBool::new(false),
+            cancel_tx,
+            created_at: Instant::now(),
+            side_effect_gate: Mutex::new(()),
+            _cancel_rx: cancel_rx,
+        }
+    }
+
+    fn cancel(&self) {
+        let _gate = self
+            .side_effect_gate
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        self.cancelled.store(true, Ordering::Release);
+        let _ = self.cancel_tx.send(true);
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    fn subscribe(&self) -> watch::Receiver<bool> {
+        self.cancel_tx.subscribe()
+    }
+}
+
+struct ActiveLlmRequest {
+    cancellation: Arc<LlmRequestCancellation>,
+    /// `None` represents a cancellation event that arrived before Tauri had
+    /// started handling the matching request command.
+    registered_at: Option<Instant>,
+}
+
+static ACTIVE_LLM_REQUESTS: Lazy<Mutex<HashMap<String, ActiveLlmRequest>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn discard_expired_pending_cancellations(active_requests: &mut HashMap<String, ActiveLlmRequest>) {
+    active_requests.retain(|_, request| {
+        request.registered_at.is_some()
+            || request.cancellation.created_at.elapsed() < PENDING_CANCELLATION_TTL
+    });
+}
+
+struct ActiveRequestCleanup {
+    request_id: Option<String>,
+    cancellation: Option<Arc<LlmRequestCancellation>>,
+}
+
+impl Drop for ActiveRequestCleanup {
+    fn drop(&mut self) {
+        let (Some(request_id), Some(cancellation)) =
+            (self.request_id.as_deref(), self.cancellation.as_ref())
+        else {
+            return;
+        };
+
+        let Ok(mut active_requests) = ACTIVE_LLM_REQUESTS.lock() else {
+            return;
+        };
+        if active_requests
+            .get(request_id)
+            .is_some_and(|active| Arc::ptr_eq(&active.cancellation, cancellation))
+        {
+            active_requests.remove(request_id);
+        }
+    }
+}
+
+fn register_request_cancellation(
+    request_id: Option<&str>,
+) -> (Option<Arc<LlmRequestCancellation>>, ActiveRequestCleanup) {
+    let request_id = request_id
+        .map(str::trim)
+        .filter(|request_id| !request_id.is_empty())
+        .map(str::to_owned);
+    let cancellation = request_id.as_deref().and_then(|request_id| {
+        let Ok(mut active_requests) = ACTIVE_LLM_REQUESTS.lock() else {
+            return None;
+        };
+        discard_expired_pending_cancellations(&mut active_requests);
+
+        let cancellation = match active_requests.get_mut(request_id) {
+            Some(active) if active.registered_at.is_none() => {
+                // A close/switch event won the race against command registration.
+                // Consume that one-shot cancellation so this request never starts.
+                active.registered_at = Some(Instant::now());
+                active.cancellation.clone()
+            }
+            Some(previous) => {
+                // Request ids are expected to be unique. If a caller reuses one,
+                // make the older generation exit before it can publish stale output.
+                previous.cancellation.cancel();
+                let cancellation = Arc::new(LlmRequestCancellation::new());
+                *previous = ActiveLlmRequest {
+                    cancellation: cancellation.clone(),
+                    registered_at: Some(Instant::now()),
+                };
+                cancellation
+            }
+            None => {
+                let cancellation = Arc::new(LlmRequestCancellation::new());
+                active_requests.insert(
+                    request_id.to_string(),
+                    ActiveLlmRequest {
+                        cancellation: cancellation.clone(),
+                        registered_at: Some(Instant::now()),
+                    },
+                );
+                cancellation
+            }
+        };
+        Some(cancellation)
+    });
+    let cleanup = ActiveRequestCleanup {
+        request_id,
+        cancellation: cancellation.clone(),
+    };
+    (cancellation, cleanup)
+}
+
+/// Cancel an active request. A cancellation received before request registration
+/// is retained briefly and consumed by that matching request; `false` only means
+/// the id was blank or the registry lock was unavailable.
+pub fn cancel_llm_request(request_id: &str) -> bool {
+    let request_id = request_id.trim();
+    if request_id.is_empty() {
+        return false;
+    }
+    let Ok(mut active_requests) = ACTIVE_LLM_REQUESTS.lock() else {
+        return false;
+    };
+    discard_expired_pending_cancellations(&mut active_requests);
+    if let Some(active) = active_requests.get(request_id) {
+        active.cancellation.cancel();
+        return true;
+    }
+
+    // Record a bounded, one-shot cancellation for the small interval where the
+    // preview closes before the corresponding Tauri command has registered.
+    let cancellation = Arc::new(LlmRequestCancellation::new());
+    cancellation.cancel();
+    active_requests.insert(
+        request_id.to_string(),
+        ActiveLlmRequest {
+            cancellation,
+            registered_at: None,
+        },
+    );
+    true
+}
+
+fn request_is_cancelled(cancellation: Option<&LlmRequestCancellation>) -> bool {
+    cancellation.is_some_and(LlmRequestCancellation::is_cancelled)
+}
+
+/// Serialize terminal side effects with cancellation. Once `cancel_llm_request`
+/// returns, a later token, history write, result, or done event cannot begin.
+fn perform_if_request_active<T>(
+    cancellation: Option<&LlmRequestCancellation>,
+    operation: impl FnOnce() -> T,
+) -> Option<T> {
+    let Some(cancellation) = cancellation else {
+        return Some(operation());
+    };
+    let _gate = cancellation
+        .side_effect_gate
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if cancellation.is_cancelled() {
+        return None;
+    }
+    Some(operation())
+}
+
+async fn wait_for_request_cancellation(mut receiver: watch::Receiver<bool>) {
+    if *receiver.borrow() {
+        return;
+    }
+    while receiver.changed().await.is_ok() {
+        if *receiver.borrow() {
+            return;
+        }
+    }
+}
+
+async fn await_with_request_cancellation<T, F>(
+    cancellation: Option<&LlmRequestCancellation>,
+    operation: F,
+) -> Option<T>
+where
+    F: Future<Output = T>,
+{
+    let Some(cancellation) = cancellation else {
+        return Some(operation.await);
+    };
+    if cancellation.is_cancelled() {
+        return None;
+    }
+    let receiver = cancellation.subscribe();
+    tokio::select! {
+        output = operation => Some(output),
+        () = wait_for_request_cancellation(receiver) => None,
+    }
+}
 
 /// Controls where LLM output is sent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -90,7 +322,12 @@ pub struct LlmDone {
     pub request_id: Option<String>,
 }
 
-async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str, request_id: Option<&str>) {
+async fn emit_output_stream(
+    app: &tauri::AppHandle,
+    full_output: &str,
+    request_id: Option<&str>,
+    cancellation: Option<&LlmRequestCancellation>,
+) {
     const CHUNK_CHARS: usize = 24;
     const CHUNK_DELAY_MS: u64 = 12;
 
@@ -98,30 +335,44 @@ async fn emit_output_stream(app: &tauri::AppHandle, full_output: &str, request_i
     let mut chunk_len = 0usize;
 
     for ch in full_output.chars() {
+        if request_is_cancelled(cancellation) {
+            return;
+        }
         chunk.push(ch);
         chunk_len += 1;
         if chunk_len >= CHUNK_CHARS {
-            let _ = app.emit(
-                "llm://token",
-                LlmToken {
-                    text: chunk.clone(),
-                    request_id: request_id.map(|value| value.to_string()),
-                },
-            );
+            if perform_if_request_active(cancellation, || {
+                let _ = app.emit(
+                    "llm://token",
+                    LlmToken {
+                        text: chunk.clone(),
+                        request_id: request_id.map(|value| value.to_string()),
+                    },
+                );
+            })
+            .is_none()
+            {
+                return;
+            }
             chunk.clear();
             chunk_len = 0;
             tokio::time::sleep(std::time::Duration::from_millis(CHUNK_DELAY_MS)).await;
         }
     }
 
-    if !chunk.is_empty() {
-        let _ = app.emit(
-            "llm://token",
-            LlmToken {
-                text: chunk,
-                request_id: request_id.map(|value| value.to_string()),
-            },
-        );
+    if !chunk.is_empty()
+        && perform_if_request_active(cancellation, || {
+            let _ = app.emit(
+                "llm://token",
+                LlmToken {
+                    text: chunk,
+                    request_id: request_id.map(|value| value.to_string()),
+                },
+            );
+        })
+        .is_none()
+    {
+        return;
     }
 }
 
@@ -487,18 +738,25 @@ fn emit_token_chunk(
     full_output: &mut String,
     token: &str,
     request_id: Option<&str>,
-) {
+    cancellation: Option<&LlmRequestCancellation>,
+) -> bool {
     if token.is_empty() {
-        return;
+        return !request_is_cancelled(cancellation);
     }
-    full_output.push_str(token);
-    let _ = app.emit(
-        "llm://token",
-        LlmToken {
-            text: token.to_string(),
-            request_id: request_id.map(|value| value.to_string()),
-        },
-    );
+    if request_is_cancelled(cancellation) {
+        return false;
+    }
+    perform_if_request_active(cancellation, || {
+        full_output.push_str(token);
+        let _ = app.emit(
+            "llm://token",
+            LlmToken {
+                text: token.to_string(),
+                request_id: request_id.map(|value| value.to_string()),
+            },
+        );
+    })
+    .is_some()
 }
 
 fn handle_openai_stream_data(
@@ -506,31 +764,36 @@ fn handle_openai_stream_data(
     app: &tauri::AppHandle,
     full_output: &mut String,
     request_id: Option<&str>,
-) {
+    cancellation: Option<&LlmRequestCancellation>,
+) -> bool {
     if data.is_empty() || data == "[DONE]" {
-        return;
+        return !request_is_cancelled(cancellation);
     }
     let parsed: serde_json::Value = match serde_json::from_str(data) {
         Ok(value) => value,
-        Err(_) => return,
+        Err(_) => return !request_is_cancelled(cancellation),
     };
     if let Some(token) = parsed["choices"][0]["delta"]["content"].as_str() {
-        emit_token_chunk(app, full_output, token, request_id);
-        return;
+        return emit_token_chunk(app, full_output, token, request_id, cancellation);
     }
     if let Some(parts) = parsed["choices"][0]["delta"]["content"].as_array() {
         for part in parts {
             if let Some(token) = part["text"].as_str() {
-                emit_token_chunk(app, full_output, token, request_id);
+                if !emit_token_chunk(app, full_output, token, request_id, cancellation) {
+                    return false;
+                }
             } else if let Some(token) = part.as_str() {
-                emit_token_chunk(app, full_output, token, request_id);
+                if !emit_token_chunk(app, full_output, token, request_id, cancellation) {
+                    return false;
+                }
             }
         }
-        return;
+        return !request_is_cancelled(cancellation);
     }
     if let Some(token) = parsed["choices"][0]["message"]["content"].as_str() {
-        emit_token_chunk(app, full_output, token, request_id);
+        return emit_token_chunk(app, full_output, token, request_id, cancellation);
     }
+    !request_is_cancelled(cancellation)
 }
 
 async fn call_openai_compatible_streaming(
@@ -542,7 +805,11 @@ async fn call_openai_compatible_streaming(
     user_message: &str,
     app: &tauri::AppHandle,
     request_id: Option<&str>,
+    cancellation: Option<&LlmRequestCancellation>,
 ) -> Result<String, String> {
+    if request_is_cancelled(cancellation) {
+        return Err(LLM_REQUEST_CANCELLED.to_string());
+    }
     let body = serde_json::json!({
         "model": model,
         "stream": true,
@@ -579,6 +846,9 @@ async fn call_openai_compatible_streaming(
     let mut full_output = String::new();
 
     while let Some(item) = stream.next().await {
+        if request_is_cancelled(cancellation) {
+            return Err(LLM_REQUEST_CANCELLED.to_string());
+        }
         let bytes = item.map_err(|e| format!("LLM stream read failed: {e}"))?;
         pending.push_str(&String::from_utf8_lossy(&bytes));
         while let Some(newline_idx) = pending.find('\n') {
@@ -588,7 +858,9 @@ async fn call_openai_compatible_streaming(
                 continue;
             }
             let data = line["data:".len()..].trim();
-            handle_openai_stream_data(data, app, &mut full_output, request_id);
+            if !handle_openai_stream_data(data, app, &mut full_output, request_id, cancellation) {
+                return Err(LLM_REQUEST_CANCELLED.to_string());
+            }
         }
     }
 
@@ -598,9 +870,14 @@ async fn call_openai_compatible_streaming(
             continue;
         }
         let data = trimmed["data:".len()..].trim();
-        handle_openai_stream_data(data, app, &mut full_output, request_id);
+        if !handle_openai_stream_data(data, app, &mut full_output, request_id, cancellation) {
+            return Err(LLM_REQUEST_CANCELLED.to_string());
+        }
     }
 
+    if request_is_cancelled(cancellation) {
+        return Err(LLM_REQUEST_CANCELLED.to_string());
+    }
     if full_output.is_empty() {
         return Err("LLM streamed empty response".to_string());
     }
@@ -753,7 +1030,11 @@ async fn call_ollama_streaming(
     user_message: &str,
     app: &tauri::AppHandle,
     request_id: Option<&str>,
+    cancellation: Option<&LlmRequestCancellation>,
 ) -> Result<String, String> {
+    if request_is_cancelled(cancellation) {
+        return Err(LLM_REQUEST_CANCELLED.to_string());
+    }
     let body = serde_json::json!({
         "model": model,
         "stream": true,
@@ -785,6 +1066,9 @@ async fn call_ollama_streaming(
     let mut full_output = String::new();
 
     while let Some(item) = stream.next().await {
+        if request_is_cancelled(cancellation) {
+            return Err(LLM_REQUEST_CANCELLED.to_string());
+        }
         let bytes = item.map_err(|e| format!("Ollama stream read failed: {e}"))?;
         pending.push_str(&String::from_utf8_lossy(&bytes));
         while let Some(newline_idx) = pending.find('\n') {
@@ -798,7 +1082,9 @@ async fn call_ollama_streaming(
                 Err(_) => continue,
             };
             if let Some(token) = parsed["message"]["content"].as_str() {
-                emit_token_chunk(app, &mut full_output, token, request_id);
+                if !emit_token_chunk(app, &mut full_output, token, request_id, cancellation) {
+                    return Err(LLM_REQUEST_CANCELLED.to_string());
+                }
             }
         }
     }
@@ -813,10 +1099,15 @@ async fn call_ollama_streaming(
             Err(_) => continue,
         };
         if let Some(token) = parsed["message"]["content"].as_str() {
-            emit_token_chunk(app, &mut full_output, token, request_id);
+            if !emit_token_chunk(app, &mut full_output, token, request_id, cancellation) {
+                return Err(LLM_REQUEST_CANCELLED.to_string());
+            }
         }
     }
 
+    if request_is_cancelled(cancellation) {
+        return Err(LLM_REQUEST_CANCELLED.to_string());
+    }
     if full_output.is_empty() {
         return Err("Unexpected Ollama streaming response: empty content".to_string());
     }
@@ -1057,6 +1348,7 @@ async fn call_provider_preview_stream(
     user_message: &str,
     app: &tauri::AppHandle,
     request_id: Option<&str>,
+    cancellation: Option<&LlmRequestCancellation>,
 ) -> Result<String, String> {
     if let Some(url) = openai_compatible_url(provider) {
         return call_openai_compatible_streaming(
@@ -1068,12 +1360,21 @@ async fn call_provider_preview_stream(
             user_message,
             app,
             request_id,
+            cancellation,
         )
         .await;
     }
     match provider {
         LlmProvider::Ollama => {
-            call_ollama_streaming(chosen_model, system_prompt, user_message, app, request_id).await
+            call_ollama_streaming(
+                chosen_model,
+                system_prompt,
+                user_message,
+                app,
+                request_id,
+                cancellation,
+            )
+            .await
         }
         _ => {
             // Providers without a streaming API still flow through preview mode by
@@ -1081,7 +1382,7 @@ async fn call_provider_preview_stream(
             let full_output =
                 call_provider(api_key, provider, chosen_model, system_prompt, user_message).await?;
             if !full_output.is_empty() {
-                emit_output_stream(app, &full_output, request_id).await;
+                emit_output_stream(app, &full_output, request_id, cancellation).await;
             }
             Ok(full_output)
         }
@@ -1102,6 +1403,15 @@ pub async fn call_llm(
     request_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    // Register before any asynchronous work so a close/switch event that arrives
+    // first is consumed and this invocation remains side-effect free.
+    let (request_cancellation, _request_cleanup) =
+        register_request_cancellation(request_id.as_deref());
+    let cancellation = request_cancellation.as_deref();
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
+
     let resolved_prompt_mode =
         PromptMode::from_input(prompt_mode.as_deref(), !selected_text.is_empty());
     let should_force_math_normalization = should_enforce_math_output(resolved_prompt_mode);
@@ -1112,7 +1422,19 @@ pub async fn call_llm(
         prompt_mode.as_deref(),
         prompt_override.as_deref(),
     );
-    let chosen_model = resolve_request_model(api_key, model, &provider).await?;
+    let chosen_model = match await_with_request_cancellation(
+        cancellation,
+        resolve_request_model(api_key, model, &provider),
+    )
+    .await
+    {
+        Some(Ok(chosen_model)) => chosen_model,
+        Some(Err(error)) => return Err(error),
+        None => return Ok(()),
+    };
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
 
     // Preview conversations are multi-turn. Prefix prior turns only for preview
     // requests so direct-inject flows stay single-shot and deterministic.
@@ -1142,45 +1464,71 @@ pub async fn call_llm(
     // If the response must be post-processed for math formatting, wait for the full
     // text first; otherwise streamed partials could expose unnormalized equations.
     let raw_output = if used_native_streaming {
-        call_provider_preview_stream(
-            api_key,
-            &provider,
-            &chosen_model,
-            &system_prompt,
-            &effective_user_message,
-            &app,
-            request_id.as_deref(),
+        await_with_request_cancellation(
+            cancellation,
+            call_provider_preview_stream(
+                api_key,
+                &provider,
+                &chosen_model,
+                &system_prompt,
+                &effective_user_message,
+                &app,
+                request_id.as_deref(),
+                cancellation,
+            ),
         )
         .await
     } else {
-        call_provider(
-            api_key,
-            &provider,
-            &chosen_model,
-            &system_prompt,
-            &effective_user_message,
+        await_with_request_cancellation(
+            cancellation,
+            call_provider(
+                api_key,
+                &provider,
+                &chosen_model,
+                &system_prompt,
+                &effective_user_message,
+            ),
         )
         .await
+    };
+    let raw_output = match raw_output {
+        Some(Ok(output)) => output,
+        Some(Err(error)) => {
+            if error == LLM_REQUEST_CANCELLED || request_is_cancelled(cancellation) {
+                return Ok(());
+            }
+            if perform_if_request_active(cancellation, || {
+                let _ = app.emit(
+                    "llm://error",
+                    LlmError {
+                        message: error.clone(),
+                        request_id: request_id.clone(),
+                    },
+                );
+            })
+            .is_none()
+            {
+                return Ok(());
+            }
+            return Err(error);
+        }
+        None => return Ok(()),
+    };
+    if request_is_cancelled(cancellation) {
+        return Ok(());
     }
-    .map_err(|e| {
-        let _ = app.emit(
-            "llm://error",
-            LlmError {
-                message: e.clone(),
-                request_id: request_id.clone(),
-            },
-        );
-        e
-    })?;
 
     let full_output = normalize_math_output_if_needed(&raw_output, resolved_prompt_mode);
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
 
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         if stream_output {
             if !used_native_streaming {
-                emit_output_stream(&app, &full_output, request_id.as_deref()).await;
+                emit_output_stream(&app, &full_output, request_id.as_deref(), cancellation).await;
             }
-        } else {
+        } else if perform_if_request_active(cancellation, || {
             let _ = app.emit(
                 "llm://token",
                 LlmToken {
@@ -1188,59 +1536,95 @@ pub async fn call_llm(
                     request_id: request_id.clone(),
                 },
             );
+        })
+        .is_none()
+        {
+            return Ok(());
         }
     }
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
 
-    // Save to conversation history in PreviewStream mode for multi-turn support
+    // Save to conversation history in PreviewStream mode for multi-turn support.
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
-        let mut guard = CONVERSATION_HISTORY.lock().unwrap();
-        guard.push(ConversationMessage {
-            role: "user".to_string(),
-            content: user_message,
-        });
-        guard.push(ConversationMessage {
-            role: "assistant".to_string(),
-            content: full_output.clone(),
-        });
-        // Keep at most 10 turns (20 messages)
-        const MAX_MSGS: usize = 20;
-        if guard.len() > MAX_MSGS {
-            let drain_count = guard.len() - MAX_MSGS;
-            guard.drain(..drain_count);
+        if perform_if_request_active(cancellation, || {
+            let mut guard = CONVERSATION_HISTORY.lock().unwrap();
+            guard.push(ConversationMessage {
+                role: "user".to_string(),
+                content: user_message,
+            });
+            guard.push(ConversationMessage {
+                role: "assistant".to_string(),
+                content: full_output.clone(),
+            });
+            // Keep at most 10 turns (20 messages)
+            const MAX_MSGS: usize = 20;
+            if guard.len() > MAX_MSGS {
+                let drain_count = guard.len() - MAX_MSGS;
+                guard.drain(..drain_count);
+            }
+        })
+        .is_none()
+        {
+            return Ok(());
         }
     }
 
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
-        if let Err(e) = crate::injection::inject_text_with_undo(&full_output, true) {
-            let msg = format!("Injection failed: {e}");
-            let _ = app.emit(
-                "llm://error",
-                LlmError {
-                    message: msg.clone(),
-                    request_id: request_id.clone(),
-                },
-            );
-            return Err(msg);
+        let injection_result = perform_if_request_active(cancellation, || {
+            crate::injection::inject_text_with_undo(&full_output, true)
+        });
+        let Some(injection_result) = injection_result else {
+            return Ok(());
+        };
+        if let Err(error) = injection_result {
+            let message = format!("Injection failed: {error}");
+            if perform_if_request_active(cancellation, || {
+                let _ = app.emit(
+                    "llm://error",
+                    LlmError {
+                        message: message.clone(),
+                        request_id: request_id.clone(),
+                    },
+                );
+            })
+            .is_none()
+            {
+                return Ok(());
+            }
+            return Err(message);
         }
     }
 
-    if !full_output.is_empty() {
+    if !full_output.is_empty()
+        && perform_if_request_active(cancellation, || {
+            let _ = app.emit(
+                "llm://result",
+                LlmResult {
+                    text: full_output.clone(),
+                    output_mode: output_mode.clone(),
+                    request_id: request_id.clone(),
+                },
+            );
+        })
+        .is_none()
+    {
+        return Ok(());
+    }
+
+    if perform_if_request_active(cancellation, || {
         let _ = app.emit(
-            "llm://result",
-            LlmResult {
-                text: full_output.clone(),
-                output_mode: output_mode.clone(),
+            "llm://done",
+            LlmDone {
                 request_id: request_id.clone(),
             },
         );
+    })
+    .is_none()
+    {
+        return Ok(());
     }
-
-    let _ = app.emit(
-        "llm://done",
-        LlmDone {
-            request_id: request_id.clone(),
-        },
-    );
 
     Ok(())
 }
@@ -1584,6 +1968,13 @@ pub async fn call_llm_with_images(
     request_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
+    let (request_cancellation, _request_cleanup) =
+        register_request_cancellation(request_id.as_deref());
+    let cancellation = request_cancellation.as_deref();
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
+
     let language_hint = preferred_language_hint(preferred_language.as_deref())
         .map(|h| format!(" {h}"))
         .unwrap_or_default();
@@ -1613,37 +2004,72 @@ pub async fn call_llm_with_images(
     } else {
         merge_prompt_override(base_prompt, prompt_override.as_deref())
     };
-    let chosen_model = resolve_request_model(api_key, model, &provider).await?;
+    let chosen_model = match await_with_request_cancellation(
+        cancellation,
+        resolve_request_model(api_key, model, &provider),
+    )
+    .await
+    {
+        Some(Ok(chosen_model)) => chosen_model,
+        Some(Err(error)) => return Err(error),
+        None => return Ok(()),
+    };
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
 
     // Multimodal requests currently normalize after the provider returns, so all
     // image answers stream from the finalized text rather than provider-native chunks.
-    let raw_output = call_provider_with_images(
-        api_key,
-        &provider,
-        &chosen_model,
-        &system_prompt,
-        instruction,
-        images,
+    let raw_output = await_with_request_cancellation(
+        cancellation,
+        call_provider_with_images(
+            api_key,
+            &provider,
+            &chosen_model,
+            &system_prompt,
+            instruction,
+            images,
+        ),
     )
-    .await
-    .map_err(|e| {
-        let _ = app.emit(
-            "llm://error",
-            LlmError {
-                message: e.clone(),
-                request_id: request_id.clone(),
-            },
-        );
-        e
-    })?;
+    .await;
+    let raw_output = match raw_output {
+        Some(Ok(output)) => output,
+        Some(Err(error)) => {
+            if request_is_cancelled(cancellation) {
+                return Ok(());
+            }
+            if perform_if_request_active(cancellation, || {
+                let _ = app.emit(
+                    "llm://error",
+                    LlmError {
+                        message: error.clone(),
+                        request_id: request_id.clone(),
+                    },
+                );
+            })
+            .is_none()
+            {
+                return Ok(());
+            }
+            return Err(error);
+        }
+        None => return Ok(()),
+    };
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
+
     let full_output = normalize_math_output_if_needed(&raw_output, mode);
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
 
     // Image requests can also target DirectInject. Emit preview events only for
     // preview sessions so direct-insert flows do not wake preview listeners.
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
         if stream_output {
-            emit_output_stream(&app, &full_output, request_id.as_deref()).await;
-        } else {
+            emit_output_stream(&app, &full_output, request_id.as_deref(), cancellation).await;
+        } else if perform_if_request_active(cancellation, || {
             let _ = app.emit(
                 "llm://token",
                 LlmToken {
@@ -1651,57 +2077,92 @@ pub async fn call_llm_with_images(
                     request_id: request_id.clone(),
                 },
             );
+        })
+        .is_none()
+        {
+            return Ok(());
         }
     }
+    if request_is_cancelled(cancellation) {
+        return Ok(());
+    }
+
     if output_mode == OutputMode::PreviewStream && !full_output.is_empty() {
-        let mut guard = CONVERSATION_HISTORY.lock().unwrap();
-        guard.push(ConversationMessage {
-            role: "user".to_string(),
-            content: format!("[{} image attachment(s)] {}", images.len(), instruction),
-        });
-        guard.push(ConversationMessage {
-            role: "assistant".to_string(),
-            content: full_output.clone(),
-        });
-        const MAX_MSGS: usize = 20;
-        if guard.len() > MAX_MSGS {
-            let drain_count = guard.len() - MAX_MSGS;
-            guard.drain(..drain_count);
+        if perform_if_request_active(cancellation, || {
+            let mut guard = CONVERSATION_HISTORY.lock().unwrap();
+            guard.push(ConversationMessage {
+                role: "user".to_string(),
+                content: format!("[{} image attachment(s)] {}", images.len(), instruction),
+            });
+            guard.push(ConversationMessage {
+                role: "assistant".to_string(),
+                content: full_output.clone(),
+            });
+            const MAX_MSGS: usize = 20;
+            if guard.len() > MAX_MSGS {
+                let drain_count = guard.len() - MAX_MSGS;
+                guard.drain(..drain_count);
+            }
+        })
+        .is_none()
+        {
+            return Ok(());
         }
     }
 
     if output_mode == OutputMode::DirectInject && !full_output.is_empty() {
-        if let Err(e) = crate::injection::inject_text(&full_output) {
-            let msg = format!("Injection failed: {e}");
-            let _ = app.emit(
-                "llm://error",
-                LlmError {
-                    message: msg.clone(),
-                    request_id: request_id.clone(),
-                },
-            );
-            return Err(msg);
+        let injection_result =
+            perform_if_request_active(cancellation, || crate::injection::inject_text(&full_output));
+        let Some(injection_result) = injection_result else {
+            return Ok(());
+        };
+        if let Err(error) = injection_result {
+            let message = format!("Injection failed: {error}");
+            if perform_if_request_active(cancellation, || {
+                let _ = app.emit(
+                    "llm://error",
+                    LlmError {
+                        message: message.clone(),
+                        request_id: request_id.clone(),
+                    },
+                );
+            })
+            .is_none()
+            {
+                return Ok(());
+            }
+            return Err(message);
         }
     }
 
-    if !full_output.is_empty() {
-        let _ = app.emit(
-            "llm://result",
-            LlmResult {
-                text: full_output.clone(),
-                output_mode: output_mode.clone(),
-                request_id: request_id.clone(),
-            },
-        );
+    if !full_output.is_empty()
+        && perform_if_request_active(cancellation, || {
+            let _ = app.emit(
+                "llm://result",
+                LlmResult {
+                    text: full_output.clone(),
+                    output_mode: output_mode.clone(),
+                    request_id: request_id.clone(),
+                },
+            );
+        })
+        .is_none()
+    {
+        return Ok(());
     }
 
-    if output_mode == OutputMode::PreviewStream {
-        let _ = app.emit(
-            "llm://done",
-            LlmDone {
-                request_id: request_id.clone(),
-            },
-        );
+    if output_mode == OutputMode::PreviewStream
+        && perform_if_request_active(cancellation, || {
+            let _ = app.emit(
+                "llm://done",
+                LlmDone {
+                    request_id: request_id.clone(),
+                },
+            );
+        })
+        .is_none()
+    {
+        return Ok(());
     }
 
     Ok(())
@@ -1728,6 +2189,39 @@ pub fn clear_conversation() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn consumes_cancellation_that_arrives_before_request_registration() {
+        let request_id = format!("cancel-before-register-{:?}", std::thread::current().id());
+
+        assert!(cancel_llm_request(&request_id));
+        let (cancellation, cleanup) = register_request_cancellation(Some(&request_id));
+        let cancellation = cancellation.expect("request id should register cancellation state");
+        assert!(cancellation.is_cancelled());
+
+        drop(cleanup);
+        assert!(!ACTIVE_LLM_REQUESTS
+            .lock()
+            .expect("request registry should remain available")
+            .contains_key(&request_id));
+    }
+
+    #[test]
+    fn cancels_registered_request_by_id() {
+        let request_id = format!("cancel-active-{:?}", std::thread::current().id());
+
+        let (cancellation, cleanup) = register_request_cancellation(Some(&request_id));
+        let cancellation = cancellation.expect("request id should register cancellation state");
+        assert!(!cancellation.is_cancelled());
+        assert!(cancel_llm_request(&request_id));
+        assert!(cancellation.is_cancelled());
+
+        drop(cleanup);
+        assert!(!ACTIVE_LLM_REQUESTS
+            .lock()
+            .expect("request registry should remain available")
+            .contains_key(&request_id));
+    }
 
     #[test]
     fn detects_short_question_like_instruction() {

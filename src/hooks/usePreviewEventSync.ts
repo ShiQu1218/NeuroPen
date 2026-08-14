@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import {
@@ -15,6 +15,7 @@ import type { PreviewAttachment } from "../utils/previewAttachments";
 import { resetPreviewWindowSize } from "../utils/previewLayout";
 
 export interface PreviewSession {
+  generation: number;
   type: "text" | "screenshot";
   selectedText: string;
   sourceMode: PreviewSourceMode;
@@ -31,12 +32,14 @@ export interface PreviewSession {
 
 interface UsePreviewEventSyncOptions {
   fallbackTtsActiveRef: MutableRefObject<boolean>;
+  sessionGenerationRef: MutableRefObject<number>;
   setAnimKey: Dispatch<SetStateAction<number>>;
   setPreviewSession: Dispatch<SetStateAction<PreviewSession | null>>;
 }
 
 export function usePreviewEventSync({
   fallbackTtsActiveRef,
+  sessionGenerationRef,
   setAnimKey,
   setPreviewSession,
 }: UsePreviewEventSyncOptions) {
@@ -44,6 +47,11 @@ export function usePreviewEventSync({
     let cancelled = false;
     const unlisten: Array<() => void> = [];
     let llmStartTime = 0;
+
+    const matchesActiveRequest = (requestId: string | undefined) => {
+      const activeRequestId = useAppStore.getState().currentRequestId.trim();
+      return !!requestId && !!activeRequestId && requestId.trim() === activeRequestId;
+    };
 
     const state = useAppStore.getState();
 
@@ -58,14 +66,10 @@ export function usePreviewEventSync({
       };
 
       await register<{ text: string; requestId?: string }>("llm://token", (event) => {
-        const currentState = useAppStore.getState();
-        if (
-          event.payload.requestId &&
-          currentState.currentRequestId &&
-          event.payload.requestId !== currentState.currentRequestId
-        ) {
+        if (!matchesActiveRequest(event.payload.requestId)) {
           return;
         }
+        const currentState = useAppStore.getState();
         // Record time-to-first-token once, then keep appending incremental output.
         if (currentState.llmOutput === "" && llmStartTime > 0) {
           currentState.setLlmDurationMs(Date.now() - llmStartTime);
@@ -74,14 +78,10 @@ export function usePreviewEventSync({
       });
 
       await register<{ requestId?: string }>("llm://done", (event) => {
-        const currentState = useAppStore.getState();
-        if (
-          event.payload?.requestId &&
-          currentState.currentRequestId &&
-          event.payload.requestId !== currentState.currentRequestId
-        ) {
+        if (!matchesActiveRequest(event.payload?.requestId)) {
           return;
         }
+        const currentState = useAppStore.getState();
         if (llmStartTime > 0) {
           currentState.setLlmDurationMs(Date.now() - llmStartTime);
         }
@@ -89,14 +89,10 @@ export function usePreviewEventSync({
       });
 
       await register<{ message: string; requestId?: string }>("llm://error", (event) => {
-        const currentState = useAppStore.getState();
-        if (
-          event.payload.requestId &&
-          currentState.currentRequestId &&
-          event.payload.requestId !== currentState.currentRequestId
-        ) {
+        if (!matchesActiveRequest(event.payload.requestId)) {
           return;
         }
+        const currentState = useAppStore.getState();
         currentState.setLlmError(event.payload.message);
         currentState.setIsLlmLoading(false);
       });
@@ -115,6 +111,17 @@ export function usePreviewEventSync({
         quickActionCommandId?: string;
         attachments?: PreviewAttachment[];
       }>("neuropen://preview-session", (event) => {
+        const currentState = useAppStore.getState();
+        const previousRequestId = currentState.currentRequestId.trim();
+        const nextRequestId = event.payload.requestId?.trim() ?? "";
+        // Invalidate pending preview work before accepting a new session. This also
+        // makes async setup in the controller abandon work for the previous session.
+        sessionGenerationRef.current += 1;
+        if (previousRequestId && previousRequestId !== nextRequestId) {
+          void emit("neuropen://cancel-preview-request", { requestId: previousRequestId }).catch((err) => {
+            console.warn("[Preview] cancel previous request failed:", err);
+          });
+        }
         const startLoading = event.payload.startLoading ?? true;
         llmStartTime = startLoading ? Date.now() : 0;
         void invoke("clear_conversation");
@@ -128,7 +135,6 @@ export function usePreviewEventSync({
           }
         })();
         setAnimKey((key) => key + 1);
-        const currentState = useAppStore.getState();
         currentState.setLlmOutput("");
         currentState.setIsLlmLoading(startLoading);
         currentState.setLlmError("");
@@ -147,6 +153,7 @@ export function usePreviewEventSync({
           // Keep loading false even if the follow-up attachment event is delayed/missed.
           currentState.setIsLlmLoading(false);
           setPreviewSession({
+            generation: sessionGenerationRef.current,
             type: "screenshot",
             selectedText: "",
             sourceMode: "C",
@@ -163,6 +170,7 @@ export function usePreviewEventSync({
           return;
         }
         setPreviewSession({
+          generation: sessionGenerationRef.current,
           type: "text",
           selectedText: event.payload.selectedText ?? "",
           sourceMode: event.payload.sourceMode ?? "C",
@@ -286,6 +294,7 @@ export function usePreviewEventSync({
         // Screenshot mode is attachment-first: the preview opens immediately and the
         // user can ask a follow-up question without triggering an LLM call yet.
         setPreviewSession({
+          generation: sessionGenerationRef.current,
           type: "screenshot",
           selectedText: "",
           sourceMode: "C",
@@ -317,5 +326,5 @@ export function usePreviewEventSync({
       cancelled = true;
       unlisten.forEach((fn) => fn());
     };
-  }, [fallbackTtsActiveRef, setAnimKey, setPreviewSession]);
+  }, [fallbackTtsActiveRef, sessionGenerationRef, setAnimKey, setPreviewSession]);
 }

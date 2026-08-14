@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 import {
   DEFAULT_APP_PROFILES,
   createDefaultLlmModelOptionsByProvider,
@@ -248,6 +248,213 @@ interface AppState {
   resetSession: () => void;
 }
 
+const PERSISTED_APP_STATE_KEYS = [
+  "wakeWord",
+  "sttModelPath",
+  "outputMode",
+  "llmProvider",
+  "llmModel",
+  "llmModelOptions",
+  "llmModelOptionsByProvider",
+  "llmSelectedModelByProvider",
+  "incognito",
+  "sttEnabled",
+  "selectionEnabled",
+  "screenshotEnabled",
+  "hotkey",
+  "screenshotHotkey",
+  "dialogHotkey",
+  "sttEngine",
+  "sttLanguage",
+  "sttOutputStrategy",
+  "punctuationMode",
+  "contextAwareTone",
+  "preferredLanguage",
+  "customLanguageVariants",
+  "microphoneSource",
+  "launchOnStartup",
+  "quickActionCommands",
+  "language",
+  "themePreference",
+  "vocabularyTerms",
+  "ttsEnabled",
+  "ttsVoice",
+  "ttsRate",
+  "ttsPitch",
+  "modeAPrompt",
+  "modeBPrompt",
+  "modeCPrompt",
+  "modeAStreamOutput",
+  "modeBStreamOutput",
+  "translationTarget",
+  "historyEnabled",
+  "preferenceLearningEnabled",
+  "appProfiles",
+] as const satisfies readonly (keyof AppState)[];
+
+type PersistedAppStateKey = (typeof PERSISTED_APP_STATE_KEYS)[number];
+type PersistedAppState = Pick<AppState, PersistedAppStateKey>;
+type AppStateUpdate =
+  | Partial<AppState>
+  | ((state: AppState) => Partial<AppState> | AppState);
+
+const pickPersistedAppState = (state: AppState): PersistedAppState =>
+  Object.fromEntries(
+    PERSISTED_APP_STATE_KEYS.map((key) => [key, state[key]])
+  ) as PersistedAppState;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+const hasSameValue = (left: unknown, right: unknown) =>
+  Object.is(left, right) || JSON.stringify(left) === JSON.stringify(right);
+
+const mergeChangedValue = (
+  baselineValue: unknown,
+  nextValue: unknown,
+  storedValue: unknown
+): unknown => {
+  if (!isRecord(baselineValue) || !isRecord(nextValue) || !isRecord(storedValue)) {
+    return nextValue;
+  }
+
+  const mergedValue: Record<string, unknown> = { ...storedValue };
+  for (const [key, nextChild] of Object.entries(nextValue)) {
+    if (!hasSameValue(baselineValue[key], nextChild)) {
+      mergedValue[key] = mergeChangedValue(baselineValue[key], nextChild, storedValue[key]);
+    }
+  }
+  for (const key of Object.keys(baselineValue)) {
+    if (!(key in nextValue)) {
+      delete mergedValue[key];
+    }
+  }
+  return mergedValue;
+};
+
+/**
+ * Zustand persist serializes after every `set`, including runtime-only updates.
+ * Each Tauri window owns a separate store, so only a preference setter may write
+ * to storage, and it merges its changed fields with the latest saved snapshot.
+ */
+const createCrossWindowPersistController = () => {
+  let pendingPreferenceKeys: readonly PersistedAppStateKey[] | undefined;
+  let localBaseline: PersistedAppState | undefined;
+  let isHydrating = false;
+  let hydratedStorageVersion: number | undefined;
+
+  const withPendingPreferenceKeys = <T>(
+    keys: readonly PersistedAppStateKey[] | undefined,
+    callback: () => T
+  ): T => {
+    const previousKeys = pendingPreferenceKeys;
+    pendingPreferenceKeys = keys;
+    try {
+      return callback();
+    } finally {
+      pendingPreferenceKeys = previousKeys;
+    }
+  };
+
+  const updateLocalBaseline = (
+    state: PersistedAppState,
+    keys: readonly PersistedAppStateKey[] = PERSISTED_APP_STATE_KEYS
+  ) => {
+    localBaseline = {
+      ...(localBaseline ?? state),
+      ...Object.fromEntries(keys.map((key) => [key, state[key]])),
+    } as PersistedAppState;
+  };
+
+  const storage: PersistStorage<PersistedAppState> | undefined =
+    typeof window === "undefined"
+      ? undefined
+      : {
+          getItem: (name) => {
+            const rawValue = window.localStorage.getItem(name);
+            if (rawValue === null) {
+              localBaseline = undefined;
+              hydratedStorageVersion = undefined;
+              return null;
+            }
+
+            const storedValue = JSON.parse(rawValue) as StorageValue<PersistedAppState>;
+            hydratedStorageVersion =
+              typeof storedValue?.version === "number" ? storedValue.version : undefined;
+            localBaseline = isRecord(storedValue?.state)
+              ? (storedValue.state as PersistedAppState)
+              : undefined;
+            return storedValue;
+          },
+          setItem: (name, value) => {
+            const isMigrationWrite =
+              isHydrating &&
+              !pendingPreferenceKeys &&
+              hydratedStorageVersion !== undefined &&
+              hydratedStorageVersion !== value.version;
+            if (isMigrationWrite) {
+              window.localStorage.setItem(name, JSON.stringify(value));
+              hydratedStorageVersion = value.version;
+              updateLocalBaseline(value.state);
+              return;
+            }
+            if (!pendingPreferenceKeys) {
+              return;
+            }
+
+            let storedValue: StorageValue<PersistedAppState> | null = null;
+            try {
+              const rawValue = window.localStorage.getItem(name);
+              storedValue = rawValue === null
+                ? null
+                : (JSON.parse(rawValue) as StorageValue<PersistedAppState>);
+            } catch {
+              // A subsequent preference save restores a malformed old value.
+            }
+
+            const storedState = isRecord(storedValue?.state) ? storedValue.state : undefined;
+            const changedState = Object.fromEntries(
+              pendingPreferenceKeys.map((key) => [
+                key,
+                mergeChangedValue(localBaseline?.[key], value.state[key], storedState?.[key]),
+              ])
+            );
+            const nextValue: StorageValue<PersistedAppState> = {
+              ...value,
+              state: {
+                ...value.state,
+                ...storedState,
+                ...changedState,
+              } as PersistedAppState,
+            };
+
+            window.localStorage.setItem(name, JSON.stringify(nextValue));
+            updateLocalBaseline(value.state, pendingPreferenceKeys);
+          },
+          removeItem: (name) => {
+            window.localStorage.removeItem(name);
+            localBaseline = undefined;
+            hydratedStorageVersion = undefined;
+          },
+        };
+
+  return {
+    storage,
+    setHydrating: (hydrating: boolean) => {
+      isHydrating = hydrating;
+    },
+    setBaseline: (state: AppState) => {
+      localBaseline = pickPersistedAppState(state);
+    },
+    withPreferences: <T>(keys: readonly PersistedAppStateKey[], callback: () => T) =>
+      withPendingPreferenceKeys(keys, callback),
+    withRuntime: <T>(callback: () => T) =>
+      withPendingPreferenceKeys(undefined, callback),
+  };
+};
+
+const appStorePersistController = createCrossWindowPersistController();
+
 const SESSION_RUNTIME_RESET: Pick<
   AppState,
   | "isRecording"
@@ -301,237 +508,274 @@ const DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE = normalizeLlmSelectedModelsB
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
-      // Defaults
-      wakeWord: "助理",
-      sttModelPath: "",
-      outputMode: "PreviewStream",
-      llmProvider: "openAi",
-      llmModel: DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE.openAi,
-      llmModelOptions: DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE.openAi,
-      llmModelOptionsByProvider: DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE,
-      llmSelectedModelByProvider: DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE,
-      incognito: false,
-      sttEnabled: true,
-      selectionEnabled: true,
-      screenshotEnabled: true,
-      hotkey: "Alt+`",
-      screenshotHotkey: "Alt+S",
-      dialogHotkey: "Alt+Shift+D",
-      sttEngine: "openAi",
-      sttLanguage: "auto",
-      sttOutputStrategy: "raw",
-      punctuationMode: "balanced",
-      contextAwareTone: true,
-      preferredLanguage: getDefaultLanguageVariantPreferences(),
-      customLanguageVariants: [],
-      microphoneSource: "",
-      launchOnStartup: false,
-      quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
-      language: "zh-TW",
-      themePreference: "light",
-      vocabularyTerms: [],
-      ttsEnabled: false,
-      ttsVoice: "",
-      ttsRate: "+0%",
-      ttsPitch: "+0Hz",
-      modeAPrompt: DEFAULT_MODE_A_PROMPT,
-      modeBPrompt: DEFAULT_MODE_B_PROMPT,
-      modeCPrompt: DEFAULT_MODE_C_PROMPT,
-      modeAStreamOutput: false,
-      modeBStreamOutput: true,
-      translationTarget: "off",
-      historyEnabled: false,
-      preferenceLearningEnabled: false,
-      appProfiles: DEFAULT_APP_PROFILES,
+    (set) => {
+      const setPreferences = (
+        keys: readonly PersistedAppStateKey[],
+        update: AppStateUpdate
+      ) => appStorePersistController.withPreferences(keys, () => set(update));
+      const setRuntime = (update: AppStateUpdate) =>
+        appStorePersistController.withRuntime(() => set(update));
 
-      isRecording: false,
-      selectedText: "",
-      currentMode: null,
-      transcript: "",
-      sttError: "",
-      localSttAvailable: false,
-      apiKeySet: false,
-      llmOutput: "",
-      isLlmLoading: false,
-      llmError: "",
-      lastSelectedText: "",
-      lastInstruction: "",
-      isTtsPlaying: false,
-      partialTranscript: "",
-      sttDurationMs: 0,
-      llmDurationMs: 0,
-      pendingScreenshot: "",
-      currentRequestId: "",
-      currentPreferenceCategoryKey: "",
-      currentPreferenceCategoryLabel: "",
-      currentQuickActionCommandId: "",
-      currentFeedbackRating: null,
+      return {
+        // Defaults
+        wakeWord: "助理",
+        sttModelPath: "",
+        outputMode: "PreviewStream",
+        llmProvider: "openAi",
+        llmModel: DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE.openAi,
+        llmModelOptions: DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE.openAi,
+        llmModelOptionsByProvider: DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER_STATE,
+        llmSelectedModelByProvider: DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE,
+        incognito: false,
+        sttEnabled: true,
+        selectionEnabled: true,
+        screenshotEnabled: true,
+        hotkey: "Alt+`",
+        screenshotHotkey: "Alt+S",
+        dialogHotkey: "Alt+Shift+D",
+        sttEngine: "openAi",
+        sttLanguage: "auto",
+        sttOutputStrategy: "raw",
+        punctuationMode: "balanced",
+        contextAwareTone: true,
+        preferredLanguage: getDefaultLanguageVariantPreferences(),
+        customLanguageVariants: [],
+        microphoneSource: "",
+        launchOnStartup: false,
+        quickActionCommands: DEFAULT_QUICK_ACTION_COMMANDS,
+        language: "zh-TW",
+        themePreference: "light",
+        vocabularyTerms: [],
+        ttsEnabled: false,
+        ttsVoice: "",
+        ttsRate: "+0%",
+        ttsPitch: "+0Hz",
+        modeAPrompt: DEFAULT_MODE_A_PROMPT,
+        modeBPrompt: DEFAULT_MODE_B_PROMPT,
+        modeCPrompt: DEFAULT_MODE_C_PROMPT,
+        modeAStreamOutput: false,
+        modeBStreamOutput: true,
+        translationTarget: "off",
+        historyEnabled: false,
+        preferenceLearningEnabled: false,
+        appProfiles: DEFAULT_APP_PROFILES,
 
-      setWakeWord: (word) => set({ wakeWord: word }),
-      setSttModelPath: (path) => set({ sttModelPath: path }),
-      setOutputMode: (mode) => set({ outputMode: mode }),
-      setLlmProvider: (provider) =>
-        set((state) => {
-          const rememberedModel = state.llmSelectedModelByProvider[provider]?.trim() || getDefaultLlmModel(provider);
-          const nextOptions = normalizeLlmModelOptions(
-            state.llmModelOptionsByProvider[provider] ?? getDefaultLlmModelOptions(provider),
-            rememberedModel,
-          );
-          const nextModel =
-            rememberedModel && nextOptions.includes(rememberedModel)
-              ? rememberedModel
-              : nextOptions[0] ?? getDefaultLlmModel(provider);
-          return {
-            llmProvider: provider,
-            llmModel: nextModel,
-            llmModelOptions: nextOptions,
-            llmModelOptionsByProvider: {
-              ...state.llmModelOptionsByProvider,
-              [provider]: nextOptions,
-            },
-            llmSelectedModelByProvider: {
-              ...state.llmSelectedModelByProvider,
-              [provider]: nextModel,
-            },
-          };
-        }),
-      setLlmModel: (model) =>
-        set((state) => {
+        isRecording: false,
+        selectedText: "",
+        currentMode: null,
+        transcript: "",
+        sttError: "",
+        localSttAvailable: false,
+        apiKeySet: false,
+        llmOutput: "",
+        isLlmLoading: false,
+        llmError: "",
+        lastSelectedText: "",
+        lastInstruction: "",
+        isTtsPlaying: false,
+        partialTranscript: "",
+        sttDurationMs: 0,
+        llmDurationMs: 0,
+        pendingScreenshot: "",
+        currentRequestId: "",
+        currentPreferenceCategoryKey: "",
+        currentPreferenceCategoryLabel: "",
+        currentQuickActionCommandId: "",
+        currentFeedbackRating: null,
+
+        setWakeWord: (word) => setPreferences(["wakeWord"], { wakeWord: word }),
+        setSttModelPath: (path) => setPreferences(["sttModelPath"], { sttModelPath: path }),
+        setOutputMode: (mode) => setPreferences(["outputMode"], { outputMode: mode }),
+        setLlmProvider: (provider) =>
+          setPreferences(
+            [
+              "llmProvider",
+              "llmModel",
+              "llmModelOptions",
+              "llmModelOptionsByProvider",
+              "llmSelectedModelByProvider",
+            ],
+            (state) => {
+              const rememberedModel =
+                state.llmSelectedModelByProvider[provider]?.trim() || getDefaultLlmModel(provider);
+              const nextOptions = normalizeLlmModelOptions(
+                state.llmModelOptionsByProvider[provider] ?? getDefaultLlmModelOptions(provider),
+                rememberedModel,
+              );
+              const nextModel =
+                rememberedModel && nextOptions.includes(rememberedModel)
+                  ? rememberedModel
+                  : nextOptions[0] ?? getDefaultLlmModel(provider);
+              return {
+                llmProvider: provider,
+                llmModel: nextModel,
+                llmModelOptions: nextOptions,
+                llmModelOptionsByProvider: {
+                  ...state.llmModelOptionsByProvider,
+                  [provider]: nextOptions,
+                },
+                llmSelectedModelByProvider: {
+                  ...state.llmSelectedModelByProvider,
+                  [provider]: nextModel,
+                },
+              };
+            }
+          ),
+        setLlmModel: (model) => {
           const nextModel = model.trim();
           if (!nextModel) {
-            return state;
+            return;
           }
-          const nextOptions = normalizeLlmModelOptions(state.llmModelOptions, nextModel);
-          return {
-            llmModel: nextModel,
-            llmModelOptions: nextOptions,
-            llmModelOptionsByProvider: {
-              ...state.llmModelOptionsByProvider,
-              [state.llmProvider]: nextOptions,
-            },
-            llmSelectedModelByProvider: {
-              ...state.llmSelectedModelByProvider,
-              [state.llmProvider]: nextModel,
-            },
-          };
-        }),
-      setLlmModelOptions: (llmModelOptions) =>
-        set((state) => {
-          const nextOptions = normalizeLlmModelOptions(llmModelOptions, state.llmModel);
-          const nextModel =
-            state.llmModel.trim() && nextOptions.includes(state.llmModel.trim())
-              ? state.llmModel.trim()
-              : nextOptions[0] ?? getDefaultLlmModel(state.llmProvider);
-          return {
-            llmModel: nextModel,
-            llmModelOptions: nextOptions,
-            llmModelOptionsByProvider: {
-              ...state.llmModelOptionsByProvider,
-              [state.llmProvider]: nextOptions,
-            },
-            llmSelectedModelByProvider: {
-              ...state.llmSelectedModelByProvider,
-              [state.llmProvider]: nextModel,
-            },
-          };
-        }),
-      setIncognito: (on) => set({ incognito: on }),
-      setSttEnabled: (sttEnabled) => set({ sttEnabled }),
-      setSelectionEnabled: (selectionEnabled) => set({ selectionEnabled }),
-      setScreenshotEnabled: (screenshotEnabled) => set({ screenshotEnabled }),
-      setHotkey: (hotkey) => set({ hotkey }),
-      setScreenshotHotkey: (screenshotHotkey) => set({ screenshotHotkey }),
-      setDialogHotkey: (dialogHotkey) => set({ dialogHotkey }),
-      setSttEngine: (engine) => set({ sttEngine: engine }),
-      setSttLanguage: (sttLanguage) => set({ sttLanguage }),
-      setSttOutputStrategy: (strategy) => set({ sttOutputStrategy: strategy }),
-      setPunctuationMode: (mode) => set({ punctuationMode: mode }),
-      setContextAwareTone: (enabled) => set({ contextAwareTone: enabled }),
-      setPreferredLanguage: (preferredLanguage) =>
-        set((state) => ({
-          preferredLanguage: normalizePreferredLanguageSelection(
-            preferredLanguage,
-            state.customLanguageVariants
+
+          setPreferences(
+            ["llmModel", "llmModelOptions", "llmModelOptionsByProvider", "llmSelectedModelByProvider"],
+            (state) => {
+              const nextOptions = normalizeLlmModelOptions(state.llmModelOptions, nextModel);
+              return {
+                llmModel: nextModel,
+                llmModelOptions: nextOptions,
+                llmModelOptionsByProvider: {
+                  ...state.llmModelOptionsByProvider,
+                  [state.llmProvider]: nextOptions,
+                },
+                llmSelectedModelByProvider: {
+                  ...state.llmSelectedModelByProvider,
+                  [state.llmProvider]: nextModel,
+                },
+              };
+            }
+          );
+        },
+        setLlmModelOptions: (llmModelOptions) =>
+          setPreferences(
+            ["llmModel", "llmModelOptions", "llmModelOptionsByProvider", "llmSelectedModelByProvider"],
+            (state) => {
+              const nextOptions = normalizeLlmModelOptions(llmModelOptions, state.llmModel);
+              const nextModel =
+                state.llmModel.trim() && nextOptions.includes(state.llmModel.trim())
+                  ? state.llmModel.trim()
+                  : nextOptions[0] ?? getDefaultLlmModel(state.llmProvider);
+              return {
+                llmModel: nextModel,
+                llmModelOptions: nextOptions,
+                llmModelOptionsByProvider: {
+                  ...state.llmModelOptionsByProvider,
+                  [state.llmProvider]: nextOptions,
+                },
+                llmSelectedModelByProvider: {
+                  ...state.llmSelectedModelByProvider,
+                  [state.llmProvider]: nextModel,
+                },
+              };
+            }
           ),
-        })),
-      setCustomLanguageVariants: (customLanguageVariants) =>
-        set((state) => {
-          const normalizedCustomLanguageVariants = normalizeCustomLanguageVariants(customLanguageVariants);
-          return {
-            customLanguageVariants: normalizedCustomLanguageVariants,
+        setIncognito: (on) => setPreferences(["incognito"], { incognito: on }),
+        setSttEnabled: (sttEnabled) => setPreferences(["sttEnabled"], { sttEnabled }),
+        setSelectionEnabled: (selectionEnabled) => setPreferences(["selectionEnabled"], { selectionEnabled }),
+        setScreenshotEnabled: (screenshotEnabled) => setPreferences(["screenshotEnabled"], { screenshotEnabled }),
+        setHotkey: (hotkey) => setPreferences(["hotkey"], { hotkey }),
+        setScreenshotHotkey: (screenshotHotkey) => setPreferences(["screenshotHotkey"], { screenshotHotkey }),
+        setDialogHotkey: (dialogHotkey) => setPreferences(["dialogHotkey"], { dialogHotkey }),
+        setSttEngine: (engine) => setPreferences(["sttEngine"], { sttEngine: engine }),
+        setSttLanguage: (sttLanguage) => setPreferences(["sttLanguage"], { sttLanguage }),
+        setSttOutputStrategy: (strategy) => setPreferences(["sttOutputStrategy"], { sttOutputStrategy: strategy }),
+        setPunctuationMode: (mode) => setPreferences(["punctuationMode"], { punctuationMode: mode }),
+        setContextAwareTone: (enabled) => setPreferences(["contextAwareTone"], { contextAwareTone: enabled }),
+        setPreferredLanguage: (preferredLanguage) =>
+          setPreferences(["preferredLanguage"], (state) => ({
             preferredLanguage: normalizePreferredLanguageSelection(
-              state.preferredLanguage,
-              normalizedCustomLanguageVariants
+              preferredLanguage,
+              state.customLanguageVariants
             ),
+          })),
+        setCustomLanguageVariants: (customLanguageVariants) =>
+          setPreferences(["customLanguageVariants", "preferredLanguage", "appProfiles"], (state) => {
+            const normalizedCustomLanguageVariants = normalizeCustomLanguageVariants(customLanguageVariants);
+            return {
+              customLanguageVariants: normalizedCustomLanguageVariants,
+              preferredLanguage: normalizePreferredLanguageSelection(
+                state.preferredLanguage,
+                normalizedCustomLanguageVariants
+              ),
+              appProfiles: normalizePersistedAppProfiles(
+                state.appProfiles,
+                normalizedCustomLanguageVariants
+              ),
+            };
+          }),
+        setMicrophoneSource: (microphoneSource) => setPreferences(["microphoneSource"], { microphoneSource }),
+        setLaunchOnStartup: (launchOnStartup) => setPreferences(["launchOnStartup"], { launchOnStartup }),
+        setQuickActionCommands: (commands) => setPreferences(["quickActionCommands"], { quickActionCommands: commands }),
+        setLanguage: (language) => setPreferences(["language"], { language }),
+        setThemePreference: (themePreference) => setPreferences(["themePreference"], { themePreference }),
+        setVocabularyTerms: (terms) => setPreferences(["vocabularyTerms"], { vocabularyTerms: terms }),
+        setIsRecording: (recording) => setRuntime({ isRecording: recording }),
+        setSelectedText: (text) => setRuntime({ selectedText: text }),
+        setCurrentMode: (mode) => setRuntime({ currentMode: mode }),
+        setTranscript: (text) => setRuntime({ transcript: text }),
+        setSttError: (error) => setRuntime({ sttError: error }),
+        setLocalSttAvailable: (v) => setRuntime({ localSttAvailable: v }),
+        setApiKeySet: (v) => setRuntime({ apiKeySet: v }),
+        setLlmOutput: (text) => setRuntime({ llmOutput: text }),
+        setIsLlmLoading: (loading) => setRuntime({ isLlmLoading: loading }),
+        setLlmError: (error) => setRuntime({ llmError: error }),
+        setLastSelectedText: (text) => setRuntime({ lastSelectedText: text }),
+        setLastInstruction: (text) => setRuntime({ lastInstruction: text }),
+        setTtsEnabled: (enabled) => setPreferences(["ttsEnabled"], { ttsEnabled: enabled }),
+        setTtsVoice: (voice) => setPreferences(["ttsVoice"], { ttsVoice: voice }),
+        setTtsRate: (rate) => setPreferences(["ttsRate"], { ttsRate: rate }),
+        setTtsPitch: (pitch) => setPreferences(["ttsPitch"], { ttsPitch: pitch }),
+        setModeAPrompt: (modeAPrompt) => setPreferences(["modeAPrompt"], { modeAPrompt }),
+        setModeBPrompt: (modeBPrompt) => setPreferences(["modeBPrompt"], { modeBPrompt }),
+        setModeCPrompt: (modeCPrompt) => setPreferences(["modeCPrompt"], { modeCPrompt }),
+        setModeAStreamOutput: (modeAStreamOutput) => setPreferences(["modeAStreamOutput"], { modeAStreamOutput }),
+        setModeBStreamOutput: (modeBStreamOutput) => setPreferences(["modeBStreamOutput"], { modeBStreamOutput }),
+        setTranslationTarget: (target) => setPreferences(["translationTarget"], { translationTarget: target }),
+        setHistoryEnabled: (enabled) => setPreferences(["historyEnabled"], { historyEnabled: enabled }),
+        setPreferenceLearningEnabled: (enabled) => setPreferences(["preferenceLearningEnabled"], { preferenceLearningEnabled: enabled }),
+        setAppProfiles: (profiles) =>
+          setPreferences(["appProfiles"], (state) => ({
             appProfiles: normalizePersistedAppProfiles(
-              state.appProfiles,
-              normalizedCustomLanguageVariants
+              profiles,
+              state.customLanguageVariants
             ),
-          };
-        }),
-      setMicrophoneSource: (microphoneSource) => set({ microphoneSource }),
-      setLaunchOnStartup: (launchOnStartup) => set({ launchOnStartup }),
-      setQuickActionCommands: (commands) => set({ quickActionCommands: commands }),
-      setLanguage: (language) => set({ language }),
-      setThemePreference: (themePreference) => set({ themePreference }),
-      setVocabularyTerms: (terms) => set({ vocabularyTerms: terms }),
-      setIsRecording: (recording) => set({ isRecording: recording }),
-      setSelectedText: (text) => set({ selectedText: text }),
-      setCurrentMode: (mode) => set({ currentMode: mode }),
-      setTranscript: (text) => set({ transcript: text }),
-      setSttError: (error) => set({ sttError: error }),
-      setLocalSttAvailable: (v) => set({ localSttAvailable: v }),
-      setApiKeySet: (v) => set({ apiKeySet: v }),
-      setLlmOutput: (text) => set({ llmOutput: text }),
-      setIsLlmLoading: (loading) => set({ isLlmLoading: loading }),
-      setLlmError: (error) => set({ llmError: error }),
-      setLastSelectedText: (text) => set({ lastSelectedText: text }),
-      setLastInstruction: (text) => set({ lastInstruction: text }),
-      setTtsEnabled: (enabled) => set({ ttsEnabled: enabled }),
-      setTtsVoice: (voice) => set({ ttsVoice: voice }),
-      setTtsRate: (rate) => set({ ttsRate: rate }),
-      setTtsPitch: (pitch) => set({ ttsPitch: pitch }),
-      setModeAPrompt: (modeAPrompt) => set({ modeAPrompt }),
-      setModeBPrompt: (modeBPrompt) => set({ modeBPrompt }),
-      setModeCPrompt: (modeCPrompt) => set({ modeCPrompt }),
-      setModeAStreamOutput: (modeAStreamOutput) => set({ modeAStreamOutput }),
-      setModeBStreamOutput: (modeBStreamOutput) => set({ modeBStreamOutput }),
-      setTranslationTarget: (target) => set({ translationTarget: target }),
-      setHistoryEnabled: (enabled) => set({ historyEnabled: enabled }),
-      setPreferenceLearningEnabled: (enabled) => set({ preferenceLearningEnabled: enabled }),
-      setAppProfiles: (profiles) =>
-        set((state) => ({
-          appProfiles: normalizePersistedAppProfiles(
-            profiles,
-            state.customLanguageVariants
-          ),
-        })),
-      setIsTtsPlaying: (playing) => set({ isTtsPlaying: playing }),
-      setPartialTranscript: (text) => set({ partialTranscript: text }),
-      setSttDurationMs: (ms) => set({ sttDurationMs: ms }),
-      setLlmDurationMs: (ms) => set({ llmDurationMs: ms }),
-      setPendingScreenshot: (base64) => set({ pendingScreenshot: base64 }),
-      setCurrentRequestContext: (context) =>
-        set({
-          currentRequestId: context.requestId?.trim() ?? "",
-          currentPreferenceCategoryKey: context.preferenceCategoryKey?.trim() ?? "",
-          currentPreferenceCategoryLabel: context.preferenceCategoryLabel?.trim() ?? "",
-          currentQuickActionCommandId: context.quickActionCommandId?.trim() ?? "",
-        }),
-      setCurrentFeedbackRating: (rating) => set({ currentFeedbackRating: rating }),
-      clearCurrentRequestContext: () =>
-        set({
-          currentRequestId: "",
-          currentPreferenceCategoryKey: "",
-          currentPreferenceCategoryLabel: "",
-          currentQuickActionCommandId: "",
-          currentFeedbackRating: null,
-        }),
-      resetSession: () => set(SESSION_RUNTIME_RESET),
-    }),
+          })),
+        setIsTtsPlaying: (playing) => setRuntime({ isTtsPlaying: playing }),
+        setPartialTranscript: (text) => setRuntime({ partialTranscript: text }),
+        setSttDurationMs: (ms) => setRuntime({ sttDurationMs: ms }),
+        setLlmDurationMs: (ms) => setRuntime({ llmDurationMs: ms }),
+        setPendingScreenshot: (base64) => setRuntime({ pendingScreenshot: base64 }),
+        setCurrentRequestContext: (context) =>
+          setRuntime({
+            currentRequestId: context.requestId?.trim() ?? "",
+            currentPreferenceCategoryKey: context.preferenceCategoryKey?.trim() ?? "",
+            currentPreferenceCategoryLabel: context.preferenceCategoryLabel?.trim() ?? "",
+            currentQuickActionCommandId: context.quickActionCommandId?.trim() ?? "",
+          }),
+        setCurrentFeedbackRating: (rating) => setRuntime({ currentFeedbackRating: rating }),
+        clearCurrentRequestContext: () =>
+          setRuntime({
+            currentRequestId: "",
+            currentPreferenceCategoryKey: "",
+            currentPreferenceCategoryLabel: "",
+            currentQuickActionCommandId: "",
+            currentFeedbackRating: null,
+          }),
+        resetSession: () => setRuntime(SESSION_RUNTIME_RESET),
+      };
+    },
     {
       name: "neuropen-settings",
+      storage: appStorePersistController.storage,
+      onRehydrateStorage: () => {
+        appStorePersistController.setHydrating(true);
+        return (state) => {
+          appStorePersistController.setHydrating(false);
+          if (state) {
+            appStorePersistController.setBaseline(state);
+          }
+        };
+      },
       merge: (persistedState, currentState) => {
         const persisted = (persistedState as Partial<AppState> | undefined) ?? {};
         const normalizedModeAPrompt = normalizePersistedPrompt(
@@ -630,49 +874,7 @@ export const useAppStore = create<AppState>()(
         };
       },
       // Only persist user preferences, not runtime state
-      partialize: (state) => ({
-        wakeWord: state.wakeWord,
-        sttModelPath: state.sttModelPath,
-        outputMode: state.outputMode,
-        llmProvider: state.llmProvider,
-        llmModel: state.llmModel,
-        llmModelOptions: state.llmModelOptions,
-        llmModelOptionsByProvider: state.llmModelOptionsByProvider,
-        llmSelectedModelByProvider: state.llmSelectedModelByProvider,
-        incognito: state.incognito,
-        sttEnabled: state.sttEnabled,
-        selectionEnabled: state.selectionEnabled,
-        screenshotEnabled: state.screenshotEnabled,
-        hotkey: state.hotkey,
-        screenshotHotkey: state.screenshotHotkey,
-        dialogHotkey: state.dialogHotkey,
-        sttEngine: state.sttEngine,
-        sttLanguage: state.sttLanguage,
-        sttOutputStrategy: state.sttOutputStrategy,
-        punctuationMode: state.punctuationMode,
-        contextAwareTone: state.contextAwareTone,
-        preferredLanguage: state.preferredLanguage,
-        customLanguageVariants: state.customLanguageVariants,
-        microphoneSource: state.microphoneSource,
-        launchOnStartup: state.launchOnStartup,
-        quickActionCommands: state.quickActionCommands,
-        language: state.language,
-        themePreference: state.themePreference,
-        vocabularyTerms: state.vocabularyTerms,
-        ttsEnabled: state.ttsEnabled,
-        ttsVoice: state.ttsVoice,
-        ttsRate: state.ttsRate,
-        ttsPitch: state.ttsPitch,
-        modeAPrompt: state.modeAPrompt,
-        modeBPrompt: state.modeBPrompt,
-        modeCPrompt: state.modeCPrompt,
-        modeAStreamOutput: state.modeAStreamOutput,
-        modeBStreamOutput: state.modeBStreamOutput,
-        translationTarget: state.translationTarget,
-        historyEnabled: state.historyEnabled,
-        preferenceLearningEnabled: state.preferenceLearningEnabled,
-        appProfiles: state.appProfiles,
-      }),
+      partialize: pickPersistedAppState,
     }
   )
 );

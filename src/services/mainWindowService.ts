@@ -162,6 +162,8 @@ export const mainWindowService = {
   startStreamingStt: (engine: string, modelPath: string) =>
     invoke<void>("start_streaming_stt", { engine, modelPath }),
   clearConversation: () => invoke<void>("clear_conversation"),
+  cancelLlmRequest: (requestId: string) =>
+    invoke<boolean>("cancel_llm_request", { requestId }),
   getSelection: () => invoke<SelectionState>("get_selection"),
   hasLlmApiKey: () => invoke<boolean>("has_api_key"),
   takeScreenshotRegion: (region: ScreenshotRegion) =>

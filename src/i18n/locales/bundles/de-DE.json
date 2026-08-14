@@ -352,6 +352,7 @@
     "history.favorite": "Favorit",
     "history.unfavorite": "Aus Favoriten entfernen",
     "history.noInstruction": "Keine Anweisung für diesen Eintrag verfügbar",
+    "history.selectionRequired": "Wähle zuerst Text in einer anderen App aus, bevor du diese Anweisung anwendest.",
     "history.filterAll": "Alle",
     "history.filterFavorites": "Favoriten",
     "quickAction.title": "Schnellaktionen",

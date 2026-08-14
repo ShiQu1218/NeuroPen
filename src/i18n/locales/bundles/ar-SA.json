@@ -352,6 +352,7 @@
     "history.favorite": "مفضلة",
     "history.unfavorite": "إزالة من المفضلة",
     "history.noInstruction": "لا توجد تعليمات متاحة لهذا الإدخال",
+    "history.selectionRequired": "حدّد نصًا في تطبيق آخر قبل تطبيق هذا التوجيه.",
     "history.filterAll": "الكل",
     "history.filterFavorites": "المفضلة",
     "quickAction.title": "الإجراءات السريعة",

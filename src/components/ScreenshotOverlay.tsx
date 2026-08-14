@@ -27,6 +27,7 @@ export default function ScreenshotOverlay() {
   const dragCurrentRef = useRef<Point | null>(null);
   const activePointerIdRef = useRef<number | null>(null);
   const closingRef = useRef(false);
+  const selectionSessionActiveRef = useRef(false);
 
   const rect = useMemo(() => {
     if (!dragStart || !dragCurrent) return null;
@@ -48,6 +49,7 @@ export default function ScreenshotOverlay() {
 
   const resetSession = () => {
     closingRef.current = false;
+    selectionSessionActiveRef.current = true;
     resetDrag();
   };
 
@@ -70,6 +72,7 @@ export default function ScreenshotOverlay() {
   }) => {
     if (closingRef.current) return;
     closingRef.current = true;
+    selectionSessionActiveRef.current = false;
 
     try {
       await getCurrentWindow().hide().catch(() => { });
@@ -81,6 +84,7 @@ export default function ScreenshotOverlay() {
   };
 
   const cancelSelection = async () => {
+    if (!selectionSessionActiveRef.current) return;
     resetDrag();
     await closeWithPayload({ x: 0, y: 0, w: 0, h: 0, cancelled: true });
   };
@@ -90,7 +94,10 @@ export default function ScreenshotOverlay() {
     const current = dragCurrentRef.current;
     const bounds = virtualBounds;
     const viewport = rootRef.current?.getBoundingClientRect();
-    if (!start || !current || !bounds || !viewport || viewport.width <= 0 || viewport.height <= 0) return;
+    if (!start || !current || !bounds || !viewport || viewport.width <= 0 || viewport.height <= 0) {
+      await cancelSelection();
+      return;
+    }
 
     const nextRect = {
       x: Math.min(start.x, current.x),
@@ -137,6 +144,7 @@ export default function ScreenshotOverlay() {
   };
 
   const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!selectionSessionActiveRef.current) return;
     if (e.button === 2) {
       e.preventDefault();
       void cancelSelection();
@@ -201,8 +209,11 @@ export default function ScreenshotOverlay() {
       unlistenBlur = await listen(TauriEvent.WINDOW_BLUR, () => {
         // Don't cancel while the user is actively dragging (pointer is captured).
         // On Windows, transparent overlays briefly lose focus on pointer-down.
-        if (activePointerIdRef.current !== null) return;
-        if (!dragStartRef.current) return;
+        if (
+          !selectionSessionActiveRef.current ||
+          closingRef.current ||
+          activePointerIdRef.current !== null
+        ) return;
         void cancelSelection();
       });
       if (cancelled && unlistenStart) unlistenStart();

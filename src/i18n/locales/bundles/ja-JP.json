@@ -352,6 +352,7 @@
     "history.favorite": "お気に入り",
     "history.unfavorite": "お気に入り解除",
     "history.noInstruction": "この記録に使用可能な指示がありません",
+    "history.selectionRequired": "別のアプリでテキストを選択してから、この指示を適用してください。",
     "history.filterAll": "すべて",
     "history.filterFavorites": "お気に入り",
     "quickAction.title": "クイックアクション",

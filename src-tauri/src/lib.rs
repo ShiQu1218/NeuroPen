@@ -23,8 +23,8 @@ use commands::history_commands::{
     history_toggle_favorite,
 };
 use commands::llm_commands::{
-    call_llm, call_llm_text, call_llm_with_image, call_llm_with_images, clear_conversation,
-    list_available_llm_models,
+    call_llm, call_llm_text, call_llm_with_image, call_llm_with_images, cancel_llm_request,
+    clear_conversation, list_available_llm_models,
 };
 use commands::media_commands::{
     take_screenshot, take_screenshot_region, tts_is_playing, tts_speak, tts_stop,
@@ -554,6 +554,7 @@ pub fn run() {
             call_llm_with_images,
             list_available_llm_models,
             clear_conversation,
+            cancel_llm_request,
             preference_rate_result,
             preference_list_summaries,
             preference_get_summary,

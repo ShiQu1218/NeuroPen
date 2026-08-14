@@ -439,7 +439,26 @@ export default function PreviewWindowBody({
           value={refinementInput}
           onChange={(event) => setRefinementInput(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") void handleRefinement();
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (event.ctrlKey) {
+              if (!isLlmLoading && hasOutput && !isDragInteractionLocked()) {
+                void handleReplace();
+              }
+              return;
+            }
+
+            if (
+              !event.altKey &&
+              !event.metaKey &&
+              !isLlmLoading &&
+              refinementInput.trim() &&
+              !isDragInteractionLocked()
+            ) {
+              void handleRefinement();
+            }
           }}
           disabled={isLlmLoading}
         />

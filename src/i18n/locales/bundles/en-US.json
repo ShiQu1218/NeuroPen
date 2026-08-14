@@ -387,6 +387,7 @@
     "history.favorite": "Favorite",
     "history.unfavorite": "Unfavorite",
     "history.noInstruction": "No instruction available for this entry",
+    "history.selectionRequired": "Select text in another app before applying this instruction.",
     "history.filterAll": "All",
     "history.filterFavorites": "Favorites",
     "history.feedbackUp": "Helpful",
