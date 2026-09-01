@@ -83,7 +83,7 @@ Most AI tools start by asking you to open a tab, paste text, and manage context 
 | **Preview-first or direct injection** | Review output in `PreviewStream` or send it straight back into the focused target app |
 | **Focus-safe injection + undo** | Verifies focus before paste and supports one-step rollback with `Alt + Z` |
 | **Screenshot-to-LLM** | `Alt + S` captures a region and opens a multimodal prompt flow in the preview window |
-| **Cloud and local models** | Supports OpenAI Whisper API plus local Whisper, SenseVoice, Moonshine, Ollama, llama.cpp, and LM Studio |
+| **Cloud and local models** | Supports OpenAI GPT Transcribe models plus local Whisper, SenseVoice, Moonshine, Ollama, llama.cpp, and LM Studio |
 | **Model management** | Install, switch, cancel, and delete supported local STT and Piper TTS models inside the app |
 | **App Profiles** | Apply per-app tone, prompt appendix, language variant, output mode, and direct-paste defaults |
 | **History and tray workflow** | Keep a local history, launch from tray, and stay available in the background |
@@ -200,9 +200,12 @@ Notes:
 
 ### STT Engines
 
+NeuroPen records while the hotkey is held, then requests one final transcript after release; it does not request a live partial transcript.
+
 | Engine | Type | Notes |
 |--------|------|-------|
-| OpenAI Whisper API | Cloud | Requires API Key |
+| OpenAI GPT Transcribe | Cloud | Default high-accuracy option; requires an API Key |
+| OpenAI GPT-4o Mini Transcribe | Cloud | Lower-cost option; requires an API Key |
 | Local Whisper | Local | Via whisper-rs / whisper.cpp, supports CPU and GPU (Vulkan) |
 | SenseVoice | Local | Bundled local STT option for zh/en/ja/ko/yue speech recognition |
 | Moonshine | Local | Lightweight English local STT models optimized for speed |

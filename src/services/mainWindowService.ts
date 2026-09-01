@@ -171,8 +171,6 @@ export const mainWindowService = {
   getActiveFocusSession: () => activeFocusSessionId,
   hasSttApiKey: () => invoke<boolean>("has_stt_api_key"),
   startRecording: () => invoke<void>("start_recording"),
-  startStreamingStt: (engine: string, modelPath: string) =>
-    invoke<void>("start_streaming_stt", { engine, modelPath }),
   clearConversation: () => invoke<void>("clear_conversation"),
   cancelLlmRequest: (requestId: string) =>
     invoke<boolean>("cancel_llm_request", { requestId }),

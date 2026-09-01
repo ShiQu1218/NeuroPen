@@ -15,7 +15,7 @@ import { registerScreenshotListeners } from "./mainWindow/screenshotListeners";
 import { registerSelectionListeners } from "./mainWindow/selectionListeners";
 import { registerSttFinalRouter } from "./mainWindow/sttFinalRouter";
 import { mainWindowService } from "../services/mainWindowService";
-import { useAppStore } from "../store/useAppStore";
+import { resolveSttModelReference, useAppStore } from "../store/useAppStore";
 import { openAssistantDialog } from "../utils/previewWindow";
 import { normalizeSttEngine, normalizeSttLanguage } from "../utils/appText";
 
@@ -93,7 +93,7 @@ export function useMainWindowController() {
         const normalizedSttEngine = normalizeSttEngine(store.sttEngine);
         await mainWindowService.stopRecording(
           normalizedSttEngine,
-          normalizedSttEngine !== "openAi" ? store.sttModelPath : "",
+          resolveSttModelReference(normalizedSttEngine, store.sttModelPath),
           normalizeSttLanguage(store.sttLanguage),
         );
         store.setIsRecording(false);
@@ -130,10 +130,7 @@ export function useMainWindowController() {
       return false;
     };
 
-    const startRecordingCapture = async (
-      sttEngine: ReturnType<typeof normalizeSttEngine>,
-      focusSessionId?: number,
-    ) => {
+    const startRecordingCapture = async (focusSessionId?: number) => {
       const store = useAppStore.getState();
       // Avoid opening the microphone at all if the key was released while an
       // earlier preparation step (for example API-key validation) was pending.
@@ -146,12 +143,6 @@ export function useMainWindowController() {
         // rejected newer hotkey must not retarget a still-pending final result.
         recordingFocusSessionId = focusSessionId;
         mainWindowService.setActiveFocusSession(focusSessionId);
-        // Partial STT is best-effort UI feedback; final routing still comes from the
-        // stop-recording transcription path even if streaming startup fails.
-        void mainWindowService.startStreamingStt(
-          sttEngine,
-          sttEngine !== "openAi" ? store.sttModelPath : "",
-        ).catch((err) => console.warn("[App] streaming STT start failed:", err));
         store.setIsRecording(true);
         // Do not time-limit this latch: starting some audio devices can take longer
         // than the old 800 ms grace period. Once released, capture must stop even
@@ -285,13 +276,13 @@ export function useMainWindowController() {
           if (has_selection && selected_text && store.selectionEnabled) {
             await prepareSelectionRecording(selected_text);
             if (await ensureSttReady(sttEngine)) {
-              await startRecordingCapture(sttEngine, event.payload.sessionId);
+              await startRecordingCapture(event.payload.sessionId);
             }
           } else {
             store.setCurrentMode("A");
             setStatusMsg(tLive("status.recordingReleaseToStop"));
             if (await ensureSttReady(sttEngine)) {
-              await startRecordingCapture(sttEngine, event.payload.sessionId);
+              await startRecordingCapture(event.payload.sessionId);
             }
           }
         } finally {

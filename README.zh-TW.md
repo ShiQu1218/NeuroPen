@@ -83,7 +83,7 @@
 | **預覽或直接注入** | 可在 `PreviewStream` 先看結果，也可直接回填到目前焦點視窗 |
 | **安全注入 + 復原** | 貼回前會驗證焦點視窗，並支援 `Alt + Z` 單步復原 |
 | **截圖多模態** | `Alt + S` 擷取畫面後，直接開啟以圖片為上下文的問答流程 |
-| **雲端與本地模型** | 支援 OpenAI Whisper API、本地 Whisper、SenseVoice、Moonshine、Ollama、llama.cpp、LM Studio |
+| **雲端與本地模型** | 支援 OpenAI GPT Transcribe、本地 Whisper、SenseVoice、Moonshine、Ollama、llama.cpp、LM Studio |
 | **模型管理** | 可在 app 內安裝、切換、取消或刪除支援的本地 STT 與 Piper TTS 模型 |
 | **App Profiles** | 依 app 自動套用語氣、提示詞附加、語言變體、輸出模式與直接貼上規則 |
 | **歷史與系統匣流程** | 本地保存歷史紀錄、系統匣常駐、需要時快速叫出 |
@@ -200,9 +200,12 @@ Invoke-RestMethod http://127.0.0.1:1234/v1/models
 
 ### STT Engines
 
+NeuroPen 會在按住熱鍵時錄音，放開後只送出一次最終轉錄，不會請求即時局部逐字稿。
+
 | Engine | Type | Notes |
 |--------|------|-------|
-| OpenAI Whisper API | Cloud | 需要 API Key |
+| OpenAI GPT Transcribe | Cloud | 預設高準確度選項，需要 API Key |
+| OpenAI GPT-4o Mini Transcribe | Cloud | 較低成本選項，需要 API Key |
 | Local Whisper | Local | 透過 whisper-rs / whisper.cpp，支援 CPU 與 GPU (Vulkan) |
 | SenseVoice | Local | 本地 STT，多語辨識，支援 zh/en/ja/ko/yue |
 | Moonshine | Local | 輕量英文本地 STT，偏重速度 |

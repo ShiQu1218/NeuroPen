@@ -57,7 +57,6 @@ export type SettingsSection =
 
 export const STATUS_RESET_MS = 2000;
 export const RATING_INDICES = [0, 1, 2, 3, 4];
-export const OPENAI_STT_MODEL = "openai-whisper-api";
 
 export const NAV_ITEMS: { id: SettingsSection; icon: JSX.Element }[] = [
   {

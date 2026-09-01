@@ -6,7 +6,10 @@ import type {
   TranslationTarget,
 } from "../../store/useAppStore";
 import {
-  OPENAI_STT_MODEL,
+  isOpenAiSttModel,
+  OPENAI_STT_MODELS,
+} from "../../store/useAppStore";
+import {
   RATING_INDICES,
   type LocalSttModel,
   type ModelDownloadProgressEvent,
@@ -149,7 +152,11 @@ export default function SettingsSttSection({
               value={draftSttModelChoice}
               onChange={(event) => onSttModelChoiceChange(event.target.value)}
             >
-              <option value={OPENAI_STT_MODEL}>OpenAI Whisper API{t("settings.stt.modelCloud")}</option>
+              {OPENAI_STT_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.label}{t("settings.stt.modelCloud")}
+                </option>
+              ))}
               {localModels.filter((model) => model.installed).map((model) => (
                 <option key={model.id} value={model.id}>
                   {getLocalizedModelName(model)}
@@ -200,7 +207,7 @@ export default function SettingsSttSection({
           <p className="text-xs text-zinc-500">{t("settings.stt.microphoneHint")}</p>
         </div>
 
-        {draftSttModelChoice === OPENAI_STT_MODEL && (
+        {isOpenAiSttModel(draftSttModelChoice) && (
           <div className="space-y-1">
             <label className="font-medium">{t("settings.stt.sttApiKeyLabel")}</label>
             {sttApiKeySet && (

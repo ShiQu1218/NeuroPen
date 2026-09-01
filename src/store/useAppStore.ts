@@ -13,6 +13,7 @@ import {
 import {
   DEFAULT_MODE_A_PROMPT,
   DEFAULT_MODE_B_PROMPT,
+  DEFAULT_OPENAI_STT_MODEL,
   PREVIOUS_DEFAULT_MODE_A_PROMPT,
   PREVIOUS_DEFAULT_MODE_B_PROMPT,
   PREVIOUS_DEFAULT_MODE_C_PROMPT,
@@ -31,6 +32,7 @@ import {
   type SttOutputStrategy,
   type ThemePreference,
   type TranslationTarget,
+  normalizeOpenAiSttModel,
 } from "./appStoreTypes";
 import {
   getDefaultLanguageVariantPreferences,
@@ -46,6 +48,7 @@ export type {
   CustomLanguageVariant,
   LlmProvider,
   OutputMode,
+  OpenAiSttModel,
   PreferredLanguage,
   PunctuationMode,
   QuickActionCommand,
@@ -56,6 +59,13 @@ export type {
   TranslationTarget,
 } from "./appStoreTypes";
 export type { AppProfileMode, QuickActionAttachment } from "./appStoreTypes";
+export {
+  DEFAULT_OPENAI_STT_MODEL,
+  isOpenAiSttModel,
+  normalizeOpenAiSttModel,
+  resolveSttModelReference,
+  OPENAI_STT_MODELS,
+} from "./appStoreTypes";
 export { normalizeLlmModelOptions } from "./appStoreDefaults";
 
 const LEGACY_MODE_B_PROMPTS = [
@@ -98,7 +108,7 @@ const normalizePersistedAppProfiles = (
     }));
 };
 
-const PERSISTED_APP_STATE_VERSION = 1;
+const PERSISTED_APP_STATE_VERSION = 2;
 
 const isLegacyTtsPitch = (value: unknown) =>
   typeof value === "string" && /^[+-]?\d+(?:\.\d+)?hz$/i.test(value.trim());
@@ -182,7 +192,6 @@ interface AppState {
   lastSelectedText: string;
   lastInstruction: string;
   isTtsPlaying: boolean;
-  partialTranscript: string;
   sttDurationMs: number;
   llmDurationMs: number;
   pendingScreenshot: string;
@@ -245,7 +254,6 @@ interface AppState {
   setPreferenceLearningEnabled: (enabled: boolean) => void;
   setAppProfiles: (profiles: AppProfile[]) => void;
   setIsTtsPlaying: (playing: boolean) => void;
-  setPartialTranscript: (text: string) => void;
   setSttDurationMs: (ms: number) => void;
   setLlmDurationMs: (ms: number) => void;
   setPendingScreenshot: (base64: string) => void;
@@ -480,7 +488,6 @@ const SESSION_RUNTIME_RESET: Pick<
   | "lastSelectedText"
   | "lastInstruction"
   | "isTtsPlaying"
-  | "partialTranscript"
   | "sttDurationMs"
   | "llmDurationMs"
   | "pendingScreenshot"
@@ -501,7 +508,6 @@ const SESSION_RUNTIME_RESET: Pick<
   lastSelectedText: "",
   lastInstruction: "",
   isTtsPlaying: false,
-  partialTranscript: "",
   sttDurationMs: 0,
   llmDurationMs: 0,
   pendingScreenshot: "",
@@ -531,7 +537,7 @@ export const useAppStore = create<AppState>()(
       return {
         // Defaults
         wakeWord: "助理",
-        sttModelPath: "",
+        sttModelPath: DEFAULT_OPENAI_STT_MODEL,
         outputMode: "PreviewStream",
         llmProvider: "openAi",
         llmModel: DEFAULT_LLM_SELECTED_MODEL_BY_PROVIDER_STATE.openAi,
@@ -585,7 +591,6 @@ export const useAppStore = create<AppState>()(
         lastSelectedText: "",
         lastInstruction: "",
         isTtsPlaying: false,
-        partialTranscript: "",
         sttDurationMs: 0,
         llmDurationMs: 0,
         pendingScreenshot: "",
@@ -753,7 +758,6 @@ export const useAppStore = create<AppState>()(
             ),
           })),
         setIsTtsPlaying: (playing) => setRuntime({ isTtsPlaying: playing }),
-        setPartialTranscript: (text) => setRuntime({ partialTranscript: text }),
         setSttDurationMs: (ms) => setRuntime({ sttDurationMs: ms }),
         setLlmDurationMs: (ms) => setRuntime({ llmDurationMs: ms }),
         setPendingScreenshot: (base64) => setRuntime({ pendingScreenshot: base64 }),
@@ -847,6 +851,12 @@ export const useAppStore = create<AppState>()(
           nextModel,
         );
         const normalizedCustomVariants = normalizeCustomLanguageVariants(persisted.customLanguageVariants);
+        const nextSttEngine = persisted.sttEngine ?? currentState.sttEngine;
+        const nextSttModelPath = nextSttEngine === "openAi"
+          ? normalizeOpenAiSttModel(persisted.sttModelPath)
+          : typeof persisted.sttModelPath === "string"
+            ? persisted.sttModelPath
+            : "";
         return {
           ...currentState,
           ...persisted,
@@ -868,6 +878,7 @@ export const useAppStore = create<AppState>()(
             ...migratedSelectedModelsByProvider,
             [nextProvider]: nextModel,
           },
+          sttModelPath: nextSttModelPath,
           ttsPitch: normalizePersistedTtsPitch(persisted.ttsPitch, currentState.ttsPitch),
           preferenceLearningEnabled:
             typeof persisted.preferenceLearningEnabled === "boolean"
@@ -888,9 +899,15 @@ export const useAppStore = create<AppState>()(
       },
       version: PERSISTED_APP_STATE_VERSION,
       migrate: (persistedState, version) => {
-        const persisted = (persistedState ?? {}) as PersistedAppState;
+        let persisted = (persistedState ?? {}) as PersistedAppState;
         if (version < PERSISTED_APP_STATE_VERSION && isLegacyTtsPitch(persisted.ttsPitch)) {
-          return { ...persisted, ttsPitch: "" };
+          persisted = { ...persisted, ttsPitch: "" };
+        }
+        if (version < 2 && (persisted.sttEngine ?? "openAi") === "openAi") {
+          persisted = {
+            ...persisted,
+            sttModelPath: normalizeOpenAiSttModel(persisted.sttModelPath),
+          };
         }
         return persisted;
       },

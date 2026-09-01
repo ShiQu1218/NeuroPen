@@ -5,6 +5,9 @@ import { translate, useI18n, type TranslationKey } from "../i18n";
 import { settingsService } from "../services/settingsService";
 import {
   normalizeLlmModelOptions,
+  DEFAULT_OPENAI_STT_MODEL,
+  isOpenAiSttModel,
+  normalizeOpenAiSttModel,
   useAppStore,
   type AppLanguage,
   type AppProfile,
@@ -39,7 +42,6 @@ import SettingsLanguageVariantOverlay, {
 import SettingsInfoHint from "./settings/SettingsInfoHint";
 import {
   NAV_ITEMS,
-  OPENAI_STT_MODEL,
   STATUS_RESET_MS,
   type LocalSttModel,
   type LocalTtsModel,
@@ -417,7 +419,9 @@ export default function Settings() {
   const currentSttModelChoice = useMemo(() => {
     const matchedLocalModel = localModels.find((model) => model.modelPath === sttModelPath)
       ?? localModels.find((model) => model.active);
-    return sttEngine === "openAi" ? OPENAI_STT_MODEL : matchedLocalModel?.id ?? OPENAI_STT_MODEL;
+    return sttEngine === "openAi"
+      ? normalizeOpenAiSttModel(sttModelPath)
+      : matchedLocalModel?.id ?? DEFAULT_OPENAI_STT_MODEL;
   }, [localModels, sttEngine, sttModelPath]);
 
   const activeProfile = activeProfileOverlayId
@@ -769,12 +773,12 @@ export default function Settings() {
     engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine";
     modelPath: string;
   } => {
-    if (modelChoice === OPENAI_STT_MODEL) {
-      return { engine: "openAi" as const, modelPath: "" };
+    if (isOpenAiSttModel(modelChoice)) {
+      return { engine: "openAi" as const, modelPath: modelChoice };
     }
     const matchedLocalModel = localModels.find((model) => model.id === modelChoice && model.installed);
     if (!matchedLocalModel) {
-      return { engine: "openAi" as const, modelPath: "" };
+      return { engine: "openAi" as const, modelPath: DEFAULT_OPENAI_STT_MODEL };
     }
     const engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine" =
       matchedLocalModel.engine === "sensevoice"
@@ -993,7 +997,7 @@ export default function Settings() {
 
   const handleSttModelChoiceChange = useCallback(async (value: string) => {
     const { engine, modelPath } = resolveSttSelection(value);
-    const isExternalChoice = value === OPENAI_STT_MODEL;
+    const isExternalChoice = isOpenAiSttModel(value);
     if (!isExternalChoice && !localModels.some((model) => model.id === value && model.installed)) {
       setPanelMessage("stt", "error", t("settings.stt.localModelRequired"));
       return;
@@ -1293,9 +1297,17 @@ export default function Settings() {
         await settingsService.deleteLocalSttModel(modelId);
         if (deletingModel && (deletingModel.modelPath === sttModelPath || currentSttModelChoice === modelId)) {
           setSttEngine("openAi");
-          setSttModelPath("");
-          await settingsService.setRuntimeSttConfig({ engine: "openAi", modelPath: "", sttLanguage });
-          await broadcastSettingsSaved({ sttEngine: "openAi", sttModelPath: "", sttLanguage });
+          setSttModelPath(DEFAULT_OPENAI_STT_MODEL);
+          await settingsService.setRuntimeSttConfig({
+            engine: "openAi",
+            modelPath: DEFAULT_OPENAI_STT_MODEL,
+            sttLanguage,
+          });
+          await broadcastSettingsSaved({
+            sttEngine: "openAi",
+            sttModelPath: DEFAULT_OPENAI_STT_MODEL,
+            sttLanguage,
+          });
         }
       },
       t("settings.status.modelDeleted"),

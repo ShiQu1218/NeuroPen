@@ -10,7 +10,7 @@ import type {
   ThemePreference,
   TranslationTarget,
 } from "../../store/useAppStore";
-import { useAppStore } from "../../store/useAppStore";
+import { resolveSttModelReference, useAppStore } from "../../store/useAppStore";
 import { normalizeSttEngine, normalizeSttLanguage } from "../../utils/appText";
 import { hideWindowByLabel, preventCloseDestroy } from "../../utils/windowLifecycle";
 import type { SelectionListenerState, StatusSetter, TranslateFn } from "./listenerTypes";
@@ -150,7 +150,10 @@ export async function initializeMainWindowRuntime() {
 
   await mainWindowService.setRuntimeSttConfig(
     normalizeSttEngine(String(store.sttEngine)),
-    store.sttModelPath,
+    resolveSttModelReference(
+      normalizeSttEngine(String(store.sttEngine)),
+      store.sttModelPath,
+    ),
     normalizeSttLanguage(store.sttLanguage),
   ).catch((err) => {
     console.warn("[App] set_runtime_stt_config init failed:", err);
@@ -202,10 +205,12 @@ export function applySettingsSavedPayload(
     store.setSttModelPath(payload.sttModelPath);
   }
   if (payload.sttEngine || payload.sttLanguage || typeof payload.sttModelPath === "string") {
+    const nextStore = useAppStore.getState();
+    const nextEngine = normalizeSttEngine(String(nextStore.sttEngine));
     void mainWindowService.setRuntimeSttConfig(
-      normalizeSttEngine(payload.sttEngine ?? "openAi"),
-      typeof payload.sttModelPath === "string" ? payload.sttModelPath : "",
-      normalizeSttLanguage(payload.sttLanguage),
+      nextEngine,
+      resolveSttModelReference(nextEngine, nextStore.sttModelPath),
+      normalizeSttLanguage(nextStore.sttLanguage),
     ).catch((err) => {
       console.warn("[App] set_runtime_stt_config sync failed:", err);
     });

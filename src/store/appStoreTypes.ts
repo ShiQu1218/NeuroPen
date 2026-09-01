@@ -28,6 +28,25 @@ export type ThemePreference = "light" | "dark" | "system";
 
 export type SttEngine = "openAi" | "localWhisper" | "senseVoice" | "moonshine";
 export type SttLanguage = "auto" | "zh" | "en" | "ja" | "ko" | "de" | "fr" | "es" | "ru" | "ar";
+export const OPENAI_STT_MODELS = [
+  { id: "gpt-transcribe", label: "OpenAI GPT Transcribe" },
+  { id: "gpt-4o-mini-transcribe", label: "OpenAI GPT-4o Mini Transcribe" },
+] as const;
+export type OpenAiSttModel = (typeof OPENAI_STT_MODELS)[number]["id"];
+export const DEFAULT_OPENAI_STT_MODEL: OpenAiSttModel = "gpt-transcribe";
+
+export const isOpenAiSttModel = (value: unknown): value is OpenAiSttModel =>
+  OPENAI_STT_MODELS.some((model) => model.id === value);
+
+export const normalizeOpenAiSttModel = (value: unknown): OpenAiSttModel =>
+  isOpenAiSttModel(value) ? value : DEFAULT_OPENAI_STT_MODEL;
+
+export const resolveSttModelReference = (engine: SttEngine, value: unknown): string =>
+  engine === "openAi"
+    ? normalizeOpenAiSttModel(value)
+    : typeof value === "string"
+      ? value
+      : "";
 export type LanguageVariantPreferences = Record<string, string>;
 export type PreferredLanguageSelection = LanguageVariantPreferences;
 export type PreferredLanguage = PreferredLanguageSelection;

@@ -1,11 +1,10 @@
-//! Speech-to-Text engine using OpenAI Whisper API.
+//! Speech-to-Text engines using OpenAI transcription and local models.
 //!
 //! Phase 2 implementation:
 //! - Open microphone via `cpal` (audio_capture module)
-//! - On stop, send buffered audio to OpenAI Whisper API
+//! - On stop, transcribe the buffered audio once
 //! - Emit Tauri events:
 //!     `stt://start`         — recording began
-//!     `stt://partial(text)` — intermediate transcript (future: chunked)
 //!     `stt://final`         — final transcript ready
 //!     `stt://stop`          — recording ended
 //!     `stt://error`         — transcription failed
@@ -696,7 +695,9 @@ async fn transcribe_by_engine(
     stt_language: &str,
 ) -> Result<String, String> {
     match engine {
-        SttEngine::OpenAi => transcribe_openai(api_key.unwrap_or(""), samples, stt_language).await,
+        SttEngine::OpenAi => {
+            transcribe_openai(api_key.unwrap_or(""), model_path, samples, stt_language).await
+        }
         SttEngine::LocalWhisper => transcribe_local(model_path, samples, stt_language).await,
         SttEngine::SenseVoice => sensevoice::transcribe(model_path, samples, stt_language).await,
         SttEngine::Moonshine => moonshine::transcribe(model_path, samples).await,
@@ -1022,7 +1023,6 @@ fn encode_wav(samples: &[f32]) -> Vec<u8> {
     buf
 }
 
-/// Call OpenAI Whisper API to transcribe audio samples.
 fn normalize_stt_language(language: &str) -> Option<&'static str> {
     match language.trim().to_lowercase().as_str() {
         "" | "auto" => None,
@@ -1039,17 +1039,49 @@ fn normalize_stt_language(language: &str) -> Option<&'static str> {
     }
 }
 
-/// Call OpenAI Whisper API to transcribe audio samples.
+const DEFAULT_OPENAI_STT_MODEL: &str = "gpt-transcribe";
+const OPENAI_MINI_STT_MODEL: &str = "gpt-4o-mini-transcribe";
+
+fn normalize_openai_stt_model(model: &str) -> Result<&'static str, String> {
+    match model.trim() {
+        "" | "openai-whisper-api" | "whisper-1" => Ok(DEFAULT_OPENAI_STT_MODEL),
+        DEFAULT_OPENAI_STT_MODEL => Ok(DEFAULT_OPENAI_STT_MODEL),
+        OPENAI_MINI_STT_MODEL => Ok(OPENAI_MINI_STT_MODEL),
+        unsupported => Err(format!("Unsupported OpenAI STT model: {unsupported}")),
+    }
+}
+
+fn openai_language_field(model: &str) -> &'static str {
+    if model == DEFAULT_OPENAI_STT_MODEL {
+        "languages[]"
+    } else {
+        "language"
+    }
+}
+
+fn parse_openai_transcription_response(body: &str) -> Result<String, String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("Failed to parse response: {e}"))?;
+    parsed["text"]
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| format!("Unexpected response format: {body}"))
+}
+
+/// Call the OpenAI transcription API for one final transcript.
 async fn transcribe_openai(
     api_key: &str,
+    model: &str,
     samples: &[f32],
     stt_language: &str,
 ) -> Result<String, String> {
+    let model = normalize_openai_stt_model(model)?;
     let wav_data = encode_wav(samples);
 
     println!(
-        "[stt] Sending {} bytes of WAV to OpenAI Whisper API",
-        wav_data.len()
+        "[stt] Sending {} bytes of WAV to OpenAI transcription model {}",
+        wav_data.len(),
+        model
     );
 
     let part = reqwest::multipart::Part::bytes(wav_data)
@@ -1058,12 +1090,10 @@ async fn transcribe_openai(
         .map_err(|e| format!("Failed to create multipart: {e}"))?;
 
     let mut form = reqwest::multipart::Form::new()
-        .text("model", "whisper-1")
-        .text("response_format", "verbose_json")
-        .text("temperature", "0")
+        .text("model", model.to_string())
         .part("file", part);
     if let Some(language) = normalize_stt_language(stt_language) {
-        form = form.text("language", language.to_string());
+        form = form.text(openai_language_field(model), language.to_string());
     }
 
     let client = reqwest::Client::new();
@@ -1073,7 +1103,7 @@ async fn transcribe_openai(
         .multipart(form)
         .send()
         .await
-        .map_err(|e| format!("Whisper API request failed: {e}"))?;
+        .map_err(|e| format!("OpenAI transcription request failed: {e}"))?;
 
     let status = resp.status();
     let body = resp
@@ -1082,53 +1112,16 @@ async fn transcribe_openai(
         .map_err(|e| format!("Failed to read response: {e}"))?;
 
     if !status.is_success() {
-        return Err(format!("Whisper API error ({}): {}", status, body));
+        return Err(format!("OpenAI transcription error ({}): {}", status, body));
     }
 
     #[cfg(debug_assertions)]
     println!(
-        "[stt] Whisper API raw response: {}",
+        "[stt] OpenAI transcription raw response: {}",
         &body[..body.len().min(500)]
     );
 
-    // Parse verbose_json format: { "text": "...", "segments": [...] }
-    let parsed: serde_json::Value =
-        serde_json::from_str(&body).map_err(|e| format!("Failed to parse response: {e}"))?;
-
-    // Try to use segments to filter out hallucinated repeats.
-    // Whisper marks hallucinated segments with high compression_ratio (>2.4)
-    // or very high no_speech_prob (>0.6).
-    if let Some(segments) = parsed["segments"].as_array() {
-        let mut result = String::new();
-        for seg in segments {
-            let compression = seg["compression_ratio"].as_f64().unwrap_or(0.0);
-            let no_speech = seg["no_speech_prob"].as_f64().unwrap_or(0.0);
-            let seg_text = seg["text"].as_str().unwrap_or("");
-
-            #[cfg(debug_assertions)]
-            println!(
-                "[stt] Segment: {:?} (compression={:.2}, no_speech={:.2})",
-                seg_text, compression, no_speech
-            );
-
-            // Skip segments that look hallucinated
-            if compression > 2.4 || no_speech > 0.6 {
-                #[cfg(debug_assertions)]
-                println!("[stt] Skipping hallucinated segment");
-                continue;
-            }
-            result.push_str(seg_text);
-        }
-        if !result.is_empty() {
-            return Ok(result.trim().to_string());
-        }
-    }
-
-    // Fallback: use the top-level text field
-    parsed["text"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| format!("Unexpected response format: {body}"))
+    parse_openai_transcription_response(&body)
 }
 
 #[cfg(test)]
@@ -1250,5 +1243,53 @@ mod tests {
     fn test_quiet_speech_like_audio_is_not_silence() {
         let samples = vec![0.02f32; 16000];
         assert!(!is_effective_silence(&samples));
+    }
+
+    #[test]
+    fn openai_stt_legacy_models_upgrade_to_default() {
+        for model in ["", "openai-whisper-api", "whisper-1"] {
+            assert_eq!(
+                normalize_openai_stt_model(model).unwrap(),
+                DEFAULT_OPENAI_STT_MODEL
+            );
+        }
+    }
+
+    #[test]
+    fn openai_stt_models_are_allowlisted() {
+        assert_eq!(
+            normalize_openai_stt_model(DEFAULT_OPENAI_STT_MODEL).unwrap(),
+            DEFAULT_OPENAI_STT_MODEL
+        );
+        assert_eq!(
+            normalize_openai_stt_model(OPENAI_MINI_STT_MODEL).unwrap(),
+            OPENAI_MINI_STT_MODEL
+        );
+        assert!(normalize_openai_stt_model("unknown-model").is_err());
+    }
+
+    #[test]
+    fn openai_stt_language_field_matches_model_contract() {
+        assert_eq!(
+            openai_language_field(DEFAULT_OPENAI_STT_MODEL),
+            "languages[]"
+        );
+        assert_eq!(openai_language_field(OPENAI_MINI_STT_MODEL), "language");
+    }
+
+    #[test]
+    fn parses_openai_stt_json_response() {
+        let body = r#"{"text":"測試文字","languages":["zh"]}"#;
+        assert_eq!(
+            parse_openai_transcription_response(body).unwrap(),
+            "測試文字"
+        );
+    }
+
+    #[test]
+    fn rejects_openai_stt_response_without_text() {
+        let error = parse_openai_transcription_response(r#"{"languages":["zh"]}"#)
+            .expect_err("missing text should fail");
+        assert!(error.contains("Unexpected response format"));
     }
 }

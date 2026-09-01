@@ -17,7 +17,6 @@ import { useAppStore, type AppLanguage, type ThemePreference } from "../store/us
 export default function RecordingIndicator() {
   const [isRecording, setIsRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [partialText, setPartialText] = useState("");
   const [statusText, setStatusText] = useState("");
   const [animKey, setAnimKey] = useState(0);
   const statusTextRef = useRef("");
@@ -25,7 +24,6 @@ export default function RecordingIndicator() {
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setLanguage = useAppStore((s) => s.setLanguage);
   const setThemePreference = useAppStore((s) => s.setThemePreference);
-  const setPartialTranscript = useAppStore((s) => s.setPartialTranscript);
   const { t } = useI18n();
 
   // Sync latest values into refs so setTimeout callbacks read current state
@@ -77,10 +75,8 @@ export default function RecordingIndicator() {
         clearHideTimer();
         setIsRecording(true);
         setElapsed(0);
-        setPartialText("");
         setStatusText("");
         statusTextRef.current = "";
-        setPartialTranscript("");
         setAnimKey((k) => k + 1);
         await showAtBottomCenter();
       });
@@ -89,19 +85,11 @@ export default function RecordingIndicator() {
       const u2 = await listen("stt://stop", () => {
         setIsRecording(false);
         setElapsed(0);
-        setPartialText("");
         if (!statusTextRef.current) {
           scheduleHide(350);
         }
       });
       if (cancelled) { u2(); } else { unlisten.push(u2); }
-
-      // Listen for partial transcription results
-      const u4 = await listen<{ text: string }>("stt://partial", (event) => {
-        setPartialText(event.payload.text);
-        setPartialTranscript(event.payload.text);
-      });
-      if (cancelled) { u4(); } else { unlisten.push(u4); }
 
       const u3 = await listen<{ language?: AppLanguage; themePreference?: ThemePreference }>(
         "neuropen://settings-saved",
@@ -137,7 +125,7 @@ export default function RecordingIndicator() {
       clearHideTimer();
       unlisten.forEach((fn) => fn());
     };
-  }, [setLanguage, setPartialTranscript, setThemePreference]);
+  }, [setLanguage, setThemePreference]);
 
   // Elapsed timer
   useEffect(() => {
@@ -163,11 +151,7 @@ export default function RecordingIndicator() {
             : "bg-gray-400 dark:bg-zinc-500"
             }`}
         />
-        {isRecording && partialText ? (
-          <span className="truncate text-xs text-white/70 dark:text-zinc-400">{partialText}</span>
-        ) : (
-          <span>{isRecording ? t("recording.recording") : (statusText || t("recording.processing"))}</span>
-        )}
+        <span>{isRecording ? t("recording.recording") : (statusText || t("recording.processing"))}</span>
         {isRecording && (
           <span className="ml-1 shrink-0 text-xs text-white/60 dark:text-zinc-500">
             {formatTime(elapsed)}

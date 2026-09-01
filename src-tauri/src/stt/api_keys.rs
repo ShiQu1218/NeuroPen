@@ -177,7 +177,7 @@ pub(crate) fn get_stt_api_key() -> Result<String, String> {
             }
         }
     }
-    Err("未設定 Whisper STT API Key。請在設定中填入 STT API Key。".to_string())
+    Err("未設定 OpenAI STT API Key。請在設定中填入 STT API Key。".to_string())
 }
 
 pub(crate) fn get_api_key() -> Result<String, String> {

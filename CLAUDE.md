@@ -9,7 +9,7 @@ NeuroPen is a **Windows Desktop AI Voice Assistant** currently in the specificat
 ## Planned Tech Stack
 
 - **Framework**: Tauri (Rust backend + TypeScript/React frontend)
-- **STT Models**: Whisper (streaming, v1.0 MVP), Parakeet, Moonshine
+- **STT Models**: OpenAI GPT Transcribe (final transcription), local Whisper, Parakeet, Moonshine
 - **LLM**: OpenAI API (v1.0 MVP), local offline models (v2.0)
 - **Windows APIs**: UI Automation API (text selection detection), `GetForegroundWindow`
 
@@ -40,7 +40,7 @@ The app routes behavior based on whether text is selected and whether a wake wor
 | **B2** — Voice Command on Selection | Text selected + hotkey + voice instruction | LLM result → Output Preview Window |
 | **C** — LLM Query | No selection + hotkey + wake word ("助理") | LLM answer → Output Preview Window |
 
-**Mode A/C routing**: Streaming STT detects the wake word inline. If detected mid-speech, immediately switches to Mode C without waiting for the sentence to end.
+**Mode A/C routing**: Final STT output is checked for the wake word after the recording hotkey is released. A match routes the completed transcript to Mode C.
 
 ## Key Architectural Components
 
@@ -50,7 +50,7 @@ The app routes behavior based on whether text is selected and whether a wake wor
 - Window focus locking via `GetForegroundWindow()` at trigger time
 - Clipboard manager: cache → read → inject → restore
 - Text injection: write to clipboard → simulate `Ctrl+V`
-- Streaming STT and LLM API calls
+- Final STT transcription and streaming LLM API calls
 
 ### TypeScript/React Frontend
 - **Settings UI**: model selection, hotkey config, wake word, output mode toggle
@@ -78,7 +78,7 @@ The app routes behavior based on whether text is selected and whether a wake wor
 
 ## MVP Scope (v1.0)
 
-All three modes, Output Preview Window, Whisper STT with streaming, OpenAI LLM, clipboard-based text injection, focus locking, undo hotkey, LLM output mode toggle (direct vs. preview+stream), basic settings UI, and incognito mode.
+All three modes, Output Preview Window, final STT transcription, OpenAI LLM, clipboard-based text injection, focus locking, undo hotkey, LLM output mode toggle (direct vs. preview+stream), basic settings UI, and incognito mode.
 
 ## v2.0 Planned (out of scope now)
 
