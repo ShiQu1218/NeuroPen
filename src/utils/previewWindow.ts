@@ -55,7 +55,7 @@ export const emitPreviewStaticOutput = async (text: string) => {
   await emit("neuropen://preview-static-output", { text });
 };
 
-export const openAssistantDialog = async () => {
+export const openAssistantDialog = async (requestId?: string) => {
   const previewWin = await WebviewWindow.getByLabel("preview");
   if (!previewWin) return null;
 
@@ -69,6 +69,7 @@ export const openAssistantDialog = async () => {
       selectedText: "",
       instruction: "",
       startLoading: false,
+      requestId,
     });
   }
 

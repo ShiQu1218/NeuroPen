@@ -162,6 +162,9 @@ export default function PreviewWindowBody({
       }}
       onMouseDownCapture={(event) => {
         const target = event.target as HTMLElement;
+        // Replace must hand focus back to the captured source window. Avoid
+        // scheduling a competing preview-focus request from the same click.
+        if (target.closest('[data-preview-action="replace"]')) return;
         if (target.closest("button,input,textarea,a")) {
           void setPreviewFocusable(true, true);
           return;
@@ -524,6 +527,7 @@ export default function PreviewWindowBody({
           {t("preview.copy")}
         </button>
         <button
+          data-preview-action="replace"
           className="btn-primary px-3 py-1.5 text-xs"
           disabled={!hasOutput || isLlmLoading}
           onClick={() => {

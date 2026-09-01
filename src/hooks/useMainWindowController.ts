@@ -18,6 +18,7 @@ import { mainWindowService } from "../services/mainWindowService";
 import { resolveSttModelReference, useAppStore } from "../store/useAppStore";
 import { openAssistantDialog } from "../utils/previewWindow";
 import { normalizeSttEngine, normalizeSttLanguage } from "../utils/appText";
+import { generatePreferenceRequestId } from "../utils/preferenceLearning";
 
 export function useMainWindowController() {
   const { t } = useI18n();
@@ -308,8 +309,13 @@ export function useMainWindowController() {
         if (store.isRecording) {
           return;
         }
+        // Capture and bind the app that owned focus before the dialog takes it.
+        // The first prompt can then inherit this target just like later refinements.
+        const requestId = generatePreferenceRequestId();
+        const focus = await mainWindowService.lockWindow();
+        await mainWindowService.bindFocusSession(requestId, focus.sessionId);
         store.setCurrentMode("C");
-        await openAssistantDialog();
+        await openAssistantDialog(requestId);
       });
 
       await registerScreenshotListeners({

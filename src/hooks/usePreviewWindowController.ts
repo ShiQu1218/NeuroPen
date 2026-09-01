@@ -771,6 +771,9 @@ export function usePreviewWindowController() {
     replaceInFlightRef.current = true;
     try {
       const requestId = previewSession.requestId.trim();
+      // A focusable preview can immediately reclaim foreground focus after the
+      // pointer click or keyboard shortcut that initiated Replace.
+      await setPreviewFocusable(false);
       const restored = await mainWindowService.restoreFocus(undefined, requestId);
       if (!restored) {
         setLlmError(t("preview.replaceNoTarget"));
@@ -799,6 +802,9 @@ export function usePreviewWindowController() {
       await mainWindowService.restoreClipboard(undefined, requestId);
       showToast(t("preview.replaceSuccess"), 900);
       await setPreviewFocusable(true, true);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setLlmError(reason || t("preview.replaceFocusChanged"));
     } finally {
       replaceInFlightRef.current = false;
     }
