@@ -198,6 +198,8 @@ export const mainWindowService = {
   callLlmText: (payload: LlmTextCallPayload) => invoke<string>("call_llm_text", payload),
   bindFocusSession: (requestId: string, sessionId?: number, sourceRequestId?: string) =>
     invoke<void>("bind_focus_session", { requestId, sessionId, sourceRequestId }),
+  hasFocusSession: (requestId: string) =>
+    invoke<boolean>("has_focus_session", { requestId }),
   verifyFocus: (sessionId?: number, requestId?: string) =>
     invoke<boolean>("verify_focus", { sessionId, requestId }),
   restoreFocus: (sessionId?: number, requestId?: string) =>

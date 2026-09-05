@@ -1,8 +1,9 @@
 //! Text injection engine.
 //!
-//! Phase 1 implementation:
-//! - Write `text` to clipboard
-//! - Simulate Ctrl+V on the locked foreground window
+//! Injection implementation:
+//! - Prefer a temporary clipboard write followed by Ctrl+V
+//! - Fall back to Unicode keyboard input when the existing clipboard contains
+//!   rich or protected formats that this app cannot reconstruct
 //! - On failure return `InjectionError::Blocked` — do NOT retry
 //!
 //! Text injection flow (per spec):
@@ -110,6 +111,64 @@ fn simulate_ctrl_v() -> Result<(), InjectionError> {
     Ok(())
 }
 
+/// Inject UTF-16 code units directly so rich/protected clipboard contents never
+/// need to be replaced. KEYEVENTF_UNICODE bypasses the active keyboard layout
+/// and IME while preserving the target's normal typed-text behavior.
+#[cfg(target_os = "windows")]
+fn simulate_unicode_text(
+    text: &str,
+    focus_guard: &window_focus::FocusSessionGuard,
+) -> Result<(), InjectionError> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        VIRTUAL_KEY,
+    };
+
+    const UTF16_UNITS_PER_CHUNK: usize = 128;
+    let utf16: Vec<u16> = text.encode_utf16().collect();
+
+    for chunk in utf16.chunks(UTF16_UNITS_PER_CHUNK) {
+        if !focus_guard.verify_foreground() {
+            return Err(InjectionError::FocusChanged);
+        }
+
+        let mut inputs = Vec::with_capacity(chunk.len() * 2);
+        for &unit in chunk {
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: unit,
+                        dwFlags: KEYEVENTF_UNICODE,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            });
+            inputs.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(0),
+                        wScan: unit,
+                        dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            });
+        }
+
+        let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+        if sent != inputs.len() as u32 {
+            return Err(InjectionError::Blocked);
+        }
+    }
+
+    Ok(())
+}
+
 /// Send the Ctrl+C key sequence without any sleep. Used by selection.rs.
 #[cfg(target_os = "windows")]
 pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
@@ -184,6 +243,14 @@ fn simulate_ctrl_v() -> Result<(), InjectionError> {
 }
 
 #[cfg(not(target_os = "windows"))]
+fn simulate_unicode_text(
+    _text: &str,
+    _focus_guard: &window_focus::FocusSessionGuard,
+) -> Result<(), InjectionError> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
 pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
     Ok(())
 }
@@ -192,8 +259,8 @@ pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
 ///
 /// Steps:
 ///   1. Verify focus window is unchanged → `FocusChanged` if moved
-///   2. Write text to clipboard
-///   3. Simulate Ctrl+V
+///   2. Use clipboard paste when its original formats are reconstructable
+///   3. Otherwise type Unicode directly without changing the clipboard
 ///
 /// NOTE: Clipboard restore is the caller's responsibility.
 /// This avoids double-restore issues and gives the target app enough
@@ -207,6 +274,11 @@ pub fn inject_text_for_session(text: &str, session_id: u64) -> Result<(), Inject
     let focus_guard = window_focus::acquire_session_guard(session_id)
         .map_err(|_| InjectionError::FocusChanged)?;
 
+    // Clipboard restoration is one-shot. Recreate the snapshot when the same
+    // preview session performs another Replace after its previous restore.
+    clipboard::ensure_clipboard_cache_for_session_locked(session_id)
+        .map_err(InjectionError::ClipboardError)?;
+
     // Re-check after taking the operation lock. A selection watcher can create
     // a newer focus lock while this command is waiting for clipboard access;
     // the focus guard now keeps that session stable until paste completes.
@@ -214,22 +286,31 @@ pub fn inject_text_for_session(text: &str, session_id: u64) -> Result<(), Inject
         return Err(InjectionError::FocusChanged);
     }
 
-    // 2. Write to clipboard
-    clipboard::write_clipboard_for_session(text, session_id)
+    let can_use_clipboard = clipboard::can_temporarily_replace_for_session(session_id)
         .map_err(InjectionError::ClipboardError)?;
+    if can_use_clipboard {
+        clipboard::write_clipboard_for_session(text, session_id)
+            .map_err(InjectionError::ClipboardError)?;
 
-    // 3. Simulate Ctrl+V
-    // Writing the clipboard can yield briefly to Windows. Verify once more so
-    // we never paste into a target that changed in that interval.
-    if !focus_guard.verify_foreground() {
-        return Err(InjectionError::FocusChanged);
+        // Writing the clipboard can yield briefly to Windows. Verify once more
+        // so we never paste into a target that changed in that interval.
+        if !focus_guard.verify_foreground() {
+            return Err(InjectionError::FocusChanged);
+        }
+        simulate_ctrl_v()?;
+    } else {
+        simulate_unicode_text(text, &focus_guard)?;
     }
-    simulate_ctrl_v()?;
 
     println!(
-        "[injection] Injected {} chars for HWND {} session {session_id}",
+        "[injection] Injected {} chars for HWND {} session {session_id} via {}",
         text.len(),
-        focus_guard.hwnd()
+        focus_guard.hwnd(),
+        if can_use_clipboard {
+            "clipboard"
+        } else {
+            "unicode"
+        }
     );
     Ok(())
 }

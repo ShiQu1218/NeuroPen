@@ -5,6 +5,7 @@ import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { mainWindowService } from "../../services/mainWindowService";
 import { useAppStore } from "../../store/useAppStore";
 import { cropScreenshotBase64 } from "../../utils/screenshotCrop";
+import { generatePreferenceRequestId } from "../../utils/preferenceLearning";
 import { emitPreviewSession, showPreviewWindow } from "../../utils/previewWindow";
 import type { ErrorSetter, SafeRegister, StatusSetter, TranslateFn } from "./listenerTypes";
 
@@ -22,6 +23,7 @@ export async function registerScreenshotListeners({
   setSttError,
 }: RegisterScreenshotListenersParams) {
   let cachedSnapshotBase64 = "";
+  let screenshotRequestId = "";
   let cachedVirtualBounds:
     | {
         x: number;
@@ -42,6 +44,9 @@ export async function registerScreenshotListeners({
       return;
     }
     try {
+      screenshotRequestId = generatePreferenceRequestId();
+      const focus = await mainWindowService.lockWindow();
+      await mainWindowService.bindFocusSession(screenshotRequestId, focus.sessionId);
       const overlayWin = await WebviewWindow.getByLabel("screenshot-overlay");
       const monitors = await availableMonitors().catch(() => []);
       const fallbackMonitor = await currentMonitor().catch(() => null);
@@ -97,9 +102,11 @@ export async function registerScreenshotListeners({
         });
         setStatusMsg(t("status.screenshotDragHint"));
       } else {
+        screenshotRequestId = "";
         setStatusMsg(t("status.screenshotUnavailable"));
       }
     } catch (err) {
+      screenshotRequestId = "";
       console.error("[App] screenshot overlay open failed:", err);
       setStatusMsg(t("status.screenshotOpenFailed"));
     }
@@ -118,11 +125,13 @@ export async function registerScreenshotListeners({
       cachedVirtualBounds = null;
       const store = useAppStore.getState();
       if (event.payload.cancelled) {
+        screenshotRequestId = "";
         setStatusMsg(t("status.screenshotCancelled"));
         setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 1200);
         return;
       }
       if (store.incognito) {
+        screenshotRequestId = "";
         setStatusMsg(t("status.screenshotDisabledIncognito"));
         setTimeout(() => setStatusMsg(t("status.readyHoldHotkey")), 2000);
         return;
@@ -134,6 +143,7 @@ export async function registerScreenshotListeners({
       ) {
         const hasLlmKey = await mainWindowService.hasLlmApiKey().catch(() => false);
         if (!hasLlmKey) {
+          screenshotRequestId = "";
           setSttError(t("error.llmApiKeyRequired"));
           setStatusMsg(t("status.screenshotNeedsLlmApiKey"));
           return;
@@ -164,6 +174,7 @@ export async function registerScreenshotListeners({
           imageBase64 = shot.base64Png ?? shot.base64_png ?? "";
         }
         if (!imageBase64) {
+          screenshotRequestId = "";
           setStatusMsg(t("status.screenshotNoImage"));
           return;
         }
@@ -181,11 +192,14 @@ export async function registerScreenshotListeners({
           sourceMode: "C",
           selectedText: "",
           instruction: "",
+          requestId: screenshotRequestId || undefined,
         });
+        screenshotRequestId = "";
         await showPreviewWindow({ focusable: true, focus: true });
         await emit("neuropen://screenshot-attached", { imageBase64 });
         setStatusMsg(t("status.screenshotAttachedAsk"));
       } catch (err) {
+        screenshotRequestId = "";
         console.error("[App] screenshot flow failed:", err);
         setStatusMsg(t("status.screenshotFailed"));
       }

@@ -277,6 +277,11 @@ fn bind_focus_session(
     window_focus::bind_request_to_session(&request_id, session_id, source_request_id.as_deref())
 }
 
+#[tauri::command]
+fn has_focus_session(request_id: String) -> bool {
+    window_focus::request_session_id(&request_id).is_some()
+}
+
 fn resolve_focus_session(session_id: Option<u64>, request_id: Option<&str>) -> Result<u64, String> {
     if let Some(request_id) = request_id.filter(|id| !id.trim().is_empty()) {
         return window_focus::request_session_id(request_id)
@@ -660,6 +665,7 @@ pub fn run() {
             copy_to_clipboard,
             restore_clipboard,
             bind_focus_session,
+            has_focus_session,
             load_attachment,
             load_attachments_from_paths,
             pick_attachments,

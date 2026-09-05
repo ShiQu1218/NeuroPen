@@ -344,7 +344,10 @@ export function usePreviewWindowController() {
       try {
         // Refinements inherit the original request target. Do not bind them to
         // whatever window was most recently selected while this preview stayed open.
-        if (sourceRequestId) {
+        const canInheritFocus = sourceRequestId
+          ? await mainWindowService.hasFocusSession(sourceRequestId)
+          : false;
+        if (canInheritFocus) {
           await mainWindowService.bindFocusSession(requestId, undefined, sourceRequestId);
         }
         await emit("neuropen://llm-session-context", {
@@ -352,7 +355,7 @@ export function usePreviewWindowController() {
           selectedText,
           instruction: input,
           requestId,
-          sourceRequestId: sourceRequestId || undefined,
+          sourceRequestId: canInheritFocus ? sourceRequestId : undefined,
           preferenceCategoryKey: category.key,
           preferenceCategoryLabel: category.label,
           quickActionCommandId: category.quickActionCommandId,

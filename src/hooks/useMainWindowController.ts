@@ -309,6 +309,11 @@ export function useMainWindowController() {
         if (store.isRecording) {
           return;
         }
+        const previewWin = await WebviewWindow.getByLabel("preview");
+        if (await previewWin?.isVisible().catch(() => false)) {
+          await openAssistantDialog();
+          return;
+        }
         // Capture and bind the app that owned focus before the dialog takes it.
         // The first prompt can then inherit this target just like later refinements.
         const requestId = generatePreferenceRequestId();

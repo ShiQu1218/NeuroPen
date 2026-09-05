@@ -1,10 +1,9 @@
 //! Clipboard manager.
 //!
 //! The application temporarily replaces the clipboard while pasting text.  We
-//! only do that when the existing clipboard can be restored losslessly by this
-//! text-only implementation.  Rich or binary formats are left untouched and
-//! the caller receives an error instead of silently replacing them with an
-//! empty string.
+//! only do that when the existing clipboard can be restored safely by this
+//! text-only implementation. Standard Windows text companion formats are
+//! represented by their Unicode text; rich or binary payloads remain untouched.
 
 use std::sync::Mutex;
 
@@ -17,6 +16,24 @@ enum ClipboardContents {
     Unsupported {
         formats: Vec<u32>,
     },
+}
+
+// Windows commonly publishes one plain-text copy as all four of these formats.
+// CF_TEXT, CF_OEMTEXT, and CF_LOCALE can be recreated from CF_UNICODETEXT and
+// must not make an otherwise ordinary text clipboard look like rich content.
+const CF_TEXT_FORMAT: u32 = 1;
+const CF_OEMTEXT_FORMAT: u32 = 7;
+const CF_UNICODETEXT_FORMAT: u32 = 13;
+const CF_LOCALE_FORMAT: u32 = 16;
+
+fn has_only_restorable_text_formats(formats: &[u32]) -> bool {
+    formats.contains(&CF_UNICODETEXT_FORMAT)
+        && formats.iter().all(|format| {
+            matches!(
+                *format,
+                CF_TEXT_FORMAT | CF_OEMTEXT_FORMAT | CF_UNICODETEXT_FORMAT | CF_LOCALE_FORMAT
+            )
+        })
 }
 
 #[derive(Debug, Clone)]
@@ -105,16 +122,16 @@ mod win32 {
         formats
     }
 
-    /// Classify clipboard data while it is open. The app can restore only an
-    /// *exclusive* CF_UNICODETEXT payload. Even a second text or locale format
-    /// can carry independent data we cannot clone, so it is conservatively
-    /// treated as non-restorable rather than silently discarded.
+    /// Classify clipboard data while it is open. Windows normally exposes a
+    /// plain-text copy as Unicode, ANSI, OEM, and locale formats together; these
+    /// are one semantic text payload and can be restored from CF_UNICODETEXT.
+    /// Any additional rich, binary, file, or custom format remains unsupported.
     pub fn snapshot() -> Result<ClipboardContents, String> {
         let formats = enumerate_formats();
         if formats.is_empty() {
             return Ok(ClipboardContents::Empty);
         }
-        if formats.as_slice() != [CF_UNICODETEXT.0 as u32] {
+        if !super::has_only_restorable_text_formats(&formats) {
             return Ok(ClipboardContents::Unsupported { formats });
         }
         read_text().map(ClipboardContents::UnicodeText)
@@ -196,6 +213,16 @@ fn validate_cache_for_session(session_id: u64) -> Result<ClipboardCache, String>
     Ok(cache)
 }
 
+/// Returns whether this session's clipboard can be temporarily replaced and
+/// then reconstructed by the text-only clipboard implementation.
+pub fn can_temporarily_replace_for_session(session_id: u64) -> Result<bool, String> {
+    let cache = validate_cache_for_session(session_id)?;
+    Ok(!matches!(
+        cache.contents,
+        ClipboardContents::Unsupported { .. }
+    ))
+}
+
 fn mark_cache_written(session_id: u64, expected_sequence: u32) -> Result<(), String> {
     let mut guard = CLIPBOARD_CACHE
         .lock()
@@ -252,6 +279,10 @@ fn discard_cache_for_session(session_id: u64) -> Result<(), String> {
     Ok(())
 }
 
+fn clipboard_cache_needs_refresh(cache: Option<&ClipboardCache>, session_id: u64) -> bool {
+    cache.is_none_or(|cache| cache.session_id != session_id)
+}
+
 /// Saves the current clipboard contents for one interaction session.
 ///
 /// Rich/binary clipboard data is recorded as unsupported and is never replaced.
@@ -262,7 +293,10 @@ pub fn cache_clipboard_for_session(session_id: u64) -> Result<(), String> {
         return Err("找不到輸入目標工作階段，請重新開始".into());
     }
     let _op = acquire_op_lock()?;
+    cache_clipboard_for_session_locked(session_id)
+}
 
+fn cache_clipboard_for_session_locked(session_id: u64) -> Result<(), String> {
     {
         let cache = CLIPBOARD_CACHE
             .lock()
@@ -305,6 +339,24 @@ pub fn cache_clipboard_for_session(session_id: u64) -> Result<(), String> {
         ),
     }
     Ok(())
+}
+
+/// Ensures an injection has a clipboard snapshot while the caller holds the
+/// global clipboard operation lock. A completed restore consumes its snapshot,
+/// so a later Replace in the same preview session must capture a fresh one.
+pub fn ensure_clipboard_cache_for_session_locked(session_id: u64) -> Result<(), String> {
+    if session_id == 0 {
+        return Err("找不到輸入目標工作階段，請重新開始".into());
+    }
+    let cache = CLIPBOARD_CACHE
+        .lock()
+        .map_err(|error| format!("Clipboard cache lock poisoned: {error}"))?;
+    let needs_refresh = clipboard_cache_needs_refresh(cache.as_ref(), session_id);
+    drop(cache);
+    if !needs_refresh {
+        return Ok(());
+    }
+    cache_clipboard_for_session_locked(session_id)
 }
 
 /// Legacy wrapper: cache data for the currently locked focus session.
@@ -541,11 +593,40 @@ mod tests {
 
     #[test]
     fn rich_formats_are_not_treated_as_empty_text() {
-        let snapshot = ClipboardContents::Unsupported {
-            formats: vec![13, 49_152],
-        };
+        let formats = vec![CF_UNICODETEXT_FORMAT, 49_152];
+        assert!(!has_only_restorable_text_formats(&formats));
+        let snapshot = ClipboardContents::Unsupported { formats };
         assert!(matches!(snapshot, ClipboardContents::Unsupported { .. }));
         assert_ne!(snapshot, ClipboardContents::Empty);
+    }
+
+    #[test]
+    fn standard_windows_text_formats_are_restorable() {
+        assert!(has_only_restorable_text_formats(&[
+            CF_UNICODETEXT_FORMAT,
+            CF_LOCALE_FORMAT,
+            CF_TEXT_FORMAT,
+            CF_OEMTEXT_FORMAT,
+        ]));
+        assert!(has_only_restorable_text_formats(&[CF_UNICODETEXT_FORMAT,]));
+        assert!(!has_only_restorable_text_formats(&[
+            CF_TEXT_FORMAT,
+            CF_OEMTEXT_FORMAT,
+            CF_LOCALE_FORMAT,
+        ]));
+    }
+
+    #[test]
+    fn restored_clipboard_requires_a_fresh_snapshot_for_the_same_session() {
+        let session_id = 42;
+        let matching = ClipboardCache {
+            session_id,
+            expected_sequence: 0,
+            contents: ClipboardContents::Empty,
+            modified_by_app: false,
+        };
+        assert!(clipboard_cache_needs_refresh(None, session_id));
+        assert!(!clipboard_cache_needs_refresh(Some(&matching), session_id));
     }
 
     #[test]
