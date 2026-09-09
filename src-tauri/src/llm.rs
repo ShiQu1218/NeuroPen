@@ -787,41 +787,79 @@ fn emit_token_chunk(
     .is_some()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum StreamControl {
+    Continue,
+    Done,
+}
+
+fn parse_stream_record(data: &str, provider: &str) -> Result<serde_json::Value, String> {
+    let parsed: serde_json::Value = serde_json::from_str(data)
+        .map_err(|error| format!("{provider} stream parse failed: {error}"))?;
+    // A provider may report a failure after committing HTTP 200, even after
+    // emitting tokens. Check the error before accepting content in that record.
+    if let Some(error) = parsed.get("error").filter(|error| !error.is_null()) {
+        let message = error
+            .as_str()
+            .or_else(|| error["message"].as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| error.to_string());
+        return Err(format!("{provider} stream error: {message}"));
+    }
+    Ok(parsed)
+}
+
 fn handle_openai_stream_data(
     data: &str,
-    app: &tauri::AppHandle,
-    full_output: &mut String,
-    request_id: Option<&str>,
-    cancellation: Option<&LlmRequestCancellation>,
-) -> bool {
-    if data.is_empty() || data == "[DONE]" {
-        return !request_is_cancelled(cancellation);
+    mut emit_token: impl FnMut(&str) -> bool,
+) -> Result<StreamControl, String> {
+    if data.is_empty() {
+        return Ok(StreamControl::Continue);
     }
-    let parsed: serde_json::Value = match serde_json::from_str(data) {
-        Ok(value) => value,
-        Err(_) => return !request_is_cancelled(cancellation),
-    };
-    if let Some(token) = parsed["choices"][0]["delta"]["content"].as_str() {
-        return emit_token_chunk(app, full_output, token, request_id, cancellation);
+    if data == "[DONE]" {
+        return Ok(StreamControl::Done);
     }
-    if let Some(parts) = parsed["choices"][0]["delta"]["content"].as_array() {
+    let parsed = parse_stream_record(data, "LLM")?;
+    let content = &parsed["choices"][0]["delta"]["content"];
+    let mut tokens = Vec::new();
+    if let Some(token) = content.as_str() {
+        tokens.push(token);
+    } else if let Some(parts) = content.as_array() {
         for part in parts {
-            if let Some(token) = part["text"].as_str() {
-                if !emit_token_chunk(app, full_output, token, request_id, cancellation) {
-                    return false;
-                }
-            } else if let Some(token) = part.as_str() {
-                if !emit_token_chunk(app, full_output, token, request_id, cancellation) {
-                    return false;
-                }
+            if let Some(token) = part["text"].as_str().or_else(|| part.as_str()) {
+                tokens.push(token);
             }
         }
-        return !request_is_cancelled(cancellation);
+    } else if let Some(token) = parsed["choices"][0]["message"]["content"].as_str() {
+        tokens.push(token);
     }
-    if let Some(token) = parsed["choices"][0]["message"]["content"].as_str() {
-        return emit_token_chunk(app, full_output, token, request_id, cancellation);
+
+    for token in tokens {
+        if !emit_token(token) {
+            return Err(LLM_REQUEST_CANCELLED.to_string());
+        }
     }
-    !request_is_cancelled(cancellation)
+    Ok(StreamControl::Continue)
+}
+
+fn handle_ollama_stream_data(
+    data: &str,
+    mut emit_token: impl FnMut(&str) -> bool,
+) -> Result<StreamControl, String> {
+    if data.is_empty() {
+        return Ok(StreamControl::Continue);
+    }
+    let parsed = parse_stream_record(data, "Ollama")?;
+    if let Some(token) = parsed["message"]["content"].as_str() {
+        if !emit_token(token) {
+            return Err(LLM_REQUEST_CANCELLED.to_string());
+        }
+    }
+    Ok(if parsed["done"].as_bool() == Some(true) {
+        StreamControl::Done
+    } else {
+        StreamControl::Continue
+    })
 }
 
 /// Buffers raw response bytes until a complete newline-delimited record is
@@ -899,7 +937,7 @@ async fn call_openai_compatible_streaming(
     let mut pending = Vec::new();
     let mut full_output = String::new();
 
-    while let Some(item) = stream.next().await {
+    'response: while let Some(item) = stream.next().await {
         if request_is_cancelled(cancellation) {
             return Err(LLM_REQUEST_CANCELLED.to_string());
         }
@@ -910,8 +948,14 @@ async fn call_openai_compatible_streaming(
                 continue;
             }
             let data = line["data:".len()..].trim();
-            if !handle_openai_stream_data(data, app, &mut full_output, request_id, cancellation) {
-                return Err(LLM_REQUEST_CANCELLED.to_string());
+            let control = handle_openai_stream_data(data, |token| {
+                emit_token_chunk(app, &mut full_output, token, request_id, cancellation)
+            })?;
+            if control == StreamControl::Done {
+                // Completion belongs to the protocol, not the TCP connection.
+                // Do not wait for EOF or consume records after the done marker.
+                pending.clear();
+                break 'response;
             }
         }
     }
@@ -919,9 +963,9 @@ async fn call_openai_compatible_streaming(
     if let Some(line) = take_remaining_stream_line(&mut pending)? {
         if line.starts_with("data:") {
             let data = line["data:".len()..].trim();
-            if !handle_openai_stream_data(data, app, &mut full_output, request_id, cancellation) {
-                return Err(LLM_REQUEST_CANCELLED.to_string());
-            }
+            handle_openai_stream_data(data, |token| {
+                emit_token_chunk(app, &mut full_output, token, request_id, cancellation)
+            })?;
         }
     }
 
@@ -1115,40 +1159,27 @@ async fn call_ollama_streaming(
     let mut pending = Vec::new();
     let mut full_output = String::new();
 
-    while let Some(item) = stream.next().await {
+    'response: while let Some(item) = stream.next().await {
         if request_is_cancelled(cancellation) {
             return Err(LLM_REQUEST_CANCELLED.to_string());
         }
         let bytes = item.map_err(|e| format!("Ollama stream read failed: {e}"))?;
         pending.extend_from_slice(&bytes);
         for line in take_complete_stream_lines(&mut pending)? {
-            if line.is_empty() {
-                continue;
-            }
-            let parsed: serde_json::Value = match serde_json::from_str(&line) {
-                Ok(value) => value,
-                Err(_) => continue,
-            };
-            if let Some(token) = parsed["message"]["content"].as_str() {
-                if !emit_token_chunk(app, &mut full_output, token, request_id, cancellation) {
-                    return Err(LLM_REQUEST_CANCELLED.to_string());
-                }
+            let control = handle_ollama_stream_data(&line, |token| {
+                emit_token_chunk(app, &mut full_output, token, request_id, cancellation)
+            })?;
+            if control == StreamControl::Done {
+                pending.clear();
+                break 'response;
             }
         }
     }
 
     if let Some(line) = take_remaining_stream_line(&mut pending)? {
-        if !line.is_empty() {
-            let parsed: serde_json::Value = match serde_json::from_str(&line) {
-                Ok(value) => value,
-                Err(_) => serde_json::Value::Null,
-            };
-            if let Some(token) = parsed["message"]["content"].as_str() {
-                if !emit_token_chunk(app, &mut full_output, token, request_id, cancellation) {
-                    return Err(LLM_REQUEST_CANCELLED.to_string());
-                }
-            }
-        }
+        handle_ollama_stream_data(&line, |token| {
+            emit_token_chunk(app, &mut full_output, token, request_id, cancellation)
+        })?;
     }
 
     if request_is_cancelled(cancellation) {
@@ -2462,6 +2493,162 @@ mod tests {
             &LlmProvider::OpenAi,
             "cloud-api-key"
         ));
+    }
+
+    #[test]
+    fn openai_stream_reports_provider_error_after_partial_output() {
+        let mut output = String::new();
+        let mut emit = |token: &str| {
+            output.push_str(token);
+            true
+        };
+        handle_openai_stream_data(
+            r#"{"choices":[{"delta":{"content":"partial"}}]}"#,
+            &mut emit,
+        )
+        .expect("first token should be accepted");
+        let error = handle_openai_stream_data(
+            r#"{"error":{"code":"server_error","message":"Provider disconnected"},"choices":[{"delta":{"content":"discard me"},"finish_reason":"error"}]}"#,
+            &mut emit,
+        )
+        .expect_err("a partial answer must not hide a provider error");
+
+        assert!(error.contains("Provider disconnected"));
+        assert_eq!(output, "partial");
+    }
+
+    #[test]
+    fn ollama_stream_reports_provider_error_after_partial_output() {
+        let mut output = String::new();
+        let mut emit = |token: &str| {
+            output.push_str(token);
+            true
+        };
+        handle_ollama_stream_data(
+            r#"{"message":{"content":"partial"},"done":false}"#,
+            &mut emit,
+        )
+        .expect("first token should be accepted");
+        let error = handle_ollama_stream_data(
+            r#"{"error":"Model runner failed","message":{"content":"discard me"},"done":true}"#,
+            &mut emit,
+        )
+        .expect_err("a partial answer must not hide a provider error");
+
+        assert!(error.contains("Model runner failed"));
+        assert_eq!(output, "partial");
+    }
+
+    #[test]
+    fn stream_reports_error_only_responses() {
+        for data in [
+            r#"{"error":{"message":"Model unavailable"}}"#,
+            r#"{"error":"Model unavailable"}"#,
+        ] {
+            let openai_error = handle_openai_stream_data(data, |_| true)
+                .expect_err("error-only SSE event should fail");
+            let ollama_error = handle_ollama_stream_data(data, |_| true)
+                .expect_err("error-only NDJSON record should fail");
+            assert!(openai_error.contains("Model unavailable"));
+            assert!(ollama_error.contains("Model unavailable"));
+        }
+    }
+
+    #[test]
+    fn stream_rejects_malformed_json_records() {
+        for data in [r#"{"choices":["#, r#"{"message":{"content":"truncated"#] {
+            assert!(handle_openai_stream_data(data, |_| true).is_err());
+            assert!(handle_ollama_stream_data(data, |_| true).is_err());
+        }
+    }
+
+    #[test]
+    fn stream_reports_errors_in_final_record_without_newline() {
+        let mut pending = br#"data: {"error":{"message":"Stream interrupted"}}"#.to_vec();
+        assert!(take_complete_stream_lines(&mut pending).unwrap().is_empty());
+        let line = take_remaining_stream_line(&mut pending).unwrap().unwrap();
+        let error = handle_openai_stream_data(line.strip_prefix("data:").unwrap().trim(), |_| true)
+            .expect_err("unterminated SSE error record must not be dropped");
+        assert!(error.contains("Stream interrupted"));
+
+        let mut pending = br#"{"error":"Stream interrupted"}"#.to_vec();
+        assert!(take_complete_stream_lines(&mut pending).unwrap().is_empty());
+        let line = take_remaining_stream_line(&mut pending).unwrap().unwrap();
+        let error = handle_ollama_stream_data(&line, |_| true)
+            .expect_err("unterminated NDJSON error record must not be dropped");
+        assert!(error.contains("Stream interrupted"));
+    }
+
+    #[test]
+    fn openai_stream_recognizes_done_marker() {
+        assert_eq!(
+            handle_openai_stream_data("[DONE]", |_| panic!("done must not emit text")),
+            Ok(StreamControl::Done)
+        );
+    }
+
+    #[test]
+    fn ollama_stream_preserves_content_in_done_record() {
+        let mut output = String::new();
+        let result = handle_ollama_stream_data(
+            r#"{"message":{"content":"final token"},"done":true}"#,
+            |token| {
+                output.push_str(token);
+                true
+            },
+        );
+
+        assert_eq!(output, "final token");
+        assert_eq!(result, Ok(StreamControl::Done));
+    }
+
+    #[test]
+    fn openai_stream_preserves_supported_content_shapes() {
+        for data in [
+            r#"{"choices":[{"delta":{"content":"你好"}}]}"#,
+            r#"{"choices":[{"delta":{"content":[{"text":"你"},"好"]}}]}"#,
+            r#"{"choices":[{"message":{"content":"你好"}}]}"#,
+        ] {
+            let mut output = String::new();
+            assert_eq!(
+                handle_openai_stream_data(data, |token| {
+                    output.push_str(token);
+                    true
+                }),
+                Ok(StreamControl::Continue)
+            );
+            assert_eq!(output, "你好");
+        }
+    }
+
+    #[test]
+    fn stream_ignores_empty_and_metadata_records() {
+        for data in [
+            "",
+            r#"{"choices":[{"delta":{"role":"assistant"}}]}"#,
+            r#"{"choices":[],"usage":{"total_tokens":10},"error":null}"#,
+        ] {
+            assert_eq!(
+                handle_openai_stream_data(data, |_| panic!("metadata must not emit text")),
+                Ok(StreamControl::Continue)
+            );
+        }
+        assert_eq!(
+            handle_ollama_stream_data("", |_| panic!("blank lines must not emit text")),
+            Ok(StreamControl::Continue)
+        );
+    }
+
+    #[test]
+    fn stream_token_cancellation_is_preserved() {
+        assert_eq!(
+            handle_openai_stream_data(r#"{"choices":[{"delta":{"content":"token"}}]}"#, |_| false),
+            Err(LLM_REQUEST_CANCELLED.to_string())
+        );
+        assert_eq!(
+            handle_ollama_stream_data(r#"{"message":{"content":"token"},"done":true}"#, |_| false),
+            Err(LLM_REQUEST_CANCELLED.to_string())
+        );
     }
 
     #[test]
