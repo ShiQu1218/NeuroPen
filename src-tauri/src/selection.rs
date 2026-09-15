@@ -619,11 +619,61 @@ fn is_cursor_over_current_process_window(_x: i32, _y: i32) -> bool {
     false
 }
 
+// Only passive detection is suspended; explicit hotkey selection remains available.
+fn covers_monitor(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -> bool {
+    monitor.2 > monitor.0
+        && monitor.3 > monitor.1
+        && window.0 <= monitor.0
+        && window.1 <= monitor.1
+        && window.2 >= monitor.2
+        && window.3 >= monitor.3
+}
+
+#[cfg(target_os = "windows")]
+fn should_suspend_passive_selection() -> bool {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::Graphics::Gdi::{
+        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetCursorInfo, GetForegroundWindow, GetWindowRect, CURSORINFO, CURSOR_SHOWING,
+    };
+
+    unsafe {
+        let mut cursor = CURSORINFO {
+            cbSize: std::mem::size_of::<CURSORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetCursorInfo(&mut cursor).is_ok() && cursor.flags != CURSOR_SHOWING {
+            return true;
+        }
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return true;
+        }
+        let mut rect = RECT::default();
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetWindowRect(hwnd, &mut rect).is_err()
+            || !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info)
+                .as_bool()
+        {
+            return true;
+        }
+        let monitor = info.rcMonitor;
+        covers_monitor(
+            (rect.left, rect.top, rect.right, rect.bottom),
+            (monitor.left, monitor.top, monitor.right, monitor.bottom),
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MouseHookEventKind {
     LeftDown,
     LeftUp,
-    Move,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -673,7 +723,6 @@ impl MouseGestureState {
                 };
                 None
             }
-            MouseHookEventKind::Move => None,
             MouseHookEventKind::LeftUp => {
                 let was_down = self.left_down;
                 self.left_down = false;
@@ -717,7 +766,7 @@ unsafe extern "system" fn low_level_mouse_proc(
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, MSLLHOOKSTRUCT, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+        CallNextHookEx, MSLLHOOKSTRUCT, WM_LBUTTONDOWN, WM_LBUTTONUP,
     };
 
     if code >= 0 {
@@ -725,7 +774,6 @@ unsafe extern "system" fn low_level_mouse_proc(
         let kind = match message {
             WM_LBUTTONDOWN => Some(MouseHookEventKind::LeftDown),
             WM_LBUTTONUP => Some(MouseHookEventKind::LeftUp),
-            WM_MOUSEMOVE => Some(MouseHookEventKind::Move),
             _ => None,
         };
         if let Some(kind) = kind {
@@ -940,6 +988,31 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
         loop {
             std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
 
+            // Never queue high-rate mouse movement. Sample only for probe cancellation.
+            if should_suspend_passive_selection() {
+                for _ in mouse_rx.try_iter() {}
+                mouse_state = MouseGestureState::new(get_cursor_pos());
+                pending_candidate = None;
+                pending_probe = None;
+                if last_emitted_selection {
+                    last_emitted_selection = false;
+                    last_emitted_text.clear();
+                    last_emitted_anchor = None;
+                    emit_selection_changed(
+                        &app,
+                        false,
+                        None,
+                        mouse_state.cursor_pos,
+                        None,
+                        None,
+                        false,
+                        true,
+                        None,
+                    );
+                }
+                continue;
+            }
+
             for event in mouse_rx.try_iter() {
                 if matches!(event.kind, MouseHookEventKind::LeftDown) {
                     pending_candidate = None;
@@ -953,7 +1026,7 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
             }
 
             if let Some((scheduled_at, candidate)) = pending_probe {
-                let (cx, cy) = mouse_state.cursor_pos;
+                let (cx, cy) = get_cursor_pos();
                 let release_pos = candidate.release_pos;
                 let cancel = is_ctrl_c_pressed()
                     || (cx - release_pos.0).abs() > PROBE_CANCEL_DISTANCE_PX
@@ -1021,6 +1094,10 @@ pub fn start_selection_watcher(app: tauri::AppHandle) {
             let release_pos = candidate.release_pos;
 
             if matches!(candidate.gesture, ReleaseGesture::PlainClick) {
+                // No transition means no WebView wakeup or redundant window hide.
+                if !last_emitted_selection {
+                    continue;
+                }
                 last_emitted_selection = false;
                 last_emitted_text.clear();
                 last_emitted_anchor = None;
@@ -1116,6 +1193,16 @@ pub fn start_selection_watcher(_app: tauri::AppHandle) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fullscreen_detection_handles_secondary_monitors_and_windowed_apps() {
+        assert!(covers_monitor((0, 0, 1920, 1080), (0, 0, 1920, 1080)));
+        assert!(covers_monitor((-1920, 0, 0, 1080), (-1920, 0, 0, 1080)));
+        assert!(!covers_monitor((100, 100, 1500, 900), (0, 0, 1920, 1080)));
+        // Maximized windows leave space for the taskbar and remain supported.
+        assert!(!covers_monitor((-8, -8, 1928, 1048), (0, 0, 1920, 1080)));
+        assert!(!covers_monitor((0, 0, 1920, 1080), (0, 0, 0, 0)));
+    }
 
     #[test]
     fn selection_result_keeps_non_empty_later_fragments() {
