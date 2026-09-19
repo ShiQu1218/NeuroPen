@@ -631,12 +631,14 @@ fn covers_monitor(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -
 
 fn should_suspend_for_window(
     cursor_hidden: bool,
+    maximized: bool,
     window: (i32, i32, i32, i32),
     monitor: (i32, i32, i32, i32),
 ) -> bool {
-    // Fullscreen editors and maximized windows with an auto-hidden taskbar
-    // still support selection. A hidden cursor alone can also mean typing.
-    cursor_hidden && covers_monitor(window, monitor)
+    // Maximized desktop apps can cover the monitor (auto-hidden taskbar), and
+    // browsers may briefly hide the cursor. Neither makes them a fullscreen game.
+    // Do not clear an in-progress selection gesture in those windows.
+    cursor_hidden && !maximized && covers_monitor(window, monitor)
 }
 
 #[cfg(target_os = "windows")]
@@ -646,7 +648,7 @@ fn should_suspend_passive_selection() -> bool {
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetCursorInfo, GetForegroundWindow, GetWindowRect, CURSORINFO, CURSOR_SHOWING,
+        GetCursorInfo, GetForegroundWindow, GetWindowRect, IsZoomed, CURSORINFO, CURSOR_SHOWING,
     };
 
     unsafe {
@@ -674,6 +676,7 @@ fn should_suspend_passive_selection() -> bool {
         let monitor = info.rcMonitor;
         should_suspend_for_window(
             cursor_hidden,
+            IsZoomed(hwnd).as_bool(),
             (rect.left, rect.top, rect.right, rect.bottom),
             (monitor.left, monitor.top, monitor.right, monitor.bottom),
         )
@@ -1207,22 +1210,44 @@ mod tests {
     #[test]
     fn passive_selection_remains_available_in_fullscreen_editors() {
         let monitor = (0, 0, 1920, 1080);
-        assert!(!should_suspend_for_window(false, monitor, monitor));
+        assert!(!should_suspend_for_window(false, false, monitor, monitor));
         // Maximized borders can extend beyond a monitor with a hidden taskbar.
         assert!(!should_suspend_for_window(
             false,
+            true,
             (-8, -8, 1928, 1088),
             monitor
         ));
         assert!(!should_suspend_for_window(
             true,
+            false,
             (100, 100, 1500, 900),
             monitor
         ));
-        assert!(should_suspend_for_window(true, monitor, monitor));
+        assert!(should_suspend_for_window(true, false, monitor, monitor));
         let secondary = (-1920, 0, 0, 1080);
-        assert!(!should_suspend_for_window(false, secondary, secondary));
-        assert!(should_suspend_for_window(true, secondary, secondary));
+        assert!(!should_suspend_for_window(
+            false, false, secondary, secondary
+        ));
+        assert!(should_suspend_for_window(true, false, secondary, secondary));
+    }
+
+    #[test]
+    fn maximized_browser_keeps_selection_during_cursor_visibility_changes() {
+        for monitor in [(0, 0, 1920, 1080), (-1920, 0, 0, 1080)] {
+            let maximized_rect = (monitor.0 - 8, monitor.1 - 8, monitor.2 + 8, monitor.3 + 8);
+            for hidden in [false, true, false] {
+                assert!(!should_suspend_for_window(
+                    hidden,
+                    true,
+                    maximized_rect,
+                    monitor
+                ));
+                assert!(!should_suspend_for_window(hidden, true, monitor, monitor));
+            }
+            // Borderless games with a hidden cursor still avoid UIA probing.
+            assert!(should_suspend_for_window(true, false, monitor, monitor));
+        }
     }
 
     #[test]
