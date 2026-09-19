@@ -629,6 +629,16 @@ fn covers_monitor(window: (i32, i32, i32, i32), monitor: (i32, i32, i32, i32)) -
         && window.3 >= monitor.3
 }
 
+fn should_suspend_for_window(
+    cursor_hidden: bool,
+    window: (i32, i32, i32, i32),
+    monitor: (i32, i32, i32, i32),
+) -> bool {
+    // Fullscreen editors and maximized windows with an auto-hidden taskbar
+    // still support selection. A hidden cursor alone can also mean typing.
+    cursor_hidden && covers_monitor(window, monitor)
+}
+
 #[cfg(target_os = "windows")]
 fn should_suspend_passive_selection() -> bool {
     use windows::Win32::Foundation::RECT;
@@ -644,12 +654,11 @@ fn should_suspend_passive_selection() -> bool {
             cbSize: std::mem::size_of::<CURSORINFO>() as u32,
             ..Default::default()
         };
-        if GetCursorInfo(&mut cursor).is_ok() && cursor.flags != CURSOR_SHOWING {
-            return true;
-        }
+        let cursor_hidden =
+            GetCursorInfo(&mut cursor).is_ok() && (cursor.flags.0 & CURSOR_SHOWING.0) == 0;
         let hwnd = GetForegroundWindow();
         if hwnd.0.is_null() {
-            return true;
+            return false;
         }
         let mut rect = RECT::default();
         let mut info = MONITORINFO {
@@ -660,10 +669,11 @@ fn should_suspend_passive_selection() -> bool {
             || !GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut info)
                 .as_bool()
         {
-            return true;
+            return false;
         }
         let monitor = info.rcMonitor;
-        covers_monitor(
+        should_suspend_for_window(
+            cursor_hidden,
             (rect.left, rect.top, rect.right, rect.bottom),
             (monitor.left, monitor.top, monitor.right, monitor.bottom),
         )
@@ -1193,6 +1203,27 @@ pub fn start_selection_watcher(_app: tauri::AppHandle) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn passive_selection_remains_available_in_fullscreen_editors() {
+        let monitor = (0, 0, 1920, 1080);
+        assert!(!should_suspend_for_window(false, monitor, monitor));
+        // Maximized borders can extend beyond a monitor with a hidden taskbar.
+        assert!(!should_suspend_for_window(
+            false,
+            (-8, -8, 1928, 1088),
+            monitor
+        ));
+        assert!(!should_suspend_for_window(
+            true,
+            (100, 100, 1500, 900),
+            monitor
+        ));
+        assert!(should_suspend_for_window(true, monitor, monitor));
+        let secondary = (-1920, 0, 0, 1080);
+        assert!(!should_suspend_for_window(false, secondary, secondary));
+        assert!(should_suspend_for_window(true, secondary, secondary));
+    }
 
     #[test]
     fn fullscreen_detection_handles_secondary_monitors_and_windowed_apps() {
