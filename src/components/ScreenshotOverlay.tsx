@@ -206,7 +206,9 @@ export default function ScreenshotOverlay() {
         setVirtualBounds(event.payload?.virtualBounds ?? null);
         void ensureFocus();
       });
-      unlistenBlur = await listen(TauriEvent.WINDOW_BLUR, () => {
+      // Only this overlay losing focus should cancel selection. A global listener
+      // also receives blur events from windows that yield focus to the overlay.
+      unlistenBlur = await getCurrentWindow().listen(TauriEvent.WINDOW_BLUR, () => {
         // Don't cancel while the user is actively dragging (pointer is captured).
         // On Windows, transparent overlays briefly lose focus on pointer-down.
         if (
