@@ -11,12 +11,23 @@ node_modules
 dist
 dist-ssr
 *.local
+.npm-cache/
+coverage/
+*.tsbuildinfo
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
@@ -30,6 +41,10 @@ src-tauri/cuda-libs/
 venv/
 env/
 .env/
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 # Ignore all markdown files except README
 *.md
@@ -46,6 +61,11 @@ env/
 .claude/
 .tmp-gitcfg
 .tmp-home/
+/.tmp-*
+/tmp-exe-icon*.png
 
 # Tauri signing keys
-~/.tauri/
+/.tauri/
+*.key
+*.p12
+*.pfx
