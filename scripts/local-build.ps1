@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($env:CARGO_TARGET_DIR)) {
-    $env:CARGO_TARGET_DIR = "C:\np-target"
+    $env:CARGO_TARGET_DIR = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\src-tauri\target"))
 }
 
 $builtExePath = Join-Path $env:CARGO_TARGET_DIR "release\neuropen.exe"

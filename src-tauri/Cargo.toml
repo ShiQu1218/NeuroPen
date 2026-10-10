@@ -5,6 +5,9 @@ description = "NeuroPen - Windows Desktop AI Voice Assistant"
 authors = ["you"]
 edition = "2021"
 
+[profile.dev]
+debug = 0
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]

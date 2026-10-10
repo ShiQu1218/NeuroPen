@@ -380,7 +380,7 @@ npm run doctor:gpu
 npm run build:exe:gpu
 ```
 
-These scripts use `tauri build --no-bundle` and default `CARGO_TARGET_DIR` to `C:\np-target`, so the app gets the built frontend assets and still avoids the `can't find crate` failure you hit from the full desktop path.
+These scripts use `tauri build --no-bundle` to include the built frontend assets and default `CARGO_TARGET_DIR` to `src-tauri/target` inside the project. An existing `CARGO_TARGET_DIR` is preserved; if you encounter path-length-related build errors, set it to a shorter path.
 
 If your machine still hits a Windows path-too-long issue, use `subst` as a fallback:
 
@@ -394,7 +394,7 @@ npm run build:exe:gpu
 After the build finishes, launch:
 
 ```powershell
-C:\np-target\release\neuropen.exe
+.\src-tauri\target\release\neuropen.exe
 ```
 
 You can keep using that exe across reboots. Rebuild only when you want a newer test build.
@@ -406,7 +406,7 @@ Use this only for official installer/updater artifacts. The signing key and pass
 - CI release: push a `v*` tag and let [release.yml](./.github/workflows/release.yml) read `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` from GitHub secrets
 - Local signed release from the project directory: export both variables in the current shell session, then run `npm run build:bundle`, `npm run build:bundle:local-stt`, or `npm run build:bundle:gpu`
 - Do not set those variables to empty strings; empty values are not valid signing credentials
-- These bundle scripts also set `CARGO_TARGET_DIR` to `C:\np-target`, so they avoid the `can't find crate` failure seen when running `npm run tauri build -- --features ...` directly from the full desktop path
+- These bundle scripts also default to `src-tauri/target` inside the project and preserve an existing `CARGO_TARGET_DIR`
 - `npm run tauri build` creates the NSIS installer and updater artifacts, so it requires valid signing credentials in this repository configuration
 
 ### Build
@@ -464,7 +464,7 @@ Build output:
 
 ### Output Types
 
-- Local executable only: use `npm run build:exe`, `npm run build:exe:local-stt`, or `npm run build:exe:gpu`, then run `C:\np-target\release\neuropen.exe`
+- Local executable only: use `npm run build:exe`, `npm run build:exe:local-stt`, or `npm run build:exe:gpu`, then run `.\src-tauri\target\release\neuropen.exe`
 - Signed installer/updater bundle: use `npm run build:bundle`, `npm run build:bundle:local-stt`, or `npm run build:bundle:gpu`
 
 ### Key Technologies

@@ -380,7 +380,7 @@ npm run doctor:gpu
 npm run build:exe:gpu
 ```
 
-這幾個 script 會使用 `tauri build --no-bundle`，並預設把 `CARGO_TARGET_DIR` 設成 `C:\np-target`。這樣一方面會正確打包前端資產，另一方面也能縮短 Cargo 輸出路徑，避開你遇到的 `can't find crate` 類型錯誤。
+這幾個 script 會使用 `tauri build --no-bundle`，正確打包前端資產，並預設把 `CARGO_TARGET_DIR` 設成專案內的 `src-tauri/target`。若已設定 `CARGO_TARGET_DIR`，則保留自訂路徑；遇到長路徑相關的編譯錯誤時，可自行指定較短的路徑。
 
 如果你的機器仍然遇到 Windows 路徑過長錯誤，再把 `subst` 當成備用方案：
 
@@ -394,7 +394,7 @@ npm run build:exe:gpu
 build 完成後，直接執行：
 
 ```powershell
-C:\np-target\release\neuropen.exe
+.\src-tauri\target\release\neuropen.exe
 ```
 
 這個 exe 可以跨重開機持續使用。只有你想要測試新的修改時，才需要重新 build。
@@ -406,7 +406,7 @@ C:\np-target\release\neuropen.exe
 - CI 發版：push `v*` tag，讓 [release.yml](./.github/workflows/release.yml) 從 GitHub secrets 讀取 `TAURI_SIGNING_PRIVATE_KEY` 與 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 - 本機在專案目錄簽章發版：只在目前 shell session 匯出這兩個環境變數，然後執行 `npm run build:bundle`、`npm run build:bundle:local-stt` 或 `npm run build:bundle:gpu`
 - 不要把這兩個環境變數設成空字串；空值不是有效的簽章憑證
-- 這些 bundle script 也會把 `CARGO_TARGET_DIR` 設成 `C:\np-target`，用來避開你直接在完整桌面路徑執行 `npm run tauri build -- --features ...` 時出現的 `can't find crate` 問題
+- 這些 bundle script 同樣預設把產物放在專案內的 `src-tauri/target`，並保留已設定的 `CARGO_TARGET_DIR`
 - 這個 repo 的 `npm run tauri build` 會產生 NSIS installer 與 updater artifacts，所以必須提供有效的簽章憑證
 
 ### Build / 建置
@@ -464,7 +464,7 @@ Build output:
 
 ### Output Types / 產物類型
 
-- 只要本機執行檔：使用 `npm run build:exe`、`npm run build:exe:local-stt` 或 `npm run build:exe:gpu`，然後執行 `C:\np-target\release\neuropen.exe`
+- 只要本機執行檔：使用 `npm run build:exe`、`npm run build:exe:local-stt` 或 `npm run build:exe:gpu`，然後執行 `.\src-tauri\target\release\neuropen.exe`
 - 要正式簽章 installer / updater bundle：使用 `npm run build:bundle`、`npm run build:bundle:local-stt` 或 `npm run build:bundle:gpu`
 
 ### Key Technologies / 關鍵技術
