@@ -63,6 +63,8 @@
         "width": 420,
         "height": 60,
         "visible": false,
+        "focus": false,
+        "focusable": false,
         "decorations": false,
         "alwaysOnTop": true,
         "transparent": true,
