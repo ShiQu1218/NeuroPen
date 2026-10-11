@@ -259,7 +259,7 @@
     "settings.preference.hint": "只會學習已按讚或倒讚的輸出。每個類別達到批次門檻後，會產生一份不超過 500 個單字的偏好摘要。",
     "settings.preference.loading": "載入偏好摘要中…",
     "settings.preference.empty": "尚無偏好摘要或待分析紀錄。",
-    "settings.preference.clearAll": "全部重學",
+    "settings.preference.clearAll": "清除全部偏好資料",
     "settings.preference.clearCategory": "清除此類別",
     "settings.preference.pendingCount": "待分析 {count} 筆",
     "settings.preference.updatedAt": "更新於 {value}",

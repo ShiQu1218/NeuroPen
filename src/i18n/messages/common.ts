@@ -157,7 +157,12 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "設定で LLM API キーを入力してください",
     "error.llmRefineFailedOriginal": "LLM 校正に失敗、元のテキストを出力: {reason}",
     "error.translationFailedOriginal": "リアルタイム翻訳に失敗、元のテキストを出力しました",
-    "error.translationNeedsLlmApiKey": "リアルタイム翻訳には LLM API キーが必要です"
+    "error.translationNeedsLlmApiKey": "リアルタイム翻訳には LLM API キーが必要です",
+    "workflow.voiceInput": "音声入力",
+    "workflow.selectionProcessing": "選択テキスト処理",
+    "workflow.quickAction": "クイックアクション",
+    "workflow.selectionVoiceCommand": "選択テキストへの音声指示",
+    "workflow.assistantChat": "アシスタントとのチャット"
   },
   "zh-CN": {
     "quickAction.title": "快速操作",
@@ -207,7 +212,12 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "请先在设置中输入 LLM API Key",
     "error.llmRefineFailedOriginal": "LLM 润色失败，已输出原文：{reason}",
     "error.translationFailedOriginal": "即时翻译失败，已输出原文",
-    "error.translationNeedsLlmApiKey": "未设置 LLM API Key，无法使用即时翻译"
+    "error.translationNeedsLlmApiKey": "未设置 LLM API Key，无法使用即时翻译",
+    "workflow.voiceInput": "语音输入",
+    "workflow.selectionProcessing": "选取处理",
+    "workflow.quickAction": "快捷指令",
+    "workflow.selectionVoiceCommand": "选取语音指令",
+    "workflow.assistantChat": "助理对话"
   },
   "es-ES": {
     "quickAction.title": "Acciones rápidas",
@@ -257,7 +267,12 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "Introduce primero la clave API de LLM en Configuración",
     "error.llmRefineFailedOriginal": "Refinamiento LLM fallido, texto original: {reason}",
     "error.translationFailedOriginal": "Traducción en tiempo real fallida, texto original enviado",
-    "error.translationNeedsLlmApiKey": "Se requiere clave API de LLM para la traducción en tiempo real"
+    "error.translationNeedsLlmApiKey": "Se requiere clave API de LLM para la traducción en tiempo real",
+    "workflow.voiceInput": "Entrada de voz",
+    "workflow.selectionProcessing": "Procesar selección",
+    "workflow.quickAction": "Acción rápida",
+    "workflow.selectionVoiceCommand": "Comando de voz sobre la selección",
+    "workflow.assistantChat": "Chat con el asistente"
   },
   "ko-KR": {
     "quickAction.title": "빠른 작업",
@@ -307,7 +322,12 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "먼저 설정에서 LLM API 키를 입력하세요",
     "error.llmRefineFailedOriginal": "LLM 정제 실패, 원본 텍스트 출력: {reason}",
     "error.translationFailedOriginal": "실시간 번역 실패, 원본 텍스트 출력",
-    "error.translationNeedsLlmApiKey": "실시간 번역에는 LLM API 키가 필요합니다"
+    "error.translationNeedsLlmApiKey": "실시간 번역에는 LLM API 키가 필요합니다",
+    "workflow.voiceInput": "음성 입력",
+    "workflow.selectionProcessing": "선택 영역 처리",
+    "workflow.quickAction": "빠른 작업",
+    "workflow.selectionVoiceCommand": "선택 영역 음성 명령",
+    "workflow.assistantChat": "어시스턴트 대화"
   },
   "de-DE": {
     "quickAction.title": "Schnellaktionen",
@@ -357,7 +377,12 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "Bitte zuerst den LLM-API-Schlüssel in den Einstellungen eingeben",
     "error.llmRefineFailedOriginal": "LLM-Verfeinerung fehlgeschlagen, Originaltext: {reason}",
     "error.translationFailedOriginal": "Live-Übersetzung fehlgeschlagen, Originaltext ausgegeben",
-    "error.translationNeedsLlmApiKey": "LLM-API-Schlüssel für Live-Übersetzung erforderlich"
+    "error.translationNeedsLlmApiKey": "LLM-API-Schlüssel für Live-Übersetzung erforderlich",
+    "workflow.voiceInput": "Spracheingabe",
+    "workflow.selectionProcessing": "Auswahl verarbeiten",
+    "workflow.quickAction": "Schnellaktion",
+    "workflow.selectionVoiceCommand": "Sprachbefehl für die Auswahl",
+    "workflow.assistantChat": "Assistentenchat"
   },
   "fr-FR": {
     "quickAction.title": "Actions rapides",
@@ -407,7 +432,12 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "Veuillez d'abord entrer la clé API LLM dans les Paramètres",
     "error.llmRefineFailedOriginal": "Affinage LLM échoué, texte original : {reason}",
     "error.translationFailedOriginal": "Traduction en direct échouée, texte original affiché",
-    "error.translationNeedsLlmApiKey": "Clé API LLM requise pour la traduction en direct"
+    "error.translationNeedsLlmApiKey": "Clé API LLM requise pour la traduction en direct",
+    "workflow.voiceInput": "Saisie vocale",
+    "workflow.selectionProcessing": "Traitement de la sélection",
+    "workflow.quickAction": "Action rapide",
+    "workflow.selectionVoiceCommand": "Commande vocale sur la sélection",
+    "workflow.assistantChat": "Discussion avec l’assistant"
   },
   "ar-SA": {
     "quickAction.title": "الإجراءات السريعة",
@@ -457,7 +487,12 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "يرجى إدخال مفتاح LLM API في الإعدادات أولاً",
     "error.llmRefineFailedOriginal": "فشل تحسين LLM، النص الأصلي: {reason}",
     "error.translationFailedOriginal": "فشلت الترجمة الفورية، تم إخراج النص الأصلي",
-    "error.translationNeedsLlmApiKey": "مفتاح LLM API مطلوب للترجمة الفورية"
+    "error.translationNeedsLlmApiKey": "مفتاح LLM API مطلوب للترجمة الفورية",
+    "workflow.voiceInput": "الإدخال الصوتي",
+    "workflow.selectionProcessing": "معالجة النص المحدد",
+    "workflow.quickAction": "إجراء سريع",
+    "workflow.selectionVoiceCommand": "أمر صوتي للنص المحدد",
+    "workflow.assistantChat": "محادثة المساعد"
   },
   "ru-RU": {
     "quickAction.title": "Быстрые действия",
@@ -507,6 +542,11 @@ export const commonMessages = {
     "error.llmApiKeyRequired": "Сначала введите ключ API LLM в Настройках",
     "error.llmRefineFailedOriginal": "Уточнение LLM не удалось, оригинал: {reason}",
     "error.translationFailedOriginal": "Перевод в реальном времени не удался, выведен оригинал",
-    "error.translationNeedsLlmApiKey": "Для перевода в реальном времени требуется ключ API LLM"
+    "error.translationNeedsLlmApiKey": "Для перевода в реальном времени требуется ключ API LLM",
+    "workflow.voiceInput": "Голосовой ввод",
+    "workflow.selectionProcessing": "Обработка выделенного текста",
+    "workflow.quickAction": "Быстрое действие",
+    "workflow.selectionVoiceCommand": "Голосовая команда для выделенного текста",
+    "workflow.assistantChat": "Чат с помощником"
   }
 } as const;
