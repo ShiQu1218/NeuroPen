@@ -101,7 +101,11 @@ export const previewMessages = {
     "preview.attachmentReady": "添付の準備ができました",
     "preview.attachmentReadFailed": "添付の読み込みに失敗しました",
     "preview.documentQuickActionSaved": "ドキュメントをクイックアクションに保存しました",
-    "preview.documentQuickActionAttached": "クイックアクションのドキュメントを添付しました"
+    "preview.documentQuickActionAttached": "クイックアクションのドキュメントを添付しました",
+    "preview.feedbackUp": "役に立った",
+    "preview.feedbackDown": "役に立たなかった",
+    "preview.preferenceDisabledIncognito": "シークレットモードでは好みを記録できません",
+    "preview.preferenceDisabledSetting": "先に好みの学習を有効にしてください"
   },
   "zh-CN": {
     "preview.title": "NeuroPen 预览",
@@ -133,7 +137,11 @@ export const previewMessages = {
     "preview.attachmentReady": "附件已准备完成",
     "preview.attachmentReadFailed": "读取附件失败",
     "preview.documentQuickActionSaved": "文档已保存到快捷指令",
-    "preview.documentQuickActionAttached": "已附加快捷指令中的文档"
+    "preview.documentQuickActionAttached": "已附加快捷指令中的文档",
+    "preview.feedbackUp": "有帮助",
+    "preview.feedbackDown": "没帮助",
+    "preview.preferenceDisabledIncognito": "隐私模式下无法记录偏好",
+    "preview.preferenceDisabledSetting": "请先启用偏好学习"
   },
   "es-ES": {
     "preview.title": "NeuroPen Vista previa",
@@ -165,7 +173,11 @@ export const previewMessages = {
     "preview.attachmentReady": "Adjunto listo",
     "preview.attachmentReadFailed": "No se pudo leer el adjunto",
     "preview.documentQuickActionSaved": "Documento guardado en acciones rápidas",
-    "preview.documentQuickActionAttached": "Documento de acción rápida adjuntado"
+    "preview.documentQuickActionAttached": "Documento de acción rápida adjuntado",
+    "preview.feedbackUp": "Útil",
+    "preview.feedbackDown": "No es útil",
+    "preview.preferenceDisabledIncognito": "No se pueden registrar preferencias en modo incógnito",
+    "preview.preferenceDisabledSetting": "Activa primero el aprendizaje de preferencias"
   },
   "ko-KR": {
     "preview.title": "NeuroPen 미리보기",
@@ -197,7 +209,11 @@ export const previewMessages = {
     "preview.attachmentReady": "첨부가 준비되었습니다",
     "preview.attachmentReadFailed": "첨부를 읽지 못했습니다",
     "preview.documentQuickActionSaved": "문서를 빠른 작업에 저장했습니다",
-    "preview.documentQuickActionAttached": "빠른 작업의 문서를 첨부했습니다"
+    "preview.documentQuickActionAttached": "빠른 작업의 문서를 첨부했습니다",
+    "preview.feedbackUp": "도움이 됨",
+    "preview.feedbackDown": "도움이 안 됨",
+    "preview.preferenceDisabledIncognito": "시크릿 모드에서는 선호도를 기록할 수 없습니다",
+    "preview.preferenceDisabledSetting": "먼저 선호도 학습을 활성화하세요"
   },
   "de-DE": {
     "preview.title": "NeuroPen Vorschau",
@@ -229,7 +245,11 @@ export const previewMessages = {
     "preview.attachmentReady": "Anhang bereit",
     "preview.attachmentReadFailed": "Anhang konnte nicht gelesen werden",
     "preview.documentQuickActionSaved": "Dokument in Schnellaktionen gespeichert",
-    "preview.documentQuickActionAttached": "Dokument aus Schnellaktion angehängt"
+    "preview.documentQuickActionAttached": "Dokument aus Schnellaktion angehängt",
+    "preview.feedbackUp": "Hilfreich",
+    "preview.feedbackDown": "Nicht hilfreich",
+    "preview.preferenceDisabledIncognito": "Im Inkognitomodus können keine Präferenzen erfasst werden",
+    "preview.preferenceDisabledSetting": "Aktivieren Sie zuerst das Lernen von Präferenzen"
   },
   "fr-FR": {
     "preview.title": "NeuroPen Aperçu",
@@ -261,7 +281,11 @@ export const previewMessages = {
     "preview.attachmentReady": "Pièce jointe prête",
     "preview.attachmentReadFailed": "Échec de lecture de la pièce jointe",
     "preview.documentQuickActionSaved": "Document enregistré dans les actions rapides",
-    "preview.documentQuickActionAttached": "Document de l'action rapide joint"
+    "preview.documentQuickActionAttached": "Document de l'action rapide joint",
+    "preview.feedbackUp": "Utile",
+    "preview.feedbackDown": "Pas utile",
+    "preview.preferenceDisabledIncognito": "Impossible d’enregistrer les préférences en mode navigation privée",
+    "preview.preferenceDisabledSetting": "Activez d’abord l’apprentissage des préférences"
   },
   "ar-SA": {
     "preview.title": "معاينة NeuroPen",
@@ -293,7 +317,11 @@ export const previewMessages = {
     "preview.attachmentReady": "المرفق جاهز",
     "preview.attachmentReadFailed": "تعذر قراءة المرفق",
     "preview.documentQuickActionSaved": "تم حفظ المستند في الإجراءات السريعة",
-    "preview.documentQuickActionAttached": "تم إرفاق مستند من الإجراء السريع"
+    "preview.documentQuickActionAttached": "تم إرفاق مستند من الإجراء السريع",
+    "preview.feedbackUp": "مفيد",
+    "preview.feedbackDown": "غير مفيد",
+    "preview.preferenceDisabledIncognito": "لا يمكن تسجيل التفضيلات في وضع التصفح المتخفي",
+    "preview.preferenceDisabledSetting": "فعّل تعلّم التفضيلات أولًا"
   },
   "ru-RU": {
     "preview.title": "NeuroPen Просмотр",
@@ -325,6 +353,10 @@ export const previewMessages = {
     "preview.attachmentReady": "Вложение готово",
     "preview.attachmentReadFailed": "Не удалось прочитать вложение",
     "preview.documentQuickActionSaved": "Документ сохранен в быстрые действия",
-    "preview.documentQuickActionAttached": "Документ из быстрого действия прикреплен"
+    "preview.documentQuickActionAttached": "Документ из быстрого действия прикреплен",
+    "preview.feedbackUp": "Полезно",
+    "preview.feedbackDown": "Не полезно",
+    "preview.preferenceDisabledIncognito": "В режиме инкогнито нельзя сохранять предпочтения",
+    "preview.preferenceDisabledSetting": "Сначала включите обучение предпочтениям"
   }
 } as const;

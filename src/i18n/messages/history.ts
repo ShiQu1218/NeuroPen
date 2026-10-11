@@ -61,7 +61,12 @@ export const historyMessages = {
     "history.unfavorite": "お気に入り解除",
     "history.noInstruction": "この記録に使用可能な指示がありません",
     "history.filterAll": "すべて",
-    "history.filterFavorites": "お気に入り"
+    "history.filterFavorites": "お気に入り",
+    "history.feedbackUp": "役に立った",
+    "history.feedbackDown": "役に立たなかった",
+    "history.preferenceDisabledIncognito": "シークレットモードでは好みを記録できません",
+    "history.preferenceDisabledSetting": "先に好みの学習を有効にしてください",
+    "history.preferenceOther": "その他"
   },
   "zh-CN": {
     "history.searchPlaceholder": "搜索历史记录…",
@@ -79,7 +84,12 @@ export const historyMessages = {
     "history.unfavorite": "取消收藏",
     "history.noInstruction": "此记录没有可用的指令",
     "history.filterAll": "全部",
-    "history.filterFavorites": "收藏"
+    "history.filterFavorites": "收藏",
+    "history.feedbackUp": "有帮助",
+    "history.feedbackDown": "没帮助",
+    "history.preferenceDisabledIncognito": "隐私模式下无法记录偏好",
+    "history.preferenceDisabledSetting": "请先启用偏好学习",
+    "history.preferenceOther": "其他"
   },
   "es-ES": {
     "history.searchPlaceholder": "Buscar en el historial…",
@@ -97,7 +107,12 @@ export const historyMessages = {
     "history.unfavorite": "Quitar de favoritos",
     "history.noInstruction": "No hay instrucción disponible para esta entrada",
     "history.filterAll": "Todo",
-    "history.filterFavorites": "Favoritos"
+    "history.filterFavorites": "Favoritos",
+    "history.feedbackUp": "Útil",
+    "history.feedbackDown": "No es útil",
+    "history.preferenceDisabledIncognito": "No se pueden registrar preferencias en modo incógnito",
+    "history.preferenceDisabledSetting": "Activa primero el aprendizaje de preferencias",
+    "history.preferenceOther": "Otros"
   },
   "ko-KR": {
     "history.searchPlaceholder": "기록 검색…",
@@ -115,7 +130,12 @@ export const historyMessages = {
     "history.unfavorite": "즐겨찾기 해제",
     "history.noInstruction": "이 항목에 사용 가능한 명령이 없습니다",
     "history.filterAll": "전체",
-    "history.filterFavorites": "즐겨찾기"
+    "history.filterFavorites": "즐겨찾기",
+    "history.feedbackUp": "도움이 됨",
+    "history.feedbackDown": "도움이 안 됨",
+    "history.preferenceDisabledIncognito": "시크릿 모드에서는 선호도를 기록할 수 없습니다",
+    "history.preferenceDisabledSetting": "먼저 선호도 학습을 활성화하세요",
+    "history.preferenceOther": "기타"
   },
   "de-DE": {
     "history.searchPlaceholder": "Verlauf durchsuchen…",
@@ -133,7 +153,12 @@ export const historyMessages = {
     "history.unfavorite": "Aus Favoriten entfernen",
     "history.noInstruction": "Keine Anweisung für diesen Eintrag verfügbar",
     "history.filterAll": "Alle",
-    "history.filterFavorites": "Favoriten"
+    "history.filterFavorites": "Favoriten",
+    "history.feedbackUp": "Hilfreich",
+    "history.feedbackDown": "Nicht hilfreich",
+    "history.preferenceDisabledIncognito": "Im Inkognitomodus können keine Präferenzen erfasst werden",
+    "history.preferenceDisabledSetting": "Aktivieren Sie zuerst das Lernen von Präferenzen",
+    "history.preferenceOther": "Sonstiges"
   },
   "fr-FR": {
     "history.searchPlaceholder": "Rechercher dans l'historique…",
@@ -151,7 +176,12 @@ export const historyMessages = {
     "history.unfavorite": "Retirer des favoris",
     "history.noInstruction": "Aucune instruction disponible pour cette entrée",
     "history.filterAll": "Tout",
-    "history.filterFavorites": "Favoris"
+    "history.filterFavorites": "Favoris",
+    "history.feedbackUp": "Utile",
+    "history.feedbackDown": "Pas utile",
+    "history.preferenceDisabledIncognito": "Impossible d’enregistrer les préférences en mode navigation privée",
+    "history.preferenceDisabledSetting": "Activez d’abord l’apprentissage des préférences",
+    "history.preferenceOther": "Autres"
   },
   "ar-SA": {
     "history.searchPlaceholder": "البحث في السجل…",
@@ -169,7 +199,12 @@ export const historyMessages = {
     "history.unfavorite": "إزالة من المفضلة",
     "history.noInstruction": "لا توجد تعليمات متاحة لهذا الإدخال",
     "history.filterAll": "الكل",
-    "history.filterFavorites": "المفضلة"
+    "history.filterFavorites": "المفضلة",
+    "history.feedbackUp": "مفيد",
+    "history.feedbackDown": "غير مفيد",
+    "history.preferenceDisabledIncognito": "لا يمكن تسجيل التفضيلات في وضع التصفح المتخفي",
+    "history.preferenceDisabledSetting": "فعّل تعلّم التفضيلات أولًا",
+    "history.preferenceOther": "أخرى"
   },
   "ru-RU": {
     "history.searchPlaceholder": "Поиск в истории…",
@@ -187,6 +222,11 @@ export const historyMessages = {
     "history.unfavorite": "Из избранного",
     "history.noInstruction": "Нет доступной инструкции для этой записи",
     "history.filterAll": "Все",
-    "history.filterFavorites": "Избранное"
+    "history.filterFavorites": "Избранное",
+    "history.feedbackUp": "Полезно",
+    "history.feedbackDown": "Не полезно",
+    "history.preferenceDisabledIncognito": "В режиме инкогнито нельзя сохранять предпочтения",
+    "history.preferenceDisabledSetting": "Сначала включите обучение предпочтениям",
+    "history.preferenceOther": "Прочее"
   }
 } as const;
