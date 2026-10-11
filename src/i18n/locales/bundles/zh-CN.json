@@ -321,7 +321,7 @@
     "settings.preference.hint": "仅学习已点赞或点踩的输出。每个类别达到批次门槛后，会生成不超过 500 个单词的偏好摘要。",
     "settings.preference.loading": "正在加载偏好摘要…",
     "settings.preference.empty": "暂无偏好摘要或待分析记录。",
-    "settings.preference.clearAll": "全部重新学习",
+    "settings.preference.clearAll": "清除全部偏好数据",
     "settings.preference.clearCategory": "清除此类别",
     "settings.preference.pendingCount": "待分析 {count} 条",
     "settings.preference.updatedAt": "更新于 {value}",
