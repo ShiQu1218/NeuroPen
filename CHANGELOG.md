@@ -15,6 +15,29 @@ This project uses a simple changelog format inspired by Keep a Changelog.
 
 - README and `README.zh-TW.md` now surface contribution flow, roadmap, changelog, and maintainer expectations
 
+## [0.3.4] - 2026-10-11
+
+### Added
+
+- OpenAI GPT Transcribe as the default cloud speech-to-text model, with GPT-4o Mini Transcribe as a lower-cost option
+- zh-TW introduction video build scripts under `scripts/intro-video/`
+
+### Changed
+
+- Cloud transcription now sends one final request after the recording hotkey is released; existing `whisper-1` settings upgrade to GPT Transcribe automatically
+- All locales are synchronized with the Traditional Chinese source strings, and the preference clearing label now states that it deletes data
+- Development builds emit less debug output and keep build artifacts inside the project directory
+
+### Fixed
+
+- Quick Actions stay available in fullscreen editors and maximized browsers
+- Reduced passive mouse tracking overhead while games are in the foreground
+- LLM streaming now handles mid-stream errors and completion markers
+- Preview replacement targets are preserved across repeated actions and dialog replacements
+- Status messages no longer take focus from the screenshot overlay and cancel the selection
+- Hardened clipboard, hotkey, injection, focus locking, history, preference learning, TTS, and undo workflows
+- Stabilized state synchronization across the main, preview, and history windows
+
 ## [0.3.3] - 2026-07-20
 
 ### Added
