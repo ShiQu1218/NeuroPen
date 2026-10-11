@@ -69,3 +69,6 @@ env/
 *.key
 *.p12
 *.pfx
+
+# Generated introduction video, audio, previews, and Resolve projects
+/video-output/
