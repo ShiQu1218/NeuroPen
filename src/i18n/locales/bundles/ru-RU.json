@@ -321,7 +321,7 @@
     "settings.preference.hint": "Обучение выполняется только на ответах с положительной или отрицательной оценкой. Когда категория достигает порога пакетной обработки, создаётся сводка предпочтений объёмом не более 500 слов.",
     "settings.preference.loading": "Загрузка сводок предпочтений…",
     "settings.preference.empty": "Пока нет сводок предпочтений или записей для анализа.",
-    "settings.preference.clearAll": "Переобучить всё",
+    "settings.preference.clearAll": "Удалить все данные предпочтений",
     "settings.preference.clearCategory": "Очистить эту категорию",
     "settings.preference.pendingCount": "Ожидают анализа: {count}",
     "settings.preference.updatedAt": "Обновлено: {value}",

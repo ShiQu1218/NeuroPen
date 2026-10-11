@@ -321,7 +321,7 @@
     "settings.preference.hint": "يتم التعلّم فقط من المخرجات التي تم تقييمها بالإعجاب أو عدم الإعجاب. عند بلوغ حد الدفعة لكل فئة، يتم إنشاء ملخص للتفضيلات لا يتجاوز 500 كلمة.",
     "settings.preference.loading": "جارٍ تحميل ملخصات التفضيلات…",
     "settings.preference.empty": "لا توجد ملخصات تفضيلات أو سجلات بانتظار التحليل بعد.",
-    "settings.preference.clearAll": "إعادة تعلّم الكل",
+    "settings.preference.clearAll": "مسح جميع بيانات التفضيلات",
     "settings.preference.clearCategory": "مسح هذه الفئة",
     "settings.preference.pendingCount": "{count} بانتظار التحليل",
     "settings.preference.updatedAt": "تم التحديث: {value}",

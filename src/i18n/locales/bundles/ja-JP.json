@@ -321,7 +321,7 @@
     "settings.preference.hint": "高評価または低評価の出力のみを学習します。各カテゴリがバッチ処理のしきい値に達すると、500 語以内の好みの要約を生成します。",
     "settings.preference.loading": "好みの要約を読み込み中…",
     "settings.preference.empty": "好みの要約や分析待ちの記録はまだありません。",
-    "settings.preference.clearAll": "すべて再学習",
+    "settings.preference.clearAll": "すべての好みのデータを削除",
     "settings.preference.clearCategory": "このカテゴリを消去",
     "settings.preference.pendingCount": "分析待ち {count} 件",
     "settings.preference.updatedAt": "更新日時：{value}",

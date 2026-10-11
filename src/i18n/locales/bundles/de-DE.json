@@ -321,7 +321,7 @@
     "settings.preference.hint": "Es wird nur aus positiv oder negativ bewerteten Ausgaben gelernt. Sobald eine Kategorie den Schwellenwert für die Stapelverarbeitung erreicht, wird eine Zusammenfassung der Präferenzen mit höchstens 500 Wörtern erstellt.",
     "settings.preference.loading": "Zusammenfassungen der Präferenzen werden geladen…",
     "settings.preference.empty": "Noch keine Zusammenfassungen oder Einträge zur Analyse vorhanden.",
-    "settings.preference.clearAll": "Alles neu lernen",
+    "settings.preference.clearAll": "Alle Präferenzdaten löschen",
     "settings.preference.clearCategory": "Diese Kategorie löschen",
     "settings.preference.pendingCount": "{count} zur Analyse ausstehend",
     "settings.preference.updatedAt": "Aktualisiert: {value}",

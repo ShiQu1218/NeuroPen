@@ -321,7 +321,7 @@
     "settings.preference.hint": "좋아요 또는 싫어요를 표시한 출력만 학습합니다. 각 범주가 일괄 처리 기준에 도달하면 500단어 이내의 선호도 요약을 생성합니다.",
     "settings.preference.loading": "선호도 요약을 불러오는 중…",
     "settings.preference.empty": "선호도 요약이나 분석 대기 기록이 없습니다.",
-    "settings.preference.clearAll": "모두 다시 학습",
+    "settings.preference.clearAll": "모든 선호도 데이터 삭제",
     "settings.preference.clearCategory": "이 범주 지우기",
     "settings.preference.pendingCount": "분석 대기 {count}건",
     "settings.preference.updatedAt": "업데이트: {value}",

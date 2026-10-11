@@ -321,7 +321,7 @@
     "settings.preference.hint": "Solo se aprende de las respuestas valoradas positiva o negativamente. Cuando una categoría alcanza el umbral del lote, se genera un resumen de preferencias de hasta 500 palabras.",
     "settings.preference.loading": "Cargando resúmenes de preferencias…",
     "settings.preference.empty": "Aún no hay resúmenes de preferencias ni registros pendientes de análisis.",
-    "settings.preference.clearAll": "Reaprender todo",
+    "settings.preference.clearAll": "Borrar todos los datos de preferencias",
     "settings.preference.clearCategory": "Borrar esta categoría",
     "settings.preference.pendingCount": "{count} pendientes de análisis",
     "settings.preference.updatedAt": "Actualizado: {value}",

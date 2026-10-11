@@ -321,7 +321,7 @@
     "settings.preference.hint": "Seules les réponses évaluées positivement ou négativement sont prises en compte. Une fois le seuil de traitement par lot atteint pour une catégorie, un résumé des préférences de 500 mots maximum est généré.",
     "settings.preference.loading": "Chargement des résumés des préférences…",
     "settings.preference.empty": "Aucun résumé des préférences ni enregistrement en attente d’analyse.",
-    "settings.preference.clearAll": "Tout réapprendre",
+    "settings.preference.clearAll": "Effacer toutes les données de préférences",
     "settings.preference.clearCategory": "Effacer cette catégorie",
     "settings.preference.pendingCount": "{count} en attente d’analyse",
     "settings.preference.updatedAt": "Mis à jour : {value}",
