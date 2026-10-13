@@ -15,6 +15,22 @@ This project uses a simple changelog format inspired by Keep a Changelog.
 
 - README and `README.zh-TW.md` now surface contribution flow, roadmap, changelog, and maintainer expectations
 
+## [0.3.5] - 2026-10-14
+
+### Added
+
+- Hands-free recording mode: press the recording hotkey once to start and again to finish, selectable under Settings → General → Shortcuts alongside the existing hold-to-speak mode
+- Finish and Cancel buttons on the recording indicator; Cancel discards the captured audio without transcription or upload and restores the clipboard
+
+### Changed
+
+- LLM refinement of dictated text now removes filler words and stutters, follows spoken self-corrections, formats explicit lists and email structure, and treats the transcript as content rather than instructions
+- The ready status text no longer assumes hold-to-speak, and the new recording strings are translated for all locales
+
+### Removed
+
+- Upload document button from the preview quick-action presets
+
 ## [0.3.4] - 2026-10-11
 
 ### Added
