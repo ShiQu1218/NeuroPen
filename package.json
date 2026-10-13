@@ -22,7 +22,8 @@
     "build:bundle:local-stt": "powershell -ExecutionPolicy Bypass -File scripts/local-build.ps1 -Bundle -LocalStt",
     "build:bundle:gpu": "powershell -ExecutionPolicy Bypass -File scripts/local-build.ps1 -Bundle -Gpu",
     "test": "cargo test --quiet --manifest-path src-tauri\\Cargo.toml",
-    "check": "npm run build && npm run test",
+    "test:dictation": "node --test scripts/test-dictation.cjs",
+    "check": "npm run build && npm run test:dictation && npm run test",
     "preview": "vite preview",
     "tauri": "tauri",
     "version": "node scripts/sync-version.js && git add src-tauri/Cargo.toml src-tauri/tauri.conf.json"

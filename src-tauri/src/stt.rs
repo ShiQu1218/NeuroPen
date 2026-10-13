@@ -376,6 +376,21 @@ pub fn start_recording(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Discard a buffered recording without transcribing or sending its audio.
+pub fn cancel_recording(app: tauri::AppHandle) -> Result<(), String> {
+    let mut guard = CAPTURE.lock().map_err(|e| format!("Lock poisoned: {e}"))?;
+    // Streaming has already submitted chunks; this command only discards audio
+    // captured by the buffered recording workflow used by the main window.
+    if STREAMING_ACTIVE.load(Ordering::SeqCst) {
+        return Err("Cannot discard a streaming transcription".into());
+    }
+    if let Some(handle) = guard.take() {
+        handle.stop();
+        let _ = app.emit("stt://stop", ());
+    }
+    Ok(())
+}
+
 /// Start streaming partial transcription while recording.
 /// Spawns a background task that periodically drains audio chunks, transcribes,
 /// and emits `stt://partial` events for real-time feedback.

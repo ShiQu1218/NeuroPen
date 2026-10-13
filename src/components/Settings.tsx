@@ -254,6 +254,7 @@ export default function Settings() {
     selectionEnabled, setSelectionEnabled,
     screenshotEnabled, setScreenshotEnabled,
     hotkey, setHotkey,
+    recordingMode, setRecordingMode,
     screenshotHotkey, setScreenshotHotkey,
     dialogHotkey, setDialogHotkey,
     sttEngine, setSttEngine,
@@ -1044,6 +1045,20 @@ export default function Settings() {
     await broadcastSettingsSaved({ sttOutputStrategy: value, translationTarget: nextTranslationTarget });
   }, [broadcastSettingsSaved, setSttOutputStrategy, setTranslationTarget, translationTarget]);
 
+  const handleRecordingModeChange = useCallback(async (value: typeof recordingMode) => {
+    try {
+      setRecordingMode(value);
+      await broadcastSettingsSaved({ recordingMode: value });
+    } catch (error) {
+      try {
+        setRecordingMode(recordingMode);
+      } catch {
+        // Zustand updates memory before writing; the rollback still takes effect.
+      }
+      setPanelMessage("general", "error", error instanceof Error ? error.message : String(error));
+    }
+  }, [broadcastSettingsSaved, recordingMode, setPanelMessage, setRecordingMode]);
+
   const handleTranslationTargetChange = useCallback(async (value: TranslationTarget) => {
     setTranslationTarget(value);
     await broadcastSettingsSaved({ translationTarget: value });
@@ -1685,6 +1700,8 @@ export default function Settings() {
           <div className="mt-3">
             <SettingsShortcutsSection
               draftHotkey={hotkey}
+              recordingMode={recordingMode}
+              onRecordingModeChange={(value) => void handleRecordingModeChange(value)}
               draftScreenshotHotkey={screenshotHotkey}
               draftDialogHotkey={dialogHotkey}
               hotkeyStatus={hotkeyStatus}

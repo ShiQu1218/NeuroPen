@@ -26,6 +26,7 @@ const MAIN_WINDOW_AUX_LABELS = [
 export interface SettingsSavedPayload {
   wakeWord?: string;
   hotkey?: string;
+  recordingMode?: "hold" | "toggle";
   dialogHotkey?: string;
   sttEnabled?: boolean;
   selectionEnabled?: boolean;
@@ -176,6 +177,9 @@ export function applySettingsSavedPayload(
   }
   if (typeof payload.hotkey === "string") {
     store.setHotkey(payload.hotkey);
+  }
+  if (payload.recordingMode === "hold" || payload.recordingMode === "toggle") {
+    store.setRecordingMode(payload.recordingMode);
   }
   if (typeof payload.dialogHotkey === "string") {
     store.setDialogHotkey(payload.dialogHotkey);

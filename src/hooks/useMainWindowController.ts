@@ -58,8 +58,11 @@ export function useMainWindowController() {
     // physical press state separate from the store so a release that happens
     // during initialization is still honoured after a slow device/API startup.
     let hotkeyHeld = false;
+    // Snapshot the gesture for a session: changing settings during capture must
+    // not reinterpret the release of the key that started it.
+    let recordingMode: "hold" | "toggle" = "hold";
+    let requestedRecordingAction: "finish" | "cancel" | null = null;
     let recordingStartupInFlight = false;
-    let releaseRequestedDuringStartup = false;
     let recordingStopInFlight = false;
     // Keep the target captured for this recording separate from the selection
     // watcher's latest lock. A later QA selection must not retarget its final STT.
@@ -117,6 +120,48 @@ export function useMainWindowController() {
       }
     };
 
+    const cancelRecordingNow = async () => {
+      if (recordingStopInFlight) return;
+      recordingStopInFlight = true;
+      const store = useAppStore.getState();
+      const sessionId = recordingFocusSessionId;
+      try {
+        await mainWindowService.cancelRecording();
+        store.setIsRecording(false);
+        recordingFocusSessionId = undefined;
+        mainWindowService.setActiveFocusSession(undefined);
+        setStatusMsg(tLive("status.recordingCancelled"));
+        if (sessionId !== undefined) {
+          // The audio is already discarded: a restore failure is not a failed cancel.
+          await mainWindowService.restoreClipboard(sessionId).catch((err) => {
+            store.setSttError(String(err));
+          });
+        }
+      } catch (err) {
+        requestedRecordingAction = null;
+        store.setSttError(String(err));
+        setStatusMsg(tLive("status.recordingCancelFailed"));
+      } finally {
+        recordingStopInFlight = false;
+      }
+    };
+
+    const requestRecordingAction = async (action: "finish" | "cancel") => {
+      if (recordingStopInFlight) return;
+      // Cancellation takes priority over a pending finish during device startup.
+      if (requestedRecordingAction !== "cancel") requestedRecordingAction = action;
+      if (recordingStartupInFlight) return;
+      if (!useAppStore.getState().isRecording) return;
+      if (requestedRecordingAction === "cancel") await cancelRecordingNow();
+      else await stopRecordingNow();
+    };
+
+    const handleRecordingPress = async () => {
+      if (hotkeyHeld) return; // Ignore native key repeat.
+      hotkeyHeld = true;
+      if (recordingMode === "toggle") await requestRecordingAction("finish");
+    };
+
     const ensureSttReady = async (sttEngine: ReturnType<typeof normalizeSttEngine>) => {
       if (sttEngine !== "openAi") {
         return true;
@@ -135,7 +180,15 @@ export function useMainWindowController() {
       const store = useAppStore.getState();
       // Avoid opening the microphone at all if the key was released while an
       // earlier preparation step (for example API-key validation) was pending.
-      if (!hotkeyHeld || releaseRequestedDuringStartup) {
+      if (requestedRecordingAction || (recordingMode === "hold" && !hotkeyHeld)) {
+        // Nothing was captured: release the cached target and drop the
+        // "recording" status the caller already showed.
+        setStatusMsg(tLive("status.readyHoldHotkey"));
+        if (focusSessionId !== undefined) {
+          await mainWindowService.restoreClipboard(focusSessionId).catch((err) => {
+            console.warn("[App] restore after aborted start failed:", err);
+          });
+        }
         return;
       }
       try {
@@ -148,7 +201,9 @@ export function useMainWindowController() {
         // Do not time-limit this latch: starting some audio devices can take longer
         // than the old 800 ms grace period. Once released, capture must stop even
         // when startup finishes much later.
-        if (!hotkeyHeld || releaseRequestedDuringStartup) {
+        if (requestedRecordingAction === "cancel") {
+          await cancelRecordingNow();
+        } else if (requestedRecordingAction === "finish" || (recordingMode === "hold" && !hotkeyHeld)) {
           await stopRecordingNow();
         }
       } catch (err) {
@@ -253,10 +308,11 @@ export function useMainWindowController() {
       await safeRegister<ModeStartPayload>("neuropen://mode-start", async (event) => {
         const store = useAppStore.getState();
 
-        // Already recording → ignore (key repeat)
-        if (store.isRecording || recordingStartupInFlight) {
+        if (store.isRecording || recordingStartupInFlight || recordingStopInFlight) {
+          await handleRecordingPress();
           return;
         }
+        if (hotkeyHeld) return;
         if (!store.sttEnabled) {
           setStatusMsg(tLive("status.sttFeatureDisabled"));
           setTimeout(() => setStatusMsg(tLive("status.readyHoldHotkey")), 1500);
@@ -264,7 +320,8 @@ export function useMainWindowController() {
         }
 
         hotkeyHeld = true;
-        releaseRequestedDuringStartup = false;
+        recordingMode = store.recordingMode;
+        requestedRecordingAction = null;
         recordingStartupInFlight = true;
         try {
           // ── New session ──
@@ -281,27 +338,28 @@ export function useMainWindowController() {
             }
           } else {
             store.setCurrentMode("A");
-            setStatusMsg(tLive("status.recordingReleaseToStop"));
+            setStatusMsg(tLive(recordingMode === "toggle"
+              ? "status.recordingPressToStop"
+              : "status.recordingReleaseToStop"));
             if (await ensureSttReady(sttEngine)) {
               await startRecordingCapture(event.payload.sessionId);
             }
           }
         } finally {
           recordingStartupInFlight = false;
-          if (!useAppStore.getState().isRecording) {
-            releaseRequestedDuringStartup = false;
-          }
         }
       });
 
-      // ── 2. hotkey RELEASE → stop recording ──
+      await safeRegister("neuropen://recording-press", handleRecordingPress);
+      await safeRegister("neuropen://recording-finish", () => requestRecordingAction("finish"));
+      await safeRegister("neuropen://recording-cancel", () => requestRecordingAction("cancel"));
+
+      // ── 2. hotkey RELEASE → finish only in hold mode ──
       await safeRegister("neuropen://hotkey-release", async () => {
         hotkeyHeld = false;
-        if (recordingStartupInFlight) {
-          releaseRequestedDuringStartup = true;
+        if (recordingMode === "hold") {
+          await requestRecordingAction("finish");
         }
-        console.log("[App] hotkey released → stopping recording");
-        await stopRecordingNow();
       });
 
       await safeRegister("hotkey://dialog", async () => {

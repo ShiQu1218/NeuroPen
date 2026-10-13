@@ -3,6 +3,8 @@ import type { useI18n } from "../../i18n";
 
 interface SettingsShortcutsSectionProps {
   draftHotkey: string;
+  recordingMode: "hold" | "toggle";
+  onRecordingModeChange: (value: "hold" | "toggle") => void;
   draftScreenshotHotkey: string;
   draftDialogHotkey: string;
   hotkeyStatus: "" | "error";
@@ -36,6 +38,8 @@ function toHotkeyText(event: KeyboardEvent<HTMLInputElement>): string | null {
 
 export default function SettingsShortcutsSection({
   draftHotkey,
+  recordingMode,
+  onRecordingModeChange,
   draftScreenshotHotkey,
   draftDialogHotkey,
   hotkeyStatus,
@@ -49,6 +53,19 @@ export default function SettingsShortcutsSection({
   return (
     <div className="space-y-4">
       <div className="settings-card space-y-4">
+        <div className="space-y-1">
+          <label className="font-medium" htmlFor="recording-mode">{t("settings.hotkey.recordingMode")}</label>
+          <select
+            id="recording-mode"
+            className="w-full input-field px-3 py-2"
+            value={recordingMode}
+            onChange={(event) => onRecordingModeChange(event.target.value as "hold" | "toggle")}
+          >
+            <option value="hold">{t("settings.hotkey.recordingModeHold")}</option>
+            <option value="toggle">{t("settings.hotkey.recordingModeToggle")}</option>
+          </select>
+          <p className="text-xs text-zinc-500">{t("settings.hotkey.recordingModeHint")}</p>
+        </div>
         <div className="space-y-1">
           <label className="font-medium">{t("settings.hotkey.label")}</label>
           <input

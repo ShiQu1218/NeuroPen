@@ -298,6 +298,11 @@ fn start_recording(app: tauri::AppHandle) -> Result<(), String> {
     stt::start_recording(app)
 }
 
+#[tauri::command]
+fn cancel_recording(app: tauri::AppHandle) -> Result<(), String> {
+    stt::cancel_recording(app)
+}
+
 /// Start streaming partial transcription during recording.
 #[tauri::command]
 fn start_streaming_stt(
@@ -670,6 +675,7 @@ pub fn run() {
             load_attachments_from_paths,
             pick_attachments,
             start_recording,
+            cancel_recording,
             start_streaming_stt,
             stop_recording,
             set_runtime_stt_config,
@@ -789,8 +795,10 @@ pub fn run() {
             app.listen("hotkey://press", move |_event| {
                 println!("[event] hotkey://press received");
 
-                // If already recording, ignore (don't double-start from key repeat)
+                // Forward another press without changing the captured target.
+                // The frontend distinguishes key repeat from a hands-free stop.
                 if stt::is_recording() {
+                    let _ = handle_press.emit("neuropen://recording-press", ());
                     return;
                 }
 

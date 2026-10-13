@@ -12,6 +12,7 @@ export type LlmProvider =
   | "doubao"
   | "deepseek";
 export type SttOutputStrategy = "raw" | "llmRefine";
+export type RecordingMode = "hold" | "toggle";
 export type PunctuationMode = "off" | "balanced" | "aggressive";
 export type AppLanguage =
   | "zh-TW"

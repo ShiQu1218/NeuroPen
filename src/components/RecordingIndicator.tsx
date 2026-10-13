@@ -1,14 +1,14 @@
 /**
  * Recording Indicator
  *
- * Phase 2 implementation:
  * - Floating overlay shown during voice capture
  * - Listens to `stt://start` and `stt://stop` Tauri events
  * - Pulsing red dot animation while recording
  * - Auto-shows/hides the recording-indicator window
+ * - Sends finish/cancel actions to the main window without taking input focus
  */
 import { useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { useI18n } from "../i18n";
@@ -19,6 +19,7 @@ export default function RecordingIndicator() {
   const [elapsed, setElapsed] = useState(0);
   const [statusText, setStatusText] = useState("");
   const [animKey, setAnimKey] = useState(0);
+  const [controlPending, setControlPending] = useState(false);
   const statusTextRef = useRef("");
   const isRecordingRef = useRef(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,6 +75,8 @@ export default function RecordingIndicator() {
       const u1 = await listen("stt://start", async () => {
         clearHideTimer();
         setIsRecording(true);
+        isRecordingRef.current = true;
+        setControlPending(false);
         setElapsed(0);
         setStatusText("");
         statusTextRef.current = "";
@@ -84,6 +87,8 @@ export default function RecordingIndicator() {
 
       const u2 = await listen("stt://stop", () => {
         setIsRecording(false);
+        isRecordingRef.current = false;
+        setControlPending(false);
         setElapsed(0);
         if (!statusTextRef.current) {
           scheduleHide(350);
@@ -142,6 +147,18 @@ export default function RecordingIndicator() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const sendRecordingAction = async (action: "finish" | "cancel") => {
+    setControlPending(true);
+    try {
+      // Only the main window owns the capture and its original input target.
+      await emit(`neuropen://recording-${action}`);
+    } catch (error) {
+      setStatusText(String(error));
+    } finally {
+      setControlPending(false);
+    }
+  };
+
   return (
     <div className="flex items-center justify-center w-full h-full bg-transparent">
       <div key={animKey} className="flex max-w-[400px] items-center gap-2 rounded-full bg-black/80 px-4 py-2 text-sm text-white shadow-lg backdrop-blur-sm animate-scaleUp dark:bg-zinc-950/90 dark:text-zinc-100">
@@ -151,11 +168,31 @@ export default function RecordingIndicator() {
             : "bg-gray-400 dark:bg-zinc-500"
             }`}
         />
-        <span>{isRecording ? t("recording.recording") : (statusText || t("recording.processing"))}</span>
+        <span className="truncate">{statusText || (isRecording ? t("recording.recording") : t("recording.processing"))}</span>
         {isRecording && (
-          <span className="ml-1 shrink-0 text-xs text-white/60 dark:text-zinc-500">
-            {formatTime(elapsed)}
-          </span>
+          <>
+            <span className="ml-1 shrink-0 text-xs text-white/60 dark:text-zinc-500">
+              {formatTime(elapsed)}
+            </span>
+            <button
+              type="button"
+              disabled={controlPending}
+              onClick={() => void sendRecordingAction("finish")}
+              className="shrink-0 rounded-full px-2 py-1 text-xs hover:bg-white/20 focus-visible:outline focus-visible:outline-2 disabled:opacity-50"
+              aria-label={t("recording.finish")}
+            >
+              {t("recording.finish")}
+            </button>
+            <button
+              type="button"
+              disabled={controlPending}
+              onClick={() => void sendRecordingAction("cancel")}
+              className="shrink-0 rounded-full px-2 py-1 text-xs hover:bg-white/20 focus-visible:outline focus-visible:outline-2 disabled:opacity-50"
+              aria-label={t("recording.cancel")}
+            >
+              {t("recording.cancel")}
+            </button>
+          </>
         )}
       </div>
     </div>

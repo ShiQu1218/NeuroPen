@@ -30,6 +30,7 @@ import {
   type SttEngine,
   type SttLanguage,
   type SttOutputStrategy,
+  type RecordingMode,
   type ThemePreference,
   type TranslationTarget,
   normalizeOpenAiSttModel,
@@ -149,6 +150,7 @@ interface AppState {
   selectionEnabled: boolean;
   screenshotEnabled: boolean;
   hotkey: string;
+  recordingMode: RecordingMode;
   screenshotHotkey: string;
   dialogHotkey: string;
   sttEngine: SttEngine;
@@ -213,6 +215,7 @@ interface AppState {
   setSelectionEnabled: (enabled: boolean) => void;
   setScreenshotEnabled: (enabled: boolean) => void;
   setHotkey: (hotkey: string) => void;
+  setRecordingMode: (mode: RecordingMode) => void;
   setScreenshotHotkey: (hotkey: string) => void;
   setDialogHotkey: (hotkey: string) => void;
   setSttEngine: (engine: SttEngine) => void;
@@ -282,6 +285,7 @@ const PERSISTED_APP_STATE_KEYS = [
   "selectionEnabled",
   "screenshotEnabled",
   "hotkey",
+  "recordingMode",
   "screenshotHotkey",
   "dialogHotkey",
   "sttEngine",
@@ -554,6 +558,7 @@ export const useAppStore = create<AppState>()(
         sttEngine: "openAi",
         sttLanguage: "auto",
         sttOutputStrategy: "raw",
+        recordingMode: "hold",
         punctuationMode: "balanced",
         contextAwareTone: true,
         preferredLanguage: getDefaultLanguageVariantPreferences(),
@@ -696,6 +701,7 @@ export const useAppStore = create<AppState>()(
         setSttEngine: (engine) => setPreferences(["sttEngine"], { sttEngine: engine }),
         setSttLanguage: (sttLanguage) => setPreferences(["sttLanguage"], { sttLanguage }),
         setSttOutputStrategy: (strategy) => setPreferences(["sttOutputStrategy"], { sttOutputStrategy: strategy }),
+        setRecordingMode: (mode) => setPreferences(["recordingMode"], { recordingMode: mode }),
         setPunctuationMode: (mode) => setPreferences(["punctuationMode"], { punctuationMode: mode }),
         setContextAwareTone: (enabled) => setPreferences(["contextAwareTone"], { contextAwareTone: enabled }),
         setPreferredLanguage: (preferredLanguage) =>
@@ -879,6 +885,7 @@ export const useAppStore = create<AppState>()(
             [nextProvider]: nextModel,
           },
           sttModelPath: nextSttModelPath,
+          recordingMode: persisted.recordingMode === "toggle" ? "toggle" : "hold",
           ttsPitch: normalizePersistedTtsPitch(persisted.ttsPitch, currentState.ttsPitch),
           preferenceLearningEnabled:
             typeof persisted.preferenceLearningEnabled === "boolean"
