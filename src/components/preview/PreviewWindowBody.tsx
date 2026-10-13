@@ -44,7 +44,6 @@ interface PreviewWindowBodyProps {
   handleRefinement: () => Promise<void>;
   handleRemoveAttachment: (index: number) => void;
   handleReplace: () => Promise<void>;
-  handleSaveDocumentQuickAction: () => Promise<void>;
   handleStartDrag: () => Promise<void>;
   handleTtsToggle: () => Promise<void>;
   hasOutput: boolean;
@@ -83,7 +82,6 @@ export default function PreviewWindowBody({
   handleRefinement,
   handleRemoveAttachment,
   handleReplace,
-  handleSaveDocumentQuickAction,
   handleStartDrag,
   handleTtsToggle,
   hasOutput,
@@ -349,32 +347,6 @@ export default function PreviewWindowBody({
         <div className="max-h-28 shrink-0 overflow-y-auto border-b border-zinc-200 bg-white/70 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-950/70">
           <div className="mb-1.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{t("preview.quickActions")}</div>
           <div className="flex flex-wrap gap-1.5">
-            <button
-              className="btn-secondary inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-40"
-              disabled={isLlmLoading}
-              onClick={() => {
-                if (isDragInteractionLocked()) return;
-                void handleSaveDocumentQuickAction();
-              }}
-              title={t("quickAction.uploadDocument")}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-                className="shrink-0"
-              >
-                <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.65 5.66l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.48-8.48" />
-              </svg>
-              <span>{t("quickAction.uploadDocument")}</span>
-            </button>
             {previewQuickActionCommands.map((command) => {
               const retainedAttachmentCount = command.attachments?.length ?? 0;
               const hasRetainedAttachments = retainedAttachmentCount > 0;
