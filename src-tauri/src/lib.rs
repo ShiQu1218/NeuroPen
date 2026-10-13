@@ -791,9 +791,19 @@ pub fn run() {
             }
 
             // ── hotkey://press → start recording (press-and-hold) ──
+            // Physical state of the trigger key. Key repeat must never reach
+            // the session logic below: once a hands-free finish has stopped
+            // capture, a repeat would otherwise lock a new focus session and
+            // overwrite the clipboard cache the pending transcript depends on.
+            let trigger_held = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let trigger_held_press = trigger_held.clone();
             let handle_press = app.handle().clone();
             app.listen("hotkey://press", move |_event| {
                 println!("[event] hotkey://press received");
+
+                if trigger_held_press.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
 
                 // Forward another press without changing the captured target.
                 // The frontend distinguishes key repeat from a hands-free stop.
@@ -838,6 +848,7 @@ pub fn run() {
             let handle_release = app.handle().clone();
             app.listen("hotkey://release", move |_event| {
                 println!("[event] hotkey://release received");
+                trigger_held.store(false, std::sync::atomic::Ordering::SeqCst);
                 let _ = handle_release.emit("neuropen://hotkey-release", ());
             });
 
