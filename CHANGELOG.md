@@ -15,6 +15,26 @@ This project uses a simple changelog format inspired by Keep a Changelog.
 
 - README and `README.zh-TW.md` now surface contribution flow, roadmap, changelog, and maintainer expectations
 
+## [0.3.6] - 2026-11-01
+
+### Added
+
+- Qwen3-ASR 0.6B (int8) as a local speech-to-text model with 52 languages and dialects and the strongest Chinese accuracy of the local models; about 940 MB to download and about 2 GB of RAM while loaded. Recordings longer than 18 seconds are split at the quietest point and joined, so long dictation is no longer cut off
+- Kokoro v1.1 multilingual local text-to-speech for Chinese, English, and mixed text, with 103 built-in voices. It runs inside the app, plays each sentence as soon as it is generated, and no longer needs the Piper command-line tool for Chinese and English. Install it from Settings → TTS (about 140 MB)
+
+### Changed
+
+- SenseVoice and Moonshine now run on the sherpa-onnx runtime instead of hand-written ONNX Runtime code, using the same model files. The installer now places the sherpa-onnx and ONNX Runtime DLLs next to the executable
+- Default LLM models are updated to `claude-sonnet-5-5` for Claude, `gemini-3.8-flash` for Gemini, and `grok-4.3` for Grok. Saved selections of the retired `claude-3-5-sonnet-latest`, `gemini-1.5-flash`, and `grok-2-latest` are upgraded automatically
+- Claude text requests allow up to 4096 output tokens instead of 1024, so long translations and rewrites are no longer cut off
+- With Kokoro active, only Chinese and English are read with it; German, French, Spanish, Russian, and Arabic still use an installed Piper voice
+- Local GPU builds use a short target directory to avoid Windows path-length failures
+
+### Fixed
+
+- Multi-line output typed directly into apps that block clipboard replacement now keeps its line breaks and tabs instead of flattening into one line, and clipboard injection writes CRLF line endings so lists and paragraphs survive in Notepad-style editors
+- Dark theme surfaces that use the light zinc background now follow the dark palette
+
 ## [0.3.5] - 2026-10-14
 
 ### Added
