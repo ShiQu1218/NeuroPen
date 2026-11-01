@@ -27,7 +27,7 @@ export type AppLanguage =
   | "ru-RU";
 export type ThemePreference = "light" | "dark" | "system";
 
-export type SttEngine = "openAi" | "localWhisper" | "senseVoice" | "moonshine";
+export type SttEngine = "openAi" | "localWhisper" | "senseVoice" | "moonshine" | "qwen3Asr";
 export type SttLanguage = "auto" | "zh" | "en" | "ja" | "ko" | "de" | "fr" | "es" | "ru" | "ar";
 export const OPENAI_STT_MODELS = [
   { id: "gpt-transcribe", label: "OpenAI GPT Transcribe" },

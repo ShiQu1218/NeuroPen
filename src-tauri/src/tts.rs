@@ -1,14 +1,14 @@
-//! TTS module — text-to-speech via Piper CLI.
+//! TTS module — text-to-speech via in-process Kokoro (sherpa-onnx) or the Piper CLI.
 //!
-//! Uses the local `piper` executable to synthesize WAV audio, then plays it
-//! back with `rodio`.
+//! Kokoro bundles synthesize in-process; Piper voices use the local `piper`
+//! executable to synthesize WAV audio. Both play back with `rodio`.
 //!
 //! Emits:
 //!   `tts://start`       — playback started
 //!   `tts://done`        — playback finished
 //!   `tts://error(msg)`  — synthesis/playback failure
 
-use crate::tts_models;
+use crate::{tts_kokoro, tts_models};
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use std::io::{Cursor, Read, Write};
@@ -265,9 +265,7 @@ pub async fn install_local_tts_model(
     let entry = tts_models::catalog_entry_by_id(&model_id)
         .ok_or_else(|| format!("Unknown local TTS model id: {model_id}"))?;
     let install_artifacts = tts_models::install_artifacts(entry)?;
-    let already_installed = install_artifacts
-        .iter()
-        .all(|artifact| artifact.path.is_file());
+    let already_installed = tts_models::is_entry_installed(entry)?;
 
     if !already_installed {
         if MODEL_DOWNLOAD_ACTIVE.swap(true, Ordering::SeqCst) {
@@ -368,6 +366,18 @@ pub async fn install_local_tts_model(
                 tokio::fs::rename(&temp_path, &artifact.path)
                     .await
                     .map_err(|e| format!("Failed to finalize TTS model file: {e}"))?;
+            }
+
+            if entry.engine == tts_models::LocalTtsEngine::Kokoro {
+                let archive_path = install_artifacts
+                    .first()
+                    .map(|artifact| artifact.path.clone())
+                    .ok_or("Kokoro install artifact is missing")?;
+                tokio::task::spawn_blocking(move || {
+                    tts_models::extract_kokoro_archive(entry, &archive_path)
+                })
+                .await
+                .map_err(|e| format!("TTS model extraction task panicked: {e}"))??;
             }
 
             let _ = app.emit(
@@ -492,6 +502,18 @@ fn synthesize_and_play(
     speaker_id: Option<u32>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<(), String> {
+    if tts_kokoro::is_kokoro_model(model_path) {
+        let is_english = detect_language(text) == "en-US";
+        return tts_kokoro::synthesize_and_play(
+            text,
+            model_path,
+            1.0 / length_scale,
+            speaker_id,
+            is_english,
+            stop_flag,
+        );
+    }
+
     let tmp_file = next_tts_output_path();
     let tmp_dir = tmp_file
         .parent()

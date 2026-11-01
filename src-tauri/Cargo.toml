@@ -48,8 +48,14 @@ pdf-extract = "0.10.0"
 rfd = "0.15"
 
 whisper-rs = "0.16"
-ort = { version = "2.0.0-rc.12", features = ["download-binaries"] }
-rustfft = "6"
+# Extract the Kokoro TTS bundle, which ships as one .tar.bz2 with ~380 files.
+tar = "0.4"
+bzip2 = "0.5"
+# Pinned below 2.0: 2.0 drops the espeak-ng fallback, so Kokoro skips out-of-lexicon English words.
+# Shared linking: the static archives use the MT CRT, which conflicts with Rust's default MD CRT.
+sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["shared"] }
+# Direct dependency so this crate's build script runs after the sherpa runtime DLLs are fetched.
+sherpa-onnx-sys = { version = "=1.13.8", default-features = false, features = ["shared"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [

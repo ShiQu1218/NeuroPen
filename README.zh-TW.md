@@ -83,8 +83,8 @@
 | **預覽或直接注入** | 可在 `PreviewStream` 先看結果，也可直接回填到目前焦點視窗 |
 | **安全注入 + 復原** | 貼回前會驗證焦點視窗，並支援 `Alt + Z` 單步復原 |
 | **截圖多模態** | `Alt + S` 擷取畫面後，直接開啟以圖片為上下文的問答流程 |
-| **雲端與本地模型** | 支援 OpenAI GPT Transcribe、本地 Whisper、SenseVoice、Moonshine、Ollama、llama.cpp、LM Studio |
-| **模型管理** | 可在 app 內安裝、切換、取消或刪除支援的本地 STT 與 Piper TTS 模型 |
+| **雲端與本地模型** | 支援 OpenAI GPT Transcribe、本地 Whisper、SenseVoice、Moonshine、Qwen3-ASR、Ollama、llama.cpp、LM Studio |
+| **模型管理** | 可在 app 內安裝、切換、取消或刪除支援的本地 STT 與 Kokoro / Piper TTS 模型 |
 | **App Profiles** | 依 app 自動套用語氣、提示詞附加、語言變體、輸出模式與直接貼上規則 |
 | **歷史與系統匣流程** | 本地保存歷史紀錄、系統匣常駐、需要時快速叫出 |
 
@@ -211,6 +211,7 @@ NeuroPen 會在按住熱鍵時錄音，放開後只送出一次最終轉錄，�
 | Local Whisper | Local | 透過 whisper-rs / whisper.cpp，支援 CPU 與 GPU (Vulkan) |
 | SenseVoice | Local | 本地 STT，多語辨識，支援 zh/en/ja/ko/yue |
 | Moonshine | Local | 輕量英文本地 STT，偏重速度 |
+| Qwen3-ASR | Local | Speech-LLM 本地 STT，支援 52 種語言與方言，本地中文辨識最強 |
 
 ### Local Whisper Models
 
@@ -228,6 +229,7 @@ NeuroPen 會在按住熱鍵時錄音，放開後只送出一次最終轉錄，�
 | SenseVoice Small | SenseVoice | 中文、英文、日文、韓文、粵語 | 多檔 bundle | 非 Whisper 路線的多語本地辨識選項 |
 | Moonshine Base | Moonshine | 英文 | 多檔 bundle | 速度快、體積輕量 |
 | Moonshine Tiny | Moonshine | 英文 | 多檔 bundle | 最小的本地 STT 選項，偏向速度優先 |
+| Qwen3-ASR 0.6B | Qwen3-ASR | 52 種語言與方言 | 多檔 bundle（約 940 MB） | 本地準確度最高；約佔 2 GB 記憶體，中文輸出為簡體 |
 
 本地 STT 補充：
 
@@ -239,13 +241,15 @@ NeuroPen 會在按住熱鍵時錄音，放開後只送出一次最終轉錄，�
 
 | Engine | Notes |
 |--------|-------|
-| Piper TTS | 本地播放，支援模型路徑、語速與 speaker id 設定 |
+| Kokoro TTS | 透過 sherpa-onnx 在 app 內執行；支援中文、英文與中英夾雜，103 個聲音，逐句播放 |
+| Piper TTS | 需要 PATH 上有 `piper` CLI；用於德、法、西、俄、阿拉伯文聲音 |
 
-### 內建 Piper 聲音
+### 內建 TTS 聲音
 
 | 聲音 | 語言 | 品質 | Speakers | 說明 |
 |------|------|------|----------|------|
-| Huayan | zh-CN | medium | 1 | 繁中與簡中的預設中文女聲 |
+| Kokoro v1.1 | zh-CN, en-US | high | 103 | 中英文推薦；單一約 140 MB 壓縮檔，不需 Piper CLI |
+| Huayan | zh-CN | medium | 1 | Piper 中文女聲 |
 | Lessac | en-US | medium | 1 | 自然語氣的英文助理聲音 |
 | Thorsten | de-DE | medium | 1 | 德文男聲 |
 | Siwis | fr-FR | medium | 1 | 法文單說話人聲音 |
@@ -253,11 +257,12 @@ NeuroPen 會在按住熱鍵時錄音，放開後只送出一次最終轉錄，�
 | Irina | ru-RU | medium | 1 | 俄文單說話人聲音 |
 | Kareem | ar-SA | medium | 1 | 阿拉伯文單說話人聲音 |
 
-Piper TTS 補充：
+TTS 補充：
 
 - 內建 TTS 模型管理器支援安裝、取消下載、刪除與設為目前使用中。
 - 仍可手動填入自訂 `.onnx` 模型路徑。
-- Speaker ID 主要用在像 Sharvard 這類多說話人模型。
+- Speaker ID 主要用在 Sharvard 與 Kokoro 等多說話人模型（Kokoro：0–2 英文、3 以上中文；留空依偵測到的語言自動選擇）。
+- 啟用 Kokoro 時只朗讀中文與英文，其他語言會改用已安裝的 Piper 聲音。
 
 ---
 
@@ -294,7 +299,7 @@ Piper TTS 補充：
 2. **一般**：設定顯示語言、全域快捷鍵、喚醒詞
 3. **LLM**：選擇 Provider、管理常用模型清單、設定輸出偏好語言、輸入 API Key（如 OpenAI）
 4. **語音與 STT**：選擇 STT 模型、設定麥克風來源，並可安裝或切換本地 STT 模型
-5. **TTS**：可選擇安裝 Piper 聲音、設為目前使用中，或保留手動 `.onnx` 路徑
+5. **TTS**：可選擇安裝 Kokoro 或 Piper 聲音、設為目前使用中，或保留手動 `.onnx` 路徑
 6. 點「儲存」，即可開始使用
 
 ### Quick Usage / 快速上手

@@ -51,11 +51,12 @@ export const normalizePlainTextOutput = (text: string) =>
 export const normalizeStructuredText = (text: string) =>
   normalizePlainTextOutput(text);
 
-export const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" | "senseVoice" | "moonshine" => {
+export const normalizeSttEngine = (engine: string): "openAi" | "localWhisper" | "senseVoice" | "moonshine" | "qwen3Asr" => {
   switch (engine) {
     case "localWhisper":
     case "senseVoice":
     case "moonshine":
+    case "qwen3Asr":
       return engine;
     default:
       return "openAi";

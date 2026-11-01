@@ -19,8 +19,7 @@ use tauri::Emitter;
 
 mod api_keys;
 mod models;
-mod moonshine;
-mod sensevoice;
+mod sherpa;
 
 /// Which STT backend to use.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -31,6 +30,7 @@ pub enum SttEngine {
     LocalWhisper,
     SenseVoice,
     Moonshine,
+    Qwen3Asr,
     Parakeet,
 }
 
@@ -42,6 +42,7 @@ pub struct SttCapabilities {
     pub local_available: bool,
     pub sensevoice_available: bool,
     pub moonshine_available: bool,
+    pub qwen3_asr_available: bool,
     pub parakeet_available: bool,
 }
 
@@ -51,6 +52,7 @@ pub fn get_capabilities() -> SttCapabilities {
         local_available: true,
         sensevoice_available: true,
         moonshine_available: true,
+        qwen3_asr_available: true,
         parakeet_available: has_external_engine_command("NEUROPEN_PARAKEET_CMD"),
     }
 }
@@ -714,8 +716,18 @@ async fn transcribe_by_engine(
             transcribe_openai(api_key.unwrap_or(""), model_path, samples, stt_language).await
         }
         SttEngine::LocalWhisper => transcribe_local(model_path, samples, stt_language).await,
-        SttEngine::SenseVoice => sensevoice::transcribe(model_path, samples, stt_language).await,
-        SttEngine::Moonshine => moonshine::transcribe(model_path, samples).await,
+        SttEngine::SenseVoice => {
+            sherpa::transcribe(sherpa::SherpaEngine::SenseVoice, model_path, samples, stt_language)
+                .await
+        }
+        SttEngine::Moonshine => {
+            sherpa::transcribe(sherpa::SherpaEngine::Moonshine, model_path, samples, stt_language)
+                .await
+        }
+        SttEngine::Qwen3Asr => {
+            sherpa::transcribe(sherpa::SherpaEngine::Qwen3Asr, model_path, samples, stt_language)
+                .await
+        }
         SttEngine::Parakeet => {
             transcribe_external_command("Parakeet", "NEUROPEN_PARAKEET_CMD", model_path, samples)
                 .await

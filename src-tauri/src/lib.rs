@@ -11,6 +11,7 @@ mod screenshot;
 mod selection;
 mod stt;
 mod tts;
+mod tts_kokoro;
 mod tts_models;
 mod undo;
 mod window_focus;

@@ -83,8 +83,8 @@ Most AI tools start by asking you to open a tab, paste text, and manage context 
 | **Preview-first or direct injection** | Review output in `PreviewStream` or send it straight back into the focused target app |
 | **Focus-safe injection + undo** | Verifies focus before paste and supports one-step rollback with `Alt + Z` |
 | **Screenshot-to-LLM** | `Alt + S` captures a region and opens a multimodal prompt flow in the preview window |
-| **Cloud and local models** | Supports OpenAI GPT Transcribe models plus local Whisper, SenseVoice, Moonshine, Ollama, llama.cpp, and LM Studio |
-| **Model management** | Install, switch, cancel, and delete supported local STT and Piper TTS models inside the app |
+| **Cloud and local models** | Supports OpenAI GPT Transcribe models plus local Whisper, SenseVoice, Moonshine, Qwen3-ASR, Ollama, llama.cpp, and LM Studio |
+| **Model management** | Install, switch, cancel, and delete supported local STT and Kokoro / Piper TTS models inside the app |
 | **App Profiles** | Apply per-app tone, prompt appendix, language variant, output mode, and direct-paste defaults |
 | **History and tray workflow** | Keep a local history, launch from tray, and stay available in the background |
 
@@ -209,6 +209,7 @@ NeuroPen records while the hotkey is held, then requests one final transcript af
 | Local Whisper | Local | Via whisper-rs / whisper.cpp, supports CPU and GPU (Vulkan) |
 | SenseVoice | Local | Bundled local STT option for zh/en/ja/ko/yue speech recognition |
 | Moonshine | Local | Lightweight English local STT models optimized for speed |
+| Qwen3-ASR | Local | Speech-LLM local STT with 52 languages and dialects, strongest local Chinese option |
 
 ### Local Whisper Models
 
@@ -226,6 +227,7 @@ NeuroPen records while the hotkey is held, then requests one final transcript af
 | SenseVoice Small | SenseVoice | Chinese, English, Japanese, Korean, Cantonese | Multi-file bundle | Strong multilingual local option outside Whisper |
 | Moonshine Base | Moonshine | English | Multi-file bundle | Fast and lightweight |
 | Moonshine Tiny | Moonshine | English | Multi-file bundle | Smallest local STT option, favors speed over accuracy |
+| Qwen3-ASR 0.6B | Qwen3-ASR | 52 languages and dialects | Multi-file bundle (~940 MB) | Highest local accuracy; uses about 2 GB RAM and outputs Simplified Chinese |
 
 Local STT notes:
 
@@ -237,13 +239,15 @@ Local STT notes:
 
 | Engine | Notes |
 |--------|-------|
-| Piper TTS | Local playback with configurable model path, speed, and speaker id |
+| Kokoro TTS | Runs in-app through sherpa-onnx; Chinese, English, and mixed text with 103 voices, sentence-by-sentence playback |
+| Piper TTS | Requires the `piper` CLI on PATH; used for German, French, Spanish, Russian, and Arabic voices |
 
-### Built-in Piper Voices
+### Built-in TTS Voices
 
 | Voice | Language | Quality | Speakers | Notes |
 |-------|----------|---------|----------|-------|
-| Huayan | zh-CN | medium | 1 | Default Chinese voice for Traditional and Simplified Chinese |
+| Kokoro v1.1 | zh-CN, en-US | high | 103 | Recommended for Chinese and English; one ~140 MB archive, no Piper CLI needed |
+| Huayan | zh-CN | medium | 1 | Piper Chinese voice |
 | Lessac | en-US | medium | 1 | Natural English assistant voice |
 | Thorsten | de-DE | medium | 1 | German male voice |
 | Siwis | fr-FR | medium | 1 | French single-speaker voice |
@@ -251,11 +255,12 @@ Local STT notes:
 | Irina | ru-RU | medium | 1 | Russian single-speaker voice |
 | Kareem | ar-SA | medium | 1 | Arabic single-speaker voice |
 
-Piper TTS notes:
+TTS notes:
 
 - The built-in TTS model manager supports install, cancel, delete, and "Set Active" switching.
 - Manual model path remains available for custom `.onnx` voices.
-- Speaker ID is mainly used for multi-speaker voices such as Sharvard.
+- Speaker ID is mainly used for multi-speaker voices such as Sharvard and Kokoro (0-2 English, 3+ Chinese; empty picks by detected language).
+- An active Kokoro voice only reads Chinese and English; other languages fall back to an installed Piper voice.
 
 ---
 
@@ -292,7 +297,7 @@ Local Whisper STT uses [Vulkan](https://www.vulkan.org/) for GPU acceleration â€
 2. **General**: Set display language, global hotkey, wake word
 3. **LLM**: Choose a provider, manage saved model list, set preferred output language, enter your API Key (e.g., OpenAI)
 4. **Voice & STT**: Choose the STT model, select microphone source, and optionally install or switch a local STT model
-5. **TTS**: Optionally install a Piper voice, set it active, or keep a manual `.onnx` path
+5. **TTS**: Optionally install Kokoro or a Piper voice, set it active, or keep a manual `.onnx` path
 6. Click "Save" and you're ready to go
 
 ### Quick Usage
@@ -380,7 +385,7 @@ npm run doctor:gpu
 npm run build:exe:gpu
 ```
 
-These scripts use `tauri build --no-bundle` to include the built frontend assets and default `CARGO_TARGET_DIR` to `src-tauri/target` inside the project. An existing `CARGO_TARGET_DIR` is preserved; if you encounter path-length-related build errors, set it to a shorter path.
+These scripts use `tauri build --no-bundle` to include the built frontend assets and default `CARGO_TARGET_DIR` to `src-tauri/target` inside the project (`D:\np-gpu` for `build:exe:gpu`, because the Vulkan build exceeds the 260-character path limit otherwise). An existing `CARGO_TARGET_DIR` is preserved; if you encounter path-length-related build errors, set it to a shorter path.
 
 If your machine still hits a Windows path-too-long issue, use `subst` as a fallback:
 

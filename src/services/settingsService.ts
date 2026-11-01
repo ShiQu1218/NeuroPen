@@ -7,10 +7,11 @@ export interface SttCapabilities {
   localAvailable: boolean;
   sensevoiceAvailable: boolean;
   moonshineAvailable: boolean;
+  qwen3AsrAvailable: boolean;
 }
 
 export interface RuntimeSttConfig {
-  engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine";
+  engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine" | "qwen3Asr";
   modelPath: string;
   sttLanguage: SttLanguage;
 }

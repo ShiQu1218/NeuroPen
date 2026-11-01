@@ -101,6 +101,11 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
+    "resources": {
+      "sherpa-runtime/sherpa-onnx-c-api.dll": "sherpa-onnx-c-api.dll",
+      "sherpa-runtime/onnxruntime.dll": "onnxruntime.dll",
+      "sherpa-runtime/onnxruntime_providers_shared.dll": "onnxruntime_providers_shared.dll"
+    },
     "targets": [
       "nsis"
     ],

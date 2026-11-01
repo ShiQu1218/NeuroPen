@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,6 +17,14 @@ pub struct LocalTtsModel {
     pub model_path: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum LocalTtsEngine {
+    /// Single `.onnx` + `.onnx.json` voice from rhasspy/piper-voices, run by the Piper CLI.
+    Piper,
+    /// sherpa-onnx Kokoro bundle, downloaded as one `.tar.bz2` archive named after the entry id.
+    Kokoro,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LocalTtsCatalogEntry {
     pub(crate) id: &'static str,
@@ -27,6 +35,7 @@ pub(crate) struct LocalTtsCatalogEntry {
     pub(crate) speaker_count: u32,
     pub(crate) relative_dir: &'static str,
     pub(crate) file_name: &'static str,
+    pub(crate) engine: LocalTtsEngine,
 }
 
 #[derive(Debug, Clone)]
@@ -36,8 +45,30 @@ pub(crate) struct LocalTtsInstallArtifact {
 }
 
 const HUGGING_FACE_RESOLVE_ROOT: &str = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
+const SHERPA_TTS_RELEASE_ROOT: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models";
+/// Files whose presence marks a fully extracted Kokoro bundle.
+const KOKORO_REQUIRED_PATHS: [&str; 6] = [
+    "model.int8.onnx",
+    "voices.bin",
+    "tokens.txt",
+    "lexicon-zh.txt",
+    "espeak-ng-data/phontab",
+    "dict/jieba.dict.utf8",
+];
 
-const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
+const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 8] = [
+    LocalTtsCatalogEntry {
+        id: "kokoro-int8-multi-lang-v1_1",
+        name: "Kokoro v1.1",
+        description: "Kokoro v1.1 multilingual voices for Chinese and English, including mixed text.",
+        language: "zh-CN, en-US",
+        quality: "high",
+        speaker_count: 103,
+        relative_dir: "",
+        file_name: "model.int8.onnx",
+        engine: LocalTtsEngine::Kokoro,
+    },
     LocalTtsCatalogEntry {
         id: "zh-cn-huayan-medium",
         name: "Huayan",
@@ -47,6 +78,7 @@ const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
         speaker_count: 1,
         relative_dir: "zh/zh_CN/huayan/medium",
         file_name: "zh_CN-huayan-medium.onnx",
+        engine: LocalTtsEngine::Piper,
     },
     LocalTtsCatalogEntry {
         id: "en-us-lessac-medium",
@@ -57,6 +89,7 @@ const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
         speaker_count: 1,
         relative_dir: "en/en_US/lessac/medium",
         file_name: "en_US-lessac-medium.onnx",
+        engine: LocalTtsEngine::Piper,
     },
     LocalTtsCatalogEntry {
         id: "de-de-thorsten-medium",
@@ -67,6 +100,7 @@ const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
         speaker_count: 1,
         relative_dir: "de/de_DE/thorsten/medium",
         file_name: "de_DE-thorsten-medium.onnx",
+        engine: LocalTtsEngine::Piper,
     },
     LocalTtsCatalogEntry {
         id: "fr-fr-siwis-medium",
@@ -77,6 +111,7 @@ const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
         speaker_count: 1,
         relative_dir: "fr/fr_FR/siwis/medium",
         file_name: "fr_FR-siwis-medium.onnx",
+        engine: LocalTtsEngine::Piper,
     },
     LocalTtsCatalogEntry {
         id: "es-es-sharvard-medium",
@@ -87,6 +122,7 @@ const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
         speaker_count: 2,
         relative_dir: "es/es_ES/sharvard/medium",
         file_name: "es_ES-sharvard-medium.onnx",
+        engine: LocalTtsEngine::Piper,
     },
     LocalTtsCatalogEntry {
         id: "ru-ru-irina-medium",
@@ -97,6 +133,7 @@ const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
         speaker_count: 1,
         relative_dir: "ru/ru_RU/irina/medium",
         file_name: "ru_RU-irina-medium.onnx",
+        engine: LocalTtsEngine::Piper,
     },
     LocalTtsCatalogEntry {
         id: "ar-jo-kareem-medium",
@@ -107,6 +144,7 @@ const LOCAL_TTS_CATALOG: [LocalTtsCatalogEntry; 7] = [
         speaker_count: 1,
         relative_dir: "ar/ar_JO/kareem/medium",
         file_name: "ar_JO-kareem-medium.onnx",
+        engine: LocalTtsEngine::Piper,
     },
 ];
 
@@ -145,8 +183,64 @@ fn config_path(entry: &LocalTtsCatalogEntry) -> Result<PathBuf, String> {
     Ok(install_root_path(entry)?.join(format!("{}.json", entry.file_name)))
 }
 
-fn is_entry_installed(entry: &LocalTtsCatalogEntry) -> Result<bool, String> {
-    Ok(model_path(entry)?.is_file() && config_path(entry)?.is_file())
+pub(crate) fn is_entry_installed(entry: &LocalTtsCatalogEntry) -> Result<bool, String> {
+    match entry.engine {
+        LocalTtsEngine::Piper => Ok(model_path(entry)?.is_file() && config_path(entry)?.is_file()),
+        LocalTtsEngine::Kokoro => {
+            let root = install_root_path(entry)?;
+            Ok(KOKORO_REQUIRED_PATHS
+                .iter()
+                .all(|relative| root.join(relative).is_file()))
+        }
+    }
+}
+
+fn primary_download_url(entry: &LocalTtsCatalogEntry) -> String {
+    match entry.engine {
+        LocalTtsEngine::Piper => format!(
+            "{}/{}/{}",
+            HUGGING_FACE_RESOLVE_ROOT, entry.relative_dir, entry.file_name
+        ),
+        LocalTtsEngine::Kokoro => format!("{SHERPA_TTS_RELEASE_ROOT}/{}.tar.bz2", entry.id),
+    }
+}
+
+/// Extracts a downloaded Kokoro archive next to its final location, then renames it into place
+/// so an interrupted extraction never looks installed. The archive is removed afterwards.
+pub(crate) fn extract_kokoro_archive(
+    entry: &LocalTtsCatalogEntry,
+    archive_path: &Path,
+) -> Result<(), String> {
+    let models_dir = local_models_dir()?;
+    let staging_dir = models_dir.join(format!(".extract-{}", entry.id));
+    let final_dir = install_root_path(entry)?;
+    let _ = std::fs::remove_dir_all(&staging_dir);
+
+    let result = (|| {
+        let archive = std::fs::File::open(archive_path)
+            .map_err(|e| format!("Failed to open TTS model archive: {e}"))?;
+        tar::Archive::new(bzip2::read::BzDecoder::new(std::io::BufReader::new(archive)))
+            .unpack(&staging_dir)
+            .map_err(|e| format!("Failed to extract TTS model archive: {e}"))?;
+        let extracted_dir = staging_dir.join(entry.id);
+        if !extracted_dir.is_dir() {
+            return Err(format!("TTS model archive is missing the {} directory", entry.id));
+        }
+        if final_dir.exists() {
+            std::fs::remove_dir_all(&final_dir)
+                .map_err(|e| format!("Failed to replace TTS model directory: {e}"))?;
+        }
+        std::fs::rename(&extracted_dir, &final_dir)
+            .map_err(|e| format!("Failed to finalize TTS model directory: {e}"))
+    })();
+
+    let _ = std::fs::remove_dir_all(&staging_dir);
+    let _ = std::fs::remove_file(archive_path);
+    result?;
+    if !is_entry_installed(entry)? {
+        return Err("TTS model archive is missing required Kokoro files".into());
+    }
+    Ok(())
 }
 
 fn read_active_model_id() -> Option<String> {
@@ -181,11 +275,14 @@ fn config_download_url(entry: &LocalTtsCatalogEntry) -> String {
 }
 
 fn language_matches(entry_language: &str, requested_language: &str) -> bool {
-    match requested_language {
-        "zh-TW" | "zh-CN" => entry_language == "zh-CN",
-        "ar-SA" | "ar-JO" => entry_language == "ar-SA",
-        _ => entry_language == requested_language,
-    }
+    let requested = match requested_language {
+        "zh-TW" | "zh-CN" => "zh-CN",
+        "ar-SA" | "ar-JO" => "ar-SA",
+        other => other,
+    };
+    entry_language
+        .split(',')
+        .any(|language| language.trim() == requested)
 }
 
 pub(crate) fn catalog_entry_by_id(model_id: &str) -> Option<&'static LocalTtsCatalogEntry> {
@@ -195,19 +292,22 @@ pub(crate) fn catalog_entry_by_id(model_id: &str) -> Option<&'static LocalTtsCat
 pub(crate) fn install_artifacts(
     entry: &LocalTtsCatalogEntry,
 ) -> Result<Vec<LocalTtsInstallArtifact>, String> {
-    Ok(vec![
-        LocalTtsInstallArtifact {
-            path: model_path(entry)?,
-            download_url: format!(
-                "{}/{}/{}",
-                HUGGING_FACE_RESOLVE_ROOT, entry.relative_dir, entry.file_name
-            ),
-        },
-        LocalTtsInstallArtifact {
-            path: config_path(entry)?,
-            download_url: config_download_url(entry),
-        },
-    ])
+    Ok(match entry.engine {
+        LocalTtsEngine::Piper => vec![
+            LocalTtsInstallArtifact {
+                path: model_path(entry)?,
+                download_url: primary_download_url(entry),
+            },
+            LocalTtsInstallArtifact {
+                path: config_path(entry)?,
+                download_url: config_download_url(entry),
+            },
+        ],
+        LocalTtsEngine::Kokoro => vec![LocalTtsInstallArtifact {
+            path: local_models_dir()?.join(format!("{}.tar.bz2", entry.id)),
+            download_url: primary_download_url(entry),
+        }],
+    })
 }
 
 pub(crate) fn list_local_tts_models() -> Result<Vec<LocalTtsModel>, String> {
@@ -224,10 +324,7 @@ pub(crate) fn list_local_tts_models() -> Result<Vec<LocalTtsModel>, String> {
                 language: entry.language.to_string(),
                 quality: entry.quality.to_string(),
                 speaker_count: entry.speaker_count,
-                download_url: format!(
-                    "{}/{}/{}",
-                    HUGGING_FACE_RESOLVE_ROOT, entry.relative_dir, entry.file_name
-                ),
+                download_url: primary_download_url(entry),
                 file_name: entry.file_name.to_string(),
                 installed,
                 active: installed && active_model_id.as_deref() == Some(entry.id),
@@ -267,7 +364,11 @@ pub(crate) fn preferred_model_path_for_language(
 ) -> Result<Option<PathBuf>, String> {
     if let Some(active_model_id) = read_active_model_id() {
         if let Some(entry) = catalog_entry_by_id(&active_model_id) {
-            if is_entry_installed(entry)? {
+            // Kokoro cannot speak languages outside its lexicons; let those fall through
+            // to a matching Piper voice.
+            let speaks_language = entry.engine == LocalTtsEngine::Piper
+                || language_matches(entry.language, requested_language);
+            if speaks_language && is_entry_installed(entry)? {
                 return Ok(Some(model_path(entry)?));
             }
         }
@@ -311,9 +412,48 @@ mod tests {
     }
 
     #[test]
+    fn kokoro_installs_from_one_archive_and_matches_chinese_and_english() {
+        let entry = catalog_entry_by_id("kokoro-int8-multi-lang-v1_1").expect("kokoro entry");
+        let artifacts = install_artifacts(entry).expect("artifacts");
+        assert_eq!(artifacts.len(), 1);
+        assert!(artifacts[0]
+            .download_url
+            .ends_with("/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2"));
+        assert!(language_matches(entry.language, "zh-TW"));
+        assert!(language_matches(entry.language, "en-US"));
+        assert!(!language_matches(entry.language, "de-DE"));
+    }
+
+    #[test]
     fn zh_tw_falls_back_to_zh_cn_catalog() {
         assert!(language_matches("zh-CN", "zh-TW"));
         assert!(language_matches("zh-CN", "zh-CN"));
         assert!(!language_matches("en-US", "zh-TW"));
+    }
+}
+
+#[cfg(test)]
+mod install_tests {
+    use super::*;
+
+    /// Installs Kokoro into ~/.neuropen from a local copy of the release archive.
+    /// Run with: NEUROPEN_KOKORO_ARCHIVE=<kokoro-int8-multi-lang-v1_1.tar.bz2>
+    /// cargo test kokoro_archive_extracts -- --ignored --nocapture
+    #[test]
+    #[ignore = "requires the Kokoro release archive and writes to ~/.neuropen"]
+    fn kokoro_archive_extracts_into_place() {
+        let source = std::env::var("NEUROPEN_KOKORO_ARCHIVE").expect("NEUROPEN_KOKORO_ARCHIVE");
+        let entry = catalog_entry_by_id("kokoro-int8-multi-lang-v1_1").expect("kokoro entry");
+        let archive = install_artifacts(entry).expect("artifacts").remove(0).path;
+        std::fs::copy(source, &archive).expect("copy archive");
+
+        extract_kokoro_archive(entry, &archive).expect("extract");
+
+        assert!(is_entry_installed(entry).expect("installed check"));
+        assert!(!archive.exists());
+        assert!(!local_models_dir()
+            .expect("models dir")
+            .join(format!(".extract-{}", entry.id))
+            .exists());
     }
 }

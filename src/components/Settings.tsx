@@ -771,7 +771,7 @@ export default function Settings() {
   }, [normalizeHotkey, t]);
 
   const resolveSttSelection = useCallback((modelChoice: string): {
-    engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine";
+    engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine" | "qwen3Asr";
     modelPath: string;
   } => {
     if (isOpenAiSttModel(modelChoice)) {
@@ -781,12 +781,14 @@ export default function Settings() {
     if (!matchedLocalModel) {
       return { engine: "openAi" as const, modelPath: DEFAULT_OPENAI_STT_MODEL };
     }
-    const engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine" =
+    const engine: "openAi" | "localWhisper" | "senseVoice" | "moonshine" | "qwen3Asr" =
       matchedLocalModel.engine === "sensevoice"
         ? "senseVoice"
         : matchedLocalModel.engine === "moonshine"
           ? "moonshine"
-          : "localWhisper";
+          : matchedLocalModel.engine === "qwen3asr"
+            ? "qwen3Asr"
+            : "localWhisper";
     return {
       engine,
       modelPath: matchedLocalModel.modelPath,

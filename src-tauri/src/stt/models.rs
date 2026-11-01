@@ -123,7 +123,40 @@ const MOONSHINE_TINY_ARTIFACTS: &[LocalSttArtifact] = &[
     },
 ];
 
-const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 7] = [
+const QWEN3_ASR_0_6B_ARTIFACTS: &[LocalSttArtifact] = &[
+    LocalSttArtifact {
+        relative_path: "conv_frontend.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/conv_frontend.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "encoder.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/encoder.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "decoder.int8.onnx",
+        download_url:
+            "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/decoder.int8.onnx",
+    },
+    LocalSttArtifact {
+        relative_path: "tokenizer/vocab.json",
+        download_url:
+            "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/tokenizer/vocab.json",
+    },
+    LocalSttArtifact {
+        relative_path: "tokenizer/merges.txt",
+        download_url:
+            "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/tokenizer/merges.txt",
+    },
+    LocalSttArtifact {
+        relative_path: "tokenizer/tokenizer_config.json",
+        download_url:
+            "https://huggingface.co/csukuangfj2/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25/resolve/main/tokenizer/tokenizer_config.json",
+    },
+];
+
+const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 8] = [
     LocalSttCatalogEntry {
         id: "whisper-small",
         name: "Whisper Small",
@@ -187,6 +220,18 @@ const LOCAL_STT_CATALOG: [LocalSttCatalogEntry; 7] = [
             artifacts: SENSEVOICE_SMALL_ARTIFACTS,
         },
         engine: "sensevoice",
+    },
+    LocalSttCatalogEntry {
+        id: "qwen3-asr-0.6b",
+        name: "Qwen3-ASR 0.6B",
+        description: "Qwen3-ASR 0.6B int8, 52 languages and dialects with strong Chinese accuracy.",
+        speed: 3,
+        accuracy: 5,
+        install: LocalSttInstallKind::Bundle {
+            directory_name: "qwen3-asr-0.6b",
+            artifacts: QWEN3_ASR_0_6B_ARTIFACTS,
+        },
+        engine: "qwen3asr",
     },
     LocalSttCatalogEntry {
         id: "moonshine-base",
