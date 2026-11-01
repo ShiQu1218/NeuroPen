@@ -1,10 +1,23 @@
 import type { AppProfile, LlmProvider, QuickActionCommand } from "./appStoreTypes";
 
+// Retired IDs fail every request, so persisted settings that still carry them are upgraded.
+// Keep in sync with replace_retired_model in src-tauri/src/llm.rs.
+const RETIRED_LLM_MODEL_REPLACEMENTS: Readonly<Record<string, string>> = {
+  "claude-3-5-sonnet-latest": "claude-sonnet-5-5",
+  "gemini-1.5-flash": "gemini-3.8-flash",
+  "grok-2-latest": "grok-4.3",
+};
+
+export const replaceRetiredLlmModel = (model: string): string => {
+  const trimmed = model.trim();
+  return RETIRED_LLM_MODEL_REPLACEMENTS[trimmed] ?? trimmed;
+};
+
 export const normalizeLlmModelOptions = (models: string[], activeModel?: string) =>
   Array.from(
     new Set(
       [...models, activeModel ?? ""]
-        .map((model) => model.trim())
+        .map(replaceRetiredLlmModel)
         .filter(Boolean)
     )
   );
@@ -81,9 +94,9 @@ export const DEFAULT_APP_PROFILES: AppProfile[] = [
 
 export const DEFAULT_LLM_MODEL_OPTIONS_BY_PROVIDER: Record<LlmProvider, string[]> = {
   openAi: ["gpt-4o-mini", "gpt-4.1-mini"],
-  gemini: ["gemini-2.5-flash"],
-  claude: ["claude-3-5-sonnet-latest"],
-  grok: ["grok-2-latest"],
+  gemini: ["gemini-3.8-flash"],
+  claude: ["claude-sonnet-5-5"],
+  grok: ["grok-4.3"],
   openRouter: ["~openai/gpt-latest", "openai/gpt-4o-mini"],
   qwen: ["qwen-plus"],
   doubao: ["doubao-seed-1-6-250615"],
@@ -138,7 +151,7 @@ export const normalizeLlmSelectedModelsByProvider = (
 ): Record<LlmProvider, string> =>
   Object.fromEntries(
     LLM_PROVIDER_KEYS.map((provider) => {
-      const preferredModel = value?.[provider]?.trim() ?? "";
+      const preferredModel = replaceRetiredLlmModel(value?.[provider] ?? "");
       const providerOptions = normalizeLlmModelOptions(
         Array.isArray(modelOptionsByProvider[provider])
           ? modelOptionsByProvider[provider] ?? []

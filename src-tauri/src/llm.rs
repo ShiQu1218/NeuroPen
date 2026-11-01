@@ -395,9 +395,9 @@ async fn emit_output_stream(
 fn default_model(provider: &LlmProvider) -> &'static str {
     match provider {
         LlmProvider::OpenAi => "gpt-4o-mini",
-        LlmProvider::Gemini => "gemini-1.5-flash",
-        LlmProvider::Claude => "claude-3-5-sonnet-latest",
-        LlmProvider::Grok => "grok-2-latest",
+        LlmProvider::Gemini => "gemini-3.8-flash",
+        LlmProvider::Claude => "claude-sonnet-5-5",
+        LlmProvider::Grok => "grok-4.3",
         LlmProvider::OpenRouter => "~openai/gpt-latest",
         LlmProvider::Qwen => "qwen-plus",
         LlmProvider::Doubao => "doubao-seed-1-6-250615",
@@ -1035,7 +1035,7 @@ async fn call_claude(
 ) -> Result<String, String> {
     let body = serde_json::json!({
         "model": model,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
         "system": system_prompt,
         "messages": [{ "role": "user", "content": user_message }],
     });
@@ -1217,11 +1217,22 @@ fn openai_compatible_models_url(provider: &LlmProvider) -> Option<&'static str> 
     }
 }
 
+// Retired IDs fail every request, so saved settings that still carry them are upgraded here.
+// Keep in sync with RETIRED_LLM_MODEL_REPLACEMENTS in src/store/appStoreDefaults.ts.
+fn replace_retired_model(model: &str) -> &str {
+    match model {
+        "claude-3-5-sonnet-latest" => "claude-sonnet-5-5",
+        "gemini-1.5-flash" => "gemini-3.8-flash",
+        "grok-2-latest" => "grok-4.3",
+        other => other,
+    }
+}
+
 fn resolve_model(model: &str, provider: &LlmProvider) -> String {
     if model.trim().is_empty() {
         default_model(provider).to_string()
     } else {
-        model.trim().to_string()
+        replace_retired_model(model.trim()).to_string()
     }
 }
 
@@ -2466,6 +2477,21 @@ mod tests {
             default_model(&LlmProvider::OpenRouter),
             "~openai/gpt-latest"
         );
+    }
+
+    #[test]
+    fn resolve_model_replaces_retired_ids_and_keeps_others() {
+        assert_eq!(
+            resolve_model(" claude-3-5-sonnet-latest ", &LlmProvider::Claude),
+            "claude-sonnet-5-5"
+        );
+        assert_eq!(
+            resolve_model("gemini-1.5-flash", &LlmProvider::Gemini),
+            "gemini-3.8-flash"
+        );
+        assert_eq!(resolve_model("grok-2-latest", &LlmProvider::Grok), "grok-4.3");
+        assert_eq!(resolve_model("gpt-4o-mini", &LlmProvider::OpenAi), "gpt-4o-mini");
+        assert_eq!(resolve_model("", &LlmProvider::Claude), "claude-sonnet-5-5");
     }
 
     #[test]
