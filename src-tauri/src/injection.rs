@@ -111,53 +111,103 @@ fn simulate_ctrl_v() -> Result<(), InjectionError> {
     Ok(())
 }
 
-/// Inject UTF-16 code units directly so rich/protected clipboard contents never
-/// need to be replaced. KEYEVENTF_UNICODE bypasses the active keyboard layout
-/// and IME while preserving the target's normal typed-text behavior.
+/// One unit of the direct-typing fallback.
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypedKey {
+    /// A UTF-16 code unit sent with KEYEVENTF_UNICODE.
+    Unit(u16),
+    /// A real Shift+Enter key press. Most apps ignore U+000A sent as a Unicode
+    /// event, which flattens multi-line (list/paragraph) output into one line.
+    /// Shift+Enter inserts a line break without submitting chat-style inputs.
+    LineBreak,
+    /// A real Tab key press, for the same reason as `LineBreak`.
+    Tab,
+}
+
+/// Splits text into typed keys, mapping line breaks and tabs to real key presses.
+/// CRLF and lone CR collapse into a single line break.
+#[cfg(any(target_os = "windows", test))]
+fn text_to_typed_keys(text: &str) -> Vec<TypedKey> {
+    let mut keys = Vec::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                keys.push(TypedKey::LineBreak);
+            }
+            '\n' => keys.push(TypedKey::LineBreak),
+            '\t' => keys.push(TypedKey::Tab),
+            _ => {
+                let mut buf = [0u16; 2];
+                keys.extend(ch.encode_utf16(&mut buf).iter().map(|&u| TypedKey::Unit(u)));
+            }
+        }
+    }
+    keys
+}
+
+/// Type text directly so rich/protected clipboard contents never need to be
+/// replaced. Characters use KEYEVENTF_UNICODE, which bypasses the active
+/// keyboard layout and IME; line breaks and tabs use real key presses.
 #[cfg(target_os = "windows")]
 fn simulate_unicode_text(
     text: &str,
     focus_guard: &window_focus::FocusSessionGuard,
 ) -> Result<(), InjectionError> {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
-        VIRTUAL_KEY,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        KEYEVENTF_UNICODE, VIRTUAL_KEY,
     };
 
-    const UTF16_UNITS_PER_CHUNK: usize = 128;
-    let utf16: Vec<u16> = text.encode_utf16().collect();
+    const KEYS_PER_CHUNK: usize = 128;
+    const VK_TAB: u16 = 0x09;
+    const VK_RETURN: u16 = 0x0D;
+    const VK_SHIFT: u16 = 0x10;
 
-    for chunk in utf16.chunks(UTF16_UNITS_PER_CHUNK) {
+    fn key_input(vk: u16, scan: u16, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: VIRTUAL_KEY(vk),
+                    wScan: scan,
+                    dwFlags: flags,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    let keys = text_to_typed_keys(text);
+
+    for chunk in keys.chunks(KEYS_PER_CHUNK) {
         if !focus_guard.verify_foreground() {
             return Err(InjectionError::FocusChanged);
         }
 
         let mut inputs = Vec::with_capacity(chunk.len() * 2);
-        for &unit in chunk {
-            inputs.push(INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VIRTUAL_KEY(0),
-                        wScan: unit,
-                        dwFlags: KEYEVENTF_UNICODE,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
-                },
-            });
-            inputs.push(INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 {
-                    ki: KEYBDINPUT {
-                        wVk: VIRTUAL_KEY(0),
-                        wScan: unit,
-                        dwFlags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
-                        time: 0,
-                        dwExtraInfo: 0,
-                    },
-                },
-            });
+        for key in chunk {
+            match *key {
+                TypedKey::Unit(unit) => {
+                    inputs.push(key_input(0, unit, KEYEVENTF_UNICODE));
+                    inputs.push(key_input(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP));
+                }
+                TypedKey::LineBreak => {
+                    inputs.push(key_input(VK_SHIFT, 0, Default::default()));
+                    inputs.push(key_input(VK_RETURN, 0, Default::default()));
+                    inputs.push(key_input(VK_RETURN, 0, KEYEVENTF_KEYUP));
+                    inputs.push(key_input(VK_SHIFT, 0, KEYEVENTF_KEYUP));
+                }
+                TypedKey::Tab => {
+                    inputs.push(key_input(VK_TAB, 0, Default::default()));
+                    inputs.push(key_input(VK_TAB, 0, KEYEVENTF_KEYUP));
+                }
+            }
         }
 
         let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
@@ -255,6 +305,13 @@ pub fn simulate_ctrl_c_raw() -> Result<(), InjectionError> {
     Ok(())
 }
 
+/// Normalizes every line break (LF, CRLF, lone CR) to CRLF.
+fn to_clipboard_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\r\n")
+}
+
 /// Injects `text` into the currently locked foreground window.
 ///
 /// Steps:
@@ -289,7 +346,9 @@ pub fn inject_text_for_session(text: &str, session_id: u64) -> Result<(), Inject
     let can_use_clipboard = clipboard::can_temporarily_replace_for_session(session_id)
         .map_err(InjectionError::ClipboardError)?;
     if can_use_clipboard {
-        clipboard::write_clipboard_for_session(text, session_id)
+        // CF_UNICODETEXT consumers such as Notepad expect CRLF; LF-only text can
+        // be flattened into a single line, losing lists and paragraphs.
+        clipboard::write_clipboard_for_session(&to_clipboard_line_endings(text), session_id)
             .map_err(InjectionError::ClipboardError)?;
 
         // Writing the clipboard can yield briefly to Windows. Verify once more
@@ -387,4 +446,42 @@ pub fn read_selection_via_clipboard() -> Result<String, InjectionError> {
         ));
     }
     Ok(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn line_breaks_become_key_presses_not_unicode_units() {
+        let keys = text_to_typed_keys("a\n- b\r\n\tc\rd");
+        assert_eq!(
+            keys,
+            vec![
+                TypedKey::Unit('a' as u16),
+                TypedKey::LineBreak,
+                TypedKey::Unit('-' as u16),
+                TypedKey::Unit(' ' as u16),
+                TypedKey::Unit('b' as u16),
+                TypedKey::LineBreak,
+                TypedKey::Tab,
+                TypedKey::Unit('c' as u16),
+                TypedKey::LineBreak,
+                TypedKey::Unit('d' as u16),
+            ]
+        );
+    }
+
+    #[test]
+    fn clipboard_text_uses_crlf() {
+        assert_eq!(
+            to_clipboard_line_endings("a\nb\r\nc\rd"),
+            "a\r\nb\r\nc\r\nd"
+        );
+    }
+
+    #[test]
+    fn astral_characters_stay_as_surrogate_pairs() {
+        assert_eq!(text_to_typed_keys("😀").len(), 2);
+    }
 }

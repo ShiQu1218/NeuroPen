@@ -7,7 +7,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($env:CARGO_TARGET_DIR)) {
-    $env:CARGO_TARGET_DIR = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\src-tauri\target"))
+    if ($Gpu) {
+        # The Vulkan shader generator nests deep under the target dir and exceeds MAX_PATH (260),
+        # which MSBuild FileTracker cannot handle even with LongPathsEnabled.
+        $env:CARGO_TARGET_DIR = "D:\np-gpu"
+    } else {
+        $env:CARGO_TARGET_DIR = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\src-tauri\target"))
+    }
 }
 
 $builtExePath = Join-Path $env:CARGO_TARGET_DIR "release\neuropen.exe"
